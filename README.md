@@ -167,7 +167,7 @@ above the two controllers is Python you write.
 
 ## 7. Status & next steps
 
-- [ ] **P0** — Simulated cell digital twin (MuJoCo UR5e load/unload)
+- [x] **P0** — Simulated cell digital twin (MuJoCo UR5e load/unload)
 - [ ] **P1** — Cell orchestrator (state machine + OPC UA CNC handshake)
 - [ ] **P2** — Vision-guided picking (sim camera → webcam + AprilTags)
 - [ ] **P3** — Quality inspection ML
@@ -175,5 +175,17 @@ above the two controllers is Python you write.
 - [ ] **P5** — Telemetry & predictive maintenance
 - [ ] **P6** — Capstone: hardware-in-the-loop cell
 
-**Next:** scaffold P0 as runnable Python — a MuJoCo scene with a UR5e loading
-and unloading a mock CNC — as the foundation the orchestrator builds on.
+**Running P0** (requires [uv](https://docs.astral.sh/uv/)):
+
+```sh
+uv sync                                  # create .venv, install mujoco/mink/numpy
+uv run python -m sim.run_cell            # watch the tending cycle in the viewer
+uv run python -m sim.validate --verbose  # headless validation (collisions/drops)
+```
+
+P0 simplification to revisit: the gripper fingers close around the part for
+looks, but the hold itself is a toggled weld constraint (deterministic), and
+the fixture clamp works the same way.
+
+**Next:** P1 — drive the cycle with a real FSM and run the mock CNC as a
+separate OPC UA service (`asyncua`), replacing P0's hardcoded script.

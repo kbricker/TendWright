@@ -1,0 +1,122 @@
+<mujoco model="tendwright_cell">
+  <!--
+    Static machine-tending cell: floor, table, parts bin, mock CNC enclosure
+    with a vertically sliding door, a vise-style fixture inside the CNC, and
+    an outfeed tray. The UR5e + Robotiq 2F-85 are attached programmatically
+    at the arm_mount site (see sim/scene.py), so this file stays vendor-free.
+
+    Layout (world frame, meters): arm base at (0, 0, 0.74) on the table top.
+    Bin at (0.45, -0.38), CNC enclosure centered (0.35, 0.55) with its opening
+    facing -y (toward the arm), tray at (0.15, -0.55).
+  -->
+  <compiler angle="radian" autolimits="true"/>
+  <option integrator="implicitfast" cone="elliptic" impratio="10" timestep="0.002"/>
+
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+    <global azimuth="150" elevation="-25" offwidth="1280" offheight="720"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.35 0.45 0.55" rgb2="0.08 0.10 0.14" width="32" height="512"/>
+    <texture name="floor_tex" type="2d" builtin="checker" rgb1="0.22 0.24 0.26" rgb2="0.28 0.30 0.32"
+      width="300" height="300"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="6 6" reflectance="0.05"/>
+    <material name="table_mat" rgba="0.55 0.47 0.38 1"/>
+    <material name="bin_mat" rgba="0.25 0.35 0.55 1"/>
+    <material name="cnc_mat" rgba="0.62 0.64 0.66 1"/>
+    <material name="cnc_window_mat" rgba="0.85 0.90 0.95 0.35"/>
+    <material name="door_mat" rgba="0.85 0.60 0.15 1"/>
+    <material name="fixture_mat" rgba="0.30 0.30 0.32 1"/>
+    <material name="tray_mat" rgba="0.30 0.45 0.30 1"/>
+    <material name="blank_mat" rgba="0.69 0.72 0.76 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.5 -0.5 2.5" dir="-0.15 0.15 -1" diffuse="0.7 0.7 0.7"/>
+    <camera name="overview" pos="1.75 -1.15 1.55" xyaxes="0.6 0.8 0 -0.28 0.21 0.94"/>
+
+    <geom name="floor" type="plane" size="4 4 0.05" material="floor_mat"/>
+
+    <!-- Work table: top surface at z = 0.74 -->
+    <geom name="table_top" type="box" pos="0.35 0.0 0.71" size="0.55 0.62 0.03" material="table_mat"/>
+    <geom name="table_leg1" type="box" pos="-0.13 -0.55 0.34" size="0.03 0.03 0.34" material="table_mat"
+      contype="0" conaffinity="0"/>
+    <geom name="table_leg2" type="box" pos="0.83 -0.55 0.34" size="0.03 0.03 0.34" material="table_mat"
+      contype="0" conaffinity="0"/>
+    <geom name="table_leg3" type="box" pos="-0.13 0.55 0.34" size="0.03 0.03 0.34" material="table_mat"
+      contype="0" conaffinity="0"/>
+    <geom name="table_leg4" type="box" pos="0.83 0.55 0.34" size="0.03 0.03 0.34" material="table_mat"
+      contype="0" conaffinity="0"/>
+
+    <!-- Arm mounts here (sim/scene.py attaches the UR5e + gripper) -->
+    <site name="arm_mount" pos="0 0 0.74" size="0.005"/>
+
+    <!-- Parts bin: interior x 0.33..0.57, y -0.50..-0.26, wall top at 0.79 -->
+    <geom name="bin_wall_n" type="box" pos="0.45 -0.252 0.765" size="0.136 0.008 0.025" material="bin_mat"/>
+    <geom name="bin_wall_s" type="box" pos="0.45 -0.508 0.765" size="0.136 0.008 0.025" material="bin_mat"/>
+    <geom name="bin_wall_w" type="box" pos="0.322 -0.38 0.765" size="0.008 0.12 0.025" material="bin_mat"/>
+    <geom name="bin_wall_e" type="box" pos="0.578 -0.38 0.765" size="0.008 0.12 0.025" material="bin_mat"/>
+
+    <!-- Mock CNC enclosure: interior x 0.18..0.52, y 0.40..0.70, z 0.74..1.30
+         (tall enough for the wrist to reach the fixture top-down) -->
+    <geom name="cnc_wall_w" type="box" pos="0.17 0.55 1.02" size="0.01 0.15 0.28" material="cnc_mat"/>
+    <geom name="cnc_wall_e" type="box" pos="0.53 0.55 1.02" size="0.01 0.15 0.28" material="cnc_mat"/>
+    <geom name="cnc_wall_back" type="box" pos="0.35 0.71 1.02" size="0.19 0.01 0.28" material="cnc_mat"/>
+    <geom name="cnc_roof" type="box" pos="0.35 0.55 1.31" size="0.19 0.17 0.01" material="cnc_mat"/>
+    <!-- Decorative spindle stub hanging from the roof, behind the fixture -->
+    <geom name="cnc_spindle" type="cylinder" pos="0.35 0.62 1.22" size="0.025 0.08" material="fixture_mat"
+      contype="0" conaffinity="0"/>
+
+    <!-- Sliding door covering the front opening (y = 0.371 plane), slides sideways (-x) -->
+    <body name="cnc_door" pos="0.35 0.371 1.02">
+      <joint name="cnc_door_joint" type="slide" axis="-1 0 0" range="0 0.40" damping="60"/>
+      <geom name="cnc_door_panel" type="box" size="0.185 0.006 0.28" material="door_mat"/>
+      <geom name="cnc_door_window" type="box" pos="0 -0.007 0.04" size="0.10 0.001 0.08" material="cnc_window_mat"
+        contype="0" conaffinity="0"/>
+    </body>
+
+    <!-- Vise-style fixture inside the CNC: part seat top at z = 0.80 -->
+    <body name="fixture" pos="0.35 0.50 0">
+      <geom name="fixture_base" type="box" pos="0 0 0.77" size="0.055 0.055 0.03" material="fixture_mat"/>
+      <geom name="fixture_jaw_front" type="box" pos="0 -0.038 0.825" size="0.03 0.012 0.025" material="fixture_mat"/>
+      <geom name="fixture_jaw_back" type="box" pos="0 0.038 0.825" size="0.03 0.012 0.025" material="fixture_mat"/>
+      <site name="fixture_seat" pos="0 0 0.83" size="0.004"/>
+    </body>
+
+    <!-- Outfeed tray for finished parts -->
+    <geom name="tray_pad" type="box" pos="0.15 -0.55 0.745" size="0.15 0.07 0.005" material="tray_mat"/>
+    <geom name="tray_rim_n" type="box" pos="0.15 -0.474 0.755" size="0.15 0.006 0.015" material="tray_mat"/>
+    <geom name="tray_rim_s" type="box" pos="0.15 -0.626 0.755" size="0.15 0.006 0.015" material="tray_mat"/>
+    <geom name="tray_rim_w" type="box" pos="-0.006 -0.55 0.755" size="0.006 0.07 0.015" material="tray_mat"/>
+    <geom name="tray_rim_e" type="box" pos="0.306 -0.55 0.755" size="0.006 0.07 0.015" material="tray_mat"/>
+
+    <!-- Cylindrical blanks (Ø40 x 60 mm) standing in the bin -->
+    <body name="part0" pos="0.40 -0.44 0.771">
+      <freejoint name="part0_free"/>
+      <geom name="part0_geom" type="cylinder" size="0.02 0.03" mass="0.3" material="blank_mat"
+        friction="0.8 0.01 0.001" condim="4"/>
+    </body>
+    <body name="part1" pos="0.50 -0.38 0.771">
+      <freejoint name="part1_free"/>
+      <geom name="part1_geom" type="cylinder" size="0.02 0.03" mass="0.3" material="blank_mat"
+        friction="0.8 0.01 0.001" condim="4"/>
+    </body>
+    <body name="part2" pos="0.40 -0.32 0.771">
+      <freejoint name="part2_free"/>
+      <geom name="part2_geom" type="cylinder" size="0.02 0.03" mass="0.3" material="blank_mat"
+        friction="0.8 0.01 0.001" condim="4"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="cnc_door_actuator" joint="cnc_door_joint" ctrlrange="0 0.40" kp="400" kv="40"/>
+  </actuator>
+
+  <equality>
+    <!-- Fixture clamp welds, one per part, toggled by the cycle script -->
+    <weld name="clamp_part0" body1="fixture" body2="part0" active="false"/>
+    <weld name="clamp_part1" body1="fixture" body2="part1" active="false"/>
+    <weld name="clamp_part2" body1="fixture" body2="part2" active="false"/>
+  </equality>
+</mujoco>
