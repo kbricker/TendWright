@@ -10,7 +10,7 @@ script with a real FSM + OPC UA handshake.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 import mujoco
@@ -19,12 +19,14 @@ import numpy as np
 from . import scene
 from .control import ArmController
 
-YAW = 0.0  # fingers open along world-x: clears bin walls and vise jaws
+# Fingers open along world-x at yaw = pi/2 (see control.topdown_quat): that
+# clears the vise jaws (at +/-y of the seat) and the bin walls at the slots.
+YAW = np.pi / 2
 
 TRAVEL_Z = 0.95  # safe height over the table outside the CNC
 BIN_GRASP_Z = 0.776  # pinch height at a blank standing in the bin
 CNC_STAGE = np.array([0.35, 0.24, 0.90])  # in front of the door opening
-CNC_ENTRY_Z = 0.88  # travel height inside the enclosure (clears the roof)
+CNC_ENTRY_Z = 0.88  # travel height inside the enclosure (clears the door-opening top edge)
 SEAT_Z = scene.FIXTURE_SEAT[2] + 0.006  # pinch height at the seated part
 TRAY_PLACE_Z = 0.79
 MACHINING_TIME = 2.0  # seconds of simulated "cutting"
@@ -36,7 +38,7 @@ class Step:
     name: str
     start: Callable[[mujoco.MjModel, mujoco.MjData], None]
     done: Callable[[mujoco.MjModel, mujoco.MjData], bool]
-    timer: float = field(default=0.0)
+    timer: float = 0.0
 
 
 class TendingCycle:
@@ -58,30 +60,30 @@ class TendingCycle:
         return Step(
             name=label,
             start=lambda m, d: ctrl.set_goal(pos, yaw),
-            done=lambda m, d: ctrl.goal_reached(),
+            done=lambda m, d: ctrl.goal_reached(d),
         )
 
-    def _dwell(self, label: str, seconds: float) -> Step:
-        def done(m: mujoco.MjModel, d: mujoco.MjData, s=seconds) -> bool:
-            step = self.steps[self.index]
-            step.timer += self.dt
-            return step.timer >= s
+    def _timed(self, label: str, seconds: float,
+               start: Callable[[mujoco.MjModel, mujoco.MjData], None]) -> Step:
+        """A step that runs `start` and completes after `seconds` of sim time.
+        The done() closure captures its own Step, so it stays correct no
+        matter which step is current when it is called."""
+        step = Step(name=label, start=start, done=lambda m, d: True)
 
-        return Step(name=label, start=lambda m, d: None, done=done)
+        def done(m: mujoco.MjModel, d: mujoco.MjData) -> bool:
+            step.timer += self.dt
+            return step.timer >= seconds
+
+        step.done = done
+        return step
+
+    def _dwell(self, label: str, seconds: float) -> Step:
+        return self._timed(label, seconds, lambda m, d: None)
 
     def _gripper(self, label: str, closed: bool) -> Step:
         ctrl = self.controller
-
-        def done(m: mujoco.MjModel, d: mujoco.MjData) -> bool:
-            step = self.steps[self.index]
-            step.timer += self.dt
-            return step.timer >= GRIP_SETTLE
-
-        return Step(
-            name=label,
-            start=lambda m, d: ctrl.set_gripper(d, closed),
-            done=done,
-        )
+        return self._timed(label, GRIP_SETTLE,
+                           lambda m, d: ctrl.set_gripper(d, closed))
 
     def _weld(self, label: str, eq_name: str, active: bool) -> Step:
         return Step(

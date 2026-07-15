@@ -17,11 +17,15 @@ from . import scene
 
 CONTROL_DT = 0.01  # seconds between IK/control updates (physics runs faster)
 MAX_LIN_SPEED = 0.5  # m/s target interpolation speed
-POS_TOL = 0.006  # m, waypoint completion tolerance
-ORI_TOL = 0.05  # rad-ish (rotational error norm) completion tolerance
+MAX_ANG_SPEED = 1.5  # rad/s target orientation interpolation speed
+POS_TOL = 0.006  # m, waypoint completion tolerance (physical pinch site)
+ORI_TOL = 0.05  # rad, waypoint orientation tolerance (physical pinch site)
+VEL_TOL = 0.02  # m/s, pinch site must be this settled to complete a waypoint
 
 GRIPPER_OPEN = 0.0
-GRIPPER_CLOSED = 255.0
+# Partial close sized for the Ø40 mm blanks: pads meet the part surface
+# instead of driving past it into each other (the hold itself is the weld).
+GRIPPER_CLOSED = 140.0
 
 
 def topdown_quat(yaw: float) -> np.ndarray:
@@ -77,20 +81,38 @@ class ArmController:
         """Start moving the end effector toward a new top-down waypoint."""
         self._goal_pos = np.asarray(pos, dtype=float).copy()
         self._goal_quat = topdown_quat(yaw)
-        # Orientation snaps to the goal immediately; position interpolates.
-        self._target_quat = self._goal_quat.copy()
 
-    def goal_reached(self) -> bool:
+    def goal_reached(self, data: mujoco.MjData) -> bool:
+        """A waypoint is complete only when the PHYSICAL pinch site has
+        arrived and settled — never trust the IK twin alone: the servos lag
+        it by ~0.2 s, which is enough to weld parts in mid-air."""
         if not np.allclose(self._target_pos, self._goal_pos, atol=1e-9):
             return False
-        err = self.ee_task.compute_error(self.configuration)
+        if not np.allclose(self._target_quat, self._goal_quat, atol=1e-9):
+            return False
         return (
-            np.linalg.norm(err[:3]) < POS_TOL
-            and np.linalg.norm(err[3:]) < ORI_TOL
+            self.physical_position_error(data) < POS_TOL
+            and self.physical_orientation_error(data) < ORI_TOL
+            and self.pinch_speed(data) < VEL_TOL
         )
 
-    def position_error(self) -> float:
-        return float(np.linalg.norm(self.ee_task.compute_error(self.configuration)[:3]))
+    def physical_position_error(self, data: mujoco.MjData) -> float:
+        pinch = data.site(scene.PINCH_SITE).xpos
+        return float(np.linalg.norm(pinch - self._goal_pos))
+
+    def physical_orientation_error(self, data: mujoco.MjData) -> float:
+        quat = np.empty(4)
+        mujoco.mju_mat2Quat(quat, data.site(scene.PINCH_SITE).xmat)
+        diff = np.empty(3)
+        mujoco.mju_subQuat(diff, self._goal_quat, quat)
+        return float(np.linalg.norm(diff))
+
+    def pinch_speed(self, data: mujoco.MjData) -> float:
+        vel = np.empty(6)
+        site_id = data.site(scene.PINCH_SITE).id
+        mujoco.mj_objectVelocity(self.model, data, mujoco.mjtObj.mjOBJ_SITE,
+                                 site_id, vel, 0)
+        return float(np.linalg.norm(vel[3:]))
 
     def tick(self, data: mujoco.MjData) -> None:
         """One control step: advance the interpolated target, solve IK, and
@@ -102,6 +124,17 @@ class ArmController:
             self._target_pos = self._goal_pos.copy()
         else:
             self._target_pos = self._target_pos + delta * (step / dist)
+
+        rot_delta = np.empty(3)
+        mujoco.mju_subQuat(rot_delta, self._goal_quat, self._target_quat)
+        angle = np.linalg.norm(rot_delta)
+        ang_step = MAX_ANG_SPEED * CONTROL_DT
+        if angle <= ang_step:
+            self._target_quat = self._goal_quat.copy()
+        else:
+            quat = self._target_quat.copy()
+            mujoco.mju_quatIntegrate(quat, rot_delta / angle, ang_step)
+            self._target_quat = quat
 
         target = mink.SE3.from_rotation_and_translation(
             mink.SO3(self._target_quat), self._target_pos
