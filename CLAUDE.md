@@ -26,6 +26,13 @@ spec `spec-tendwright-overview`).
 | `telemetry/` | Time-series ingestion + predictive maintenance | P5 |
 | `hardware/` | GRBL serial driver, hobby-arm driver, HIL wiring | P6 |
 
+## Running
+
+- `uv sync` — set up `.venv` with mujoco/mink/numpy.
+- `uv run python -m sim.run_cell` — P0 cell in the interactive viewer.
+- `uv run python -m sim.validate --verbose` — headless P0 validation
+  (contact policing, drop detection, per-step timeouts); exit 0 = pass.
+
 ## Rules
 
 - **Git identity:** personal repo — commit as `Kyle Bricker <kyle.bricker@gmail.com>`

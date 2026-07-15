@@ -1,0 +1,19 @@
+[project]
+name = "tendwright"
+version = "0.1.0"
+description = "Robotic CNC machine-tending cell — Python learning project (sim-first prototype ladder P0-P6)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco>=3.10",
+    "mink>=1.2",
+    "numpy>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sim"]
