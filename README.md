@@ -64,11 +64,12 @@ Each rung builds on the last. #0 is pure sim; hardware only slots in once a
 sim version exists. By the end you've built a miniature Hadrian cell in Python.
 
 ### P0 — Simulated cell digital twin
-Load a UR5e arm URDF, a table, a mock "CNC" box with a door, a bin of blanks,
-and a fixture in **PyBullet** (or MuJoCo). Script a hardcoded pick → load →
-"machining" delay → unload cycle.
-- **Learn:** URDF, forward/inverse kinematics, gripper constraints, scene setup
-- **Libraries:** `pybullet`, `numpy`, `roboticstoolbox-python` / `ikpy`
+Load a UR5e arm (MuJoCo Menagerie model), a table, a mock "CNC" box with a
+door, a bin of blanks, and a fixture in **MuJoCo**. Script a hardcoded pick →
+load → "machining" delay → unload cycle.
+- **Learn:** MJCF scene modeling (MuJoCo also loads URDF), forward/inverse
+  kinematics, gripper constraints, scene setup
+- **Libraries:** `mujoco`, `mink` (differential IK), `numpy`
 
 ### P1 — The cell orchestrator
 Drive the sequence with a real finite state machine. Run the "CNC" as a
@@ -81,7 +82,8 @@ error recovery.
 - **This is the single most "Hadrian-core" skill in the ladder.**
 
 ### P2 — Vision-guided picking
-Add a simulated camera in PyBullet; detect the blank's pose and feed pick
+Add a simulated camera in MuJoCo (offscreen rendering); detect the blank's
+pose and feed pick
 coordinates to the orchestrator. Then bring in a **webcam** over a bin and do
 the same with OpenCV + ArUco/AprilTags, including **hand-eye calibration**.
 - **Learn:** OpenCV, camera calibration, coordinate transforms, optionally a
@@ -124,13 +126,18 @@ Python/not-Python boundary physical.
 
 | Layer | Libraries |
 |-------|-----------|
-| Sim / digital twin | `pybullet`, `mujoco`, `genesis`, `roboticstoolbox-python`, `pinocchio`; RoboDK Python API |
-| Kinematics / planning | `roboticstoolbox-python`, `ikpy`, MoveIt2 (`rclpy`), Drake |
+| Sim / digital twin | `mujoco` (+ MuJoCo Menagerie models), `genesis`, `pinocchio`; RoboDK Python API |
+| Kinematics / planning | `mink`, `roboticstoolbox-python`, MoveIt2 (`rclpy`), Drake |
 | Robot comms | `ur_rtde` (UR), socket/URScript, `pymodbus`, `asyncua` (OPC UA), ROS2 `rclpy` |
 | CNC | `pygcode`, `pyserial` + GRBL, MTConnect agent/client |
 | Vision / ML | `opencv-python`, `numpy`, `pupil-apriltags`, `open3d`, `torch`, `scikit-learn`, `ultralytics` (YOLO) |
 | Orchestration | `asyncio`, `transitions` / `python-statemachine` |
 | MES / data | `FastAPI`, `SQLModel`/`SQLAlchemy`, Postgres/SQLite, `Streamlit`, InfluxDB/TimescaleDB, Grafana |
+
+**Project convention: dependencies must be actively maintained.** The sim
+stack is MuJoCo (`mujoco` + `mink` + vendored MuJoCo Menagerie models);
+PyBullet was rejected as stale (last release Jan 2025). Project tooling is
+`uv` with a `pyproject.toml`.
 
 ---
 
@@ -160,7 +167,7 @@ above the two controllers is Python you write.
 
 ## 7. Status & next steps
 
-- [ ] **P0** — Simulated cell digital twin (PyBullet UR5e load/unload)
+- [ ] **P0** — Simulated cell digital twin (MuJoCo UR5e load/unload)
 - [ ] **P1** — Cell orchestrator (state machine + OPC UA CNC handshake)
 - [ ] **P2** — Vision-guided picking (sim camera → webcam + AprilTags)
 - [ ] **P3** — Quality inspection ML
@@ -168,5 +175,5 @@ above the two controllers is Python you write.
 - [ ] **P5** — Telemetry & predictive maintenance
 - [ ] **P6** — Capstone: hardware-in-the-loop cell
 
-**Next:** scaffold P0 as runnable Python — a PyBullet scene with a UR5e loading
+**Next:** scaffold P0 as runnable Python — a MuJoCo scene with a UR5e loading
 and unloading a mock CNC — as the foundation the orchestrator builds on.

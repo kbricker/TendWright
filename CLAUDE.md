@@ -19,7 +19,7 @@ spec `spec-tendwright-overview`).
 
 | Folder | Component | Rungs |
 |---|---|---|
-| `sim/` | PyBullet digital twin (arm, mock CNC, bin, fixture) | P0 |
+| `sim/` | MuJoCo digital twin (arm, mock CNC, bin, fixture) | P0 |
 | `orchestrator/` | Cell FSM + OPC UA CNC handshake | P1 |
 | `vision/` | Pick-pose detection, calibration, inspection ML | P2, P3 |
 | `mes/` | FastAPI job queue + OEE + Streamlit dashboard | P4 |
@@ -35,6 +35,10 @@ spec `spec-tendwright-overview`).
 - **Public repo** — never commit secrets, tokens, or machine-specific paths.
 - **Dependencies:** the doc lists candidate libraries per layer, but every
   dependency still goes through the no-new-deps gate — Kyle's explicit yes
-  before adding anything.
+  before adding anything. Dependencies must be **actively maintained** — no
+  stale libraries (PyBullet was rejected for this; last release Jan 2025).
+- **Approved stack (P0, per Kyle 2026-07-15):** `mujoco`, `mink`, `numpy`;
+  `uv` + `pyproject.toml` for project tooling; MuJoCo Menagerie UR5e +
+  gripper model files vendored into the repo (not a dependency).
 - **Python:** simulation-first. Hardware code only lands after the sim version
   of the same rung works.
