@@ -1,7 +1,7 @@
 # Robotic CNC Machine-Tending Cell — Python Learning Project
 
-A hands-on project to understand where Python lives in an automated
-manufacturing cell (Hadrian-style), built as a ladder of prototypes that
+A hands-on project to understand where Python lives in a modern automated
+manufacturing cell, built as a ladder of prototypes that
 starts in pure simulation and grows into a real hobby-scale cell.
 
 **Core use case:** a robot arm tends a CNC machine. The loop never changes —
@@ -29,7 +29,7 @@ at the top.
 | 2 | Cell orchestration | The "cell controller" — sequences the loop, handshakes with the CNC, commands the robot, runs the state machine, recovers from faults |
 | 3 | Perception / vision / ML | Find the blank, verify part presence, estimate pick pose, inspect finished parts, detect tool wear |
 | 4 | Motion planning / digital twin | Generate & collision-check trajectories; simulate the whole cell before touching hardware |
-| 5 | MES / scheduling / job mgmt | The "Opus/Flow" layer — what runs next, WIP tracking, traceability, OEE/throughput, quality records |
+| 5 | MES / scheduling / job mgmt | The factory-software layer — what runs next, WIP tracking, traceability, OEE/throughput, quality records |
 | 6 | DFM / CAM automation | Ingest CAD (STEP), recognize features, estimate machinability/cost, parametrize toolpaths |
 
 ---
@@ -61,7 +61,8 @@ Python orchestrates, perceives, decides, and records above them.*
 ## 3. The prototype ladder
 
 Each rung builds on the last. #0 is pure sim; hardware only slots in once a
-sim version exists. By the end you've built a miniature Hadrian cell in Python.
+sim version exists. By the end you've built a miniature automated machining
+cell in Python.
 
 ### P0 — Simulated cell digital twin
 Load a UR5e arm (MuJoCo Menagerie model), a table, a mock "CNC" box with a
@@ -79,7 +80,8 @@ states IDLE / MACHINING / DONE / DOOR_OPEN. The orchestrator (`asyncio` +
 error recovery.
 - **Learn:** soft-real-time orchestration, industrial handshaking, OPC UA (the
   real protocol), fault handling
-- **This is the single most "Hadrian-core" skill in the ladder.**
+- **This is the most industry-core skill in the ladder — the heart of every
+  real machine-tending cell.**
 
 ### P2 — Vision-guided picking
 Add a simulated camera in MuJoCo (offscreen rendering); detect the blank's
@@ -94,17 +96,17 @@ the same with OpenCV + ArUco/AprilTags, including **hand-eye calibration**.
 A camera inspects the finished part: pass/fail on a defect, or a pixel→mm
 dimensional check. Generate synthetic defect images in sim to train, then
 validate on real photos.
-- **Learn:** ML for inspection (a literal Opus capability), synthetic data,
+- **Learn:** ML for inspection (a staple of factory software), synthetic data,
   anomaly detection
 - **Libraries:** `torch` or `scikit-learn`, `opencv`
 
-### P4 — Mini-Opus (MES + dashboard)
+### P4 — Mini-MES + dashboard
 A `FastAPI` + SQLite/Postgres backend with a job queue (part, program, qty),
 logging each cycle from the orchestrator (timings + P3 pass/fail), computing
 OEE/throughput, exposed via a `Streamlit` dashboard. The MES tells the
 orchestrator what to run next.
 - **Learn:** MES concepts, traceability, OEE — the web/data backend that *is*
-  Opus/Flow
+  the factory software
 
 ### P5 — Telemetry & predictive maintenance
 Ingest machine telemetry (spindle load, cycle time, vibration) into a
@@ -145,7 +147,7 @@ PyBullet was rejected as stale (last release Jan 2025). Project tooling is
 
 `rclpy` (Python) + MoveIt2 is a clean way to structure orchestration /
 perception / planning as nodes, and it's worth learning. But it adds real
-overhead, and Hadrian isn't ROS-centric. Recommended path: do **P0–P2 without
+overhead, and plenty of production cells aren't ROS-centric. Recommended path: do **P0–P2 without
 ROS** to learn the fundamentals unobscured, then optionally re-architect **P6
 in ROS2** — which also gives you a strong portfolio story about *why* a company
 might build its own orchestration layer instead of adopting ROS.
@@ -160,7 +162,7 @@ might build its own orchestration layer instead of adopting ROS.
 - Raspberry Pi or your laptop — the cell controller
 - Optional: limit switches / a cheap force sensor — handshake realism
 
-A complete miniature Hadrian cell for a few hundred dollars, where everything
+A complete miniature automated machining cell for a few hundred dollars, where everything
 above the two controllers is Python you write.
 
 ---
@@ -171,7 +173,7 @@ above the two controllers is Python you write.
 - [ ] **P1** — Cell orchestrator (state machine + OPC UA CNC handshake)
 - [ ] **P2** — Vision-guided picking (sim camera → webcam + AprilTags)
 - [ ] **P3** — Quality inspection ML
-- [ ] **P4** — Mini-Opus MES + dashboard
+- [ ] **P4** — Mini-MES + dashboard
 - [ ] **P5** — Telemetry & predictive maintenance
 - [ ] **P6** — Capstone: hardware-in-the-loop cell
 
