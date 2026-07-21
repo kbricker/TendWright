@@ -43,7 +43,16 @@ at the top of the `.scad`, re-render, then print:
 | `sw_hole_pitch`, `sw_hole_h`, `sw_hole_d` | 22.0 / 5.0 / 2.0 | calipers on the KW12-3 mounting holes (pitch, height above base, bore) |
 | `roller_x_offset` | 11.0 | roller contact point ahead of body center |
 | `lever_free_h`, `lever_pressed_h` | 19.0 / 16.5 | roller TOP above body base, lever free / fully pressed |
+| `sw_term_len` | 6.0 | bottom terminal protrusion below the body base (and note whether YOUR variant's terminals exit the bottom or the end) |
 | `bay_clear` | 0.4/side | switch drop-in fit, from the A1 tolerance test |
+
+**Pin stock:** the cross-pins span ~46 mm — that's a 2 mm dowel pin /
+music wire (or 2 mm filament) cut to ~50 mm, pressed into the far-wall
+pilot; M2 screws don't come that long.
+
+**Orientation check:** a switch flipped 180° pins perfectly and NEVER
+triggers (roller ends up outside the blank footprint) — sight the roller
+through the floor window, dead under pocket center, before pinning.
 
 **Bench test — switch operating force (the design's #1 open risk):** a
 machinable-wax blank weighs only ~30–40 g (≈0.3–0.4 N). A standard-force
