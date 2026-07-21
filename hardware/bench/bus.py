@@ -17,6 +17,8 @@ import serial
 from serial.tools import list_ports
 from scservo_sdk import COMM_SUCCESS, PacketHandler, PortHandler
 
+from hardware.errors import BenchError, make_run_tool
+
 BAUD = 1_000_000
 PROTOCOL_END = 0  # STS series is little-endian ("SCS_END = 0")
 
@@ -37,14 +39,6 @@ REG_PRESENT_TEMPERATURE = 63  # deg C
 # Feetech IDs 0-253 are all valid (254 is broadcast); a servo can sit at 0.
 SCAN_IDS = list(range(0, 254))
 POSITION_RANGE = (0, 4095)  # single-turn tick range, 2048 = center
-
-
-class BenchError(Exception):
-    """A user-facing failure: printed as one line + optional hint, exit 2."""
-
-    def __init__(self, message: str, hint: str | None = None):
-        super().__init__(message)
-        self.hint = hint
 
 
 @dataclass
@@ -251,28 +245,10 @@ class FeetechBus:
         self.write_u8(new_id, REG_LOCK, 1, "re-lock EEPROM")
 
 
-def run_tool(run) -> int:
-    """Shared main() wrapper: BenchError -> clean one-line exit code 2."""
-    try:
-        return run()
-    except BenchError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        if exc.hint:
-            print(f"hint:  {exc.hint}", file=sys.stderr)
-        return 2
-    except serial.SerialException as exc:
-        print(f"error: serial adapter lost mid-session ({exc})", file=sys.stderr)
-        print("hint:  servos keep bus power and HOLD their last command — "
-              "use the power switch, then reconnect and re-run scan",
-              file=sys.stderr)
-        return 2
-    except EOFError:
-        print("\naborted (stdin closed — pass --yes for scripted use)",
-              file=sys.stderr)
-        return 1
-    except KeyboardInterrupt:
-        print()
-        return 130
+# Servo-bus flavored CLI wrapper (the unplug hint is servo-specific).
+run_tool = make_run_tool(
+    "servos keep bus power and HOLD their last command — use the power "
+    "switch, then reconnect and re-run scan")
 
 
 def confirm(prompt: str) -> bool:
