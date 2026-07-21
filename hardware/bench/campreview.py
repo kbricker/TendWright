@@ -15,15 +15,20 @@ Usage: campreview [--camera N] [--width W] [--height H] [--calib FILE.npz]
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
-import cv2
-import numpy as np
-from pupil_apriltags import Detector
+# Must be set before cv2 imports: silences the native layer's WARN/ERROR
+# chatter so our clean one-line errors stay clean.
+os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
-from .bus import BenchError, run_tool
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+from pupil_apriltags import Detector  # noqa: E402
+
+from .bus import BenchError, run_tool  # noqa: E402
 
 TAG_FAMILY = "tag36h11"
 
@@ -68,7 +73,9 @@ def annotate(frame, detections, fps: float) -> None:
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, prog="python -m hardware.bench.campreview",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--camera", type=int, default=0, help="camera index")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
@@ -84,7 +91,18 @@ def run() -> int:
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
+    if not args.grab:
+        try:
+            cv2.namedWindow("campreview")
+        except cv2.error as exc:
+            raise BenchError(
+                "cannot open a display window (headless session?)",
+                "use --grab N to save frames without a window, or run over "
+                "`ssh -X cell1`",
+            ) from exc
+
     cap = open_camera(args.camera, args.width, args.height)
+    session = int(time.time())
     times: list[float] = []
     saved = 0
     try:
@@ -105,7 +123,7 @@ def run() -> int:
             annotate(frame, detections, fps)
 
             if args.grab:
-                path = outdir / f"campreview_{saved:03d}.png"
+                path = outdir / f"campreview_{session}_{saved:03d}.png"
                 cv2.imwrite(str(path), frame)
                 saved += 1
                 print(f"saved {path}  ({len(detections)} tags)")

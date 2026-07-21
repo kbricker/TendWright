@@ -19,18 +19,22 @@ COM port on Windows); override with `--port`.
 
 ## Assembly-day order
 
-1. **Before closing each joint** — connect that servo ALONE to the bus and
-   program its ID (base → gripper = 1 → 6):
+1. **Before closing each joint** — POWER OFF the bus, connect that servo
+   ALONE (two servos sharing the factory ID answer as one and can both be
+   re-ID'd together — the guard cannot see that), power on, then program
+   its ID (base → gripper = 1 → 6):
    `uv run python -m hardware.bench.set_id --new-id 1` … `--new-id 6`
 2. **After wiring the full chain** — `scan` should list exactly IDs 1–6,
    sane voltage (~7.4 V nominal supply) and room temperature.
-3. **Ranges + wiring order** — `monitor --ids 1-6`, move each joint by
-   hand, confirm the right column moves and note each joint's usable
-   tick range (feeds the jog soft limits and later the arm driver).
+3. **Ranges + wiring order** — `monitor --ids 1-6` (it cuts torque after
+   a confirm prompt — support the arm, it drops under gravity), move each
+   joint by hand, confirm the right column moves and note each joint's
+   usable tick range (feeds the jog soft limits and later the arm driver).
 4. **First powered motion** — `jog --id N` one joint at a time, small
    steps, hand near the power switch.
-5. **First trajectory** — `teach record`, move the arm through a simple
-   arc by hand, then `teach replay --speed 0.25` with the workspace clear.
+5. **First trajectory** — `teach record --out wave.json`, move the arm
+   through a simple arc by hand, then
+   `teach replay --in wave.json --speed 0.25` with the workspace clear.
 6. **Camera scouting** — `campreview` while trying wall-mount positions;
    check tag detection at
    candidate distances/angles (print `docs/bench-apriltags.html` at 100%
@@ -38,11 +42,19 @@ COM port on Windows); override with `--port`.
 
 ## Safety notes
 
-- `set_id` writes EEPROM — one servo on the bus at a time, always.
-- `jog` starts torque OFF and every unbound key is an e-stop; soft limits
-  default to 200 ticks inside the 0–4095 range until real joint limits
-  are measured (then pass `--min/--max`).
+- `set_id` writes EEPROM — power off, connect ONE servo, power on. Always.
+- `monitor` and `teach record` cut torque on every listed servo (after a
+  confirm prompt): a raised arm drops under gravity — support it first.
+- `jog` starts torque OFF (and enforces it) and every unbound key is an
+  e-stop (exit code 3); enabling torque re-syncs to the current hand-moved
+  position, so it holds in place. Soft limits default to 200 ticks inside
+  the 0–4095 range until real joint limits are measured (`--min/--max`).
 - `teach replay` defaults to 25% speed, prompts before moving, approaches
-  the start pose extra slowly, and torques off on exit or Ctrl+C.
+  the start pose slowly and polls until every joint has ARRIVED before
+  streaming frames, and torques off on exit or Ctrl+C.
+- Cleanup torque-offs are retried and never fail silently — if a servo
+  can't be confirmed safe you get a loud warning; the POWER SWITCH is the
+  real e-stop. If the USB adapter is yanked mid-session, servos keep bus
+  power and hold their last command — same answer: power switch.
 - All motion commands use modest servo-side speed/acceleration caps; the
   arm should never snap.

@@ -1,13 +1,14 @@
 """set_id — program a single loose STS3215 to a bus ID (1-6).
 
-Run this for each servo DURING assembly, before its joint closes up:
-connect exactly ONE servo to the bus, then:
+Run this for each servo DURING assembly, before its joint closes up.
+Procedure: POWER OFF the bus, connect exactly ONE servo, power on, then:
 
     uv run python -m hardware.bench.set_id --new-id 3
 
-Safety: refuses to write if it finds more or fewer than one servo on the
-bus (a broadcast ID write with several servos attached would set them ALL
-to the same ID).
+Safety: refuses to write unless exactly one ID answers on the bus. Note
+the guard counts *IDs*, not servos — two factory-fresh servos both at the
+default ID answer as one and can end up sharing the new ID (recoverable
+only by disconnecting one). Hence: one servo physically connected, always.
 
 Usage: set_id --new-id N [--port PORT] [--yes]
 """
@@ -17,11 +18,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .bus import MAX_SCAN_ID, BenchError, FeetechBus, run_tool
+from .bus import SCAN_IDS, BenchError, FeetechBus, confirm, run_tool
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, prog="python -m hardware.bench.set_id",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--new-id", type=int, required=True,
                         help="bus ID to program (1-6 for the SO-101 joints)")
     parser.add_argument("--port", default=None, help="serial port override")
@@ -35,11 +38,14 @@ def run() -> int:
 
     with FeetechBus(args.port) as bus:
         print(f"scanning bus on {bus.port_name} (full ID range, ~10s)...")
-        found = bus.scan(list(range(1, MAX_SCAN_ID + 1)), progress=True)
+        found = bus.scan(SCAN_IDS, progress=True)
 
         if not found:
-            raise BenchError("no servo answered on the bus",
-                             "check servo power (7.4V supply on) and the cable")
+            raise BenchError(
+                "no servo answered on the bus",
+                "check servo power (7.4V supply on) and the cable; two servos "
+                "sharing one ID also answer garbled — connect ONE servo only",
+            )
         if len(found) > 1:
             raise BenchError(
                 f"{len(found)} servos on the bus (IDs {found}) — refusing to "
@@ -56,11 +62,10 @@ def run() -> int:
             print(f"servo already has ID {args.new_id} — nothing to do")
             return 0
 
-        if not args.yes:
-            answer = input(f"program ID {current} -> {args.new_id}? [y/N] ")
-            if answer.strip().lower() != "y":
-                print("aborted")
-                return 1
+        if not args.yes and not confirm(
+                f"program ID {current} -> {args.new_id}? [y/N] "):
+            print("aborted")
+            return 1
 
         bus.change_id(current, args.new_id)
         if bus.ping(args.new_id) is None:

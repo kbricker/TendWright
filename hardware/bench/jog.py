@@ -10,6 +10,9 @@ Keys:
   q     quit (torque off)
   ANY OTHER KEY = E-STOP: torque off immediately and exit.
 
+Exit codes: 0 quit, 2 error, 3 operator e-stop, 130 Ctrl+C.
+Torque always starts OFF and is cut again on every exit path.
+
 Usage: jog --id N [--port PORT] [--step TICKS] [--min T] [--max T]
 """
 
@@ -22,11 +25,16 @@ from .bus import POSITION_RANGE, BenchError, FeetechBus, run_tool
 from .term import read_key
 
 CENTER = 2048
+JOG_SPEED = 300
+JOG_ACCELERATION = 30
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--id", type=int, required=True, dest="servo_id")
+    parser = argparse.ArgumentParser(
+        description=__doc__, prog="python -m hardware.bench.jog",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--id", type=int, required=True, dest="servo_id",
+                        help="servo bus ID to jog")
     parser.add_argument("--port", default=None, help="serial port override")
     parser.add_argument("--step", type=int, default=20, help="ticks per keypress")
     parser.add_argument("--min", type=int, default=POSITION_RANGE[0] + 200,
@@ -42,6 +50,9 @@ def run() -> int:
         if bus.ping(args.servo_id) is None:
             raise BenchError(f"servo {args.servo_id} did not answer",
                              "run the scan tool to see what is on the bus")
+        # Enforce the advertised starting state instead of assuming it: a
+        # previous tool may have died with torque latched on.
+        bus.set_torque(args.servo_id, False)
         target = bus.read_position(args.servo_id)
         step = args.step
         torque_on = False
@@ -70,11 +81,23 @@ def run() -> int:
                 elif key == "c":
                     delta = CENTER - target
                 elif key == "t":
-                    torque_on = not torque_on
-                    bus.set_torque(args.servo_id, torque_on)
-                    if not torque_on:
+                    if torque_on:
+                        bus.set_torque(args.servo_id, False)
+                        torque_on = False
+                        print("\ntorque OFF")
+                    else:
+                        # The joint may have been hand-moved (or sagged) while
+                        # torque was off, and the servo's goal register may be
+                        # stale from any earlier session. Re-sync the target
+                        # AND pre-load the goal to the current position while
+                        # still torque-off, so enabling torque holds in place
+                        # instead of lurching to an old goal.
                         target = bus.read_position(args.servo_id)
-                    print(f"\ntorque {'ON' if torque_on else 'OFF'}")
+                        bus.move_to(args.servo_id, target,
+                                    speed=JOG_SPEED, acceleration=JOG_ACCELERATION)
+                        bus.set_torque(args.servo_id, True)
+                        torque_on = True
+                        print(f"\ntorque ON — holding at {target}")
                     continue
                 elif key == "q":
                     print("\nquitting — torque off")
@@ -90,12 +113,13 @@ def run() -> int:
                 if clamped != target + delta:
                     print(f"\nsoft limit — clamped to {clamped}")
                 target = clamped
-                bus.move_to(args.servo_id, target, speed=300, acceleration=30)
+                bus.move_to(args.servo_id, target,
+                            speed=JOG_SPEED, acceleration=JOG_ACCELERATION)
                 pos = bus.read_position(args.servo_id)
-                print(f"\rtarget {target:>4}  actual {pos:>4}   ",
+                print(f"\rtarget {target:>4}  now {pos:>4} (moving)   ",
                       end="", flush=True)
         finally:
-            bus.set_torque(args.servo_id, False)
+            bus.safe_torque_off([args.servo_id])
 
 
 def main() -> int:

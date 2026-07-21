@@ -1,7 +1,7 @@
 """scan — enumerate the servo bus and report per-servo health.
 
-    uv run python -m hardware.bench.scan            # IDs 1-20 (fast)
-    uv run python -m hardware.bench.scan --full     # all IDs 1-252
+    uv run python -m hardware.bench.scan            # IDs 0-20 (fast)
+    uv run python -m hardware.bench.scan --full     # all IDs 0-253
 
 Usage: scan [--port PORT] [--full]
 """
@@ -11,17 +11,19 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .bus import MAX_SCAN_ID, BenchError, FeetechBus, run_tool
+from .bus import SCAN_IDS, BenchError, FeetechBus, run_tool
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, prog="python -m hardware.bench.scan",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--port", default=None, help="serial port override")
     parser.add_argument("--full", action="store_true",
-                        help="scan the full ID range 1-252 (slower)")
+                        help="scan the full ID range 0-253 (slower)")
     args = parser.parse_args()
 
-    ids = list(range(1, (MAX_SCAN_ID if args.full else 20) + 1))
+    ids = SCAN_IDS if args.full else list(range(0, 21))
     with FeetechBus(args.port) as bus:
         print(f"scanning {bus.port_name} (IDs {ids[0]}-{ids[-1]})...")
         found = bus.scan(ids, progress=args.full)

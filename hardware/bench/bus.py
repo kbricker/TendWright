@@ -2,7 +2,7 @@
 
 Isolates every scservo_sdk detail (registers, endianness, comm-result
 handling) so the tools stay tiny and an assembly-day register surprise is
-a one-file fix. All hardware/port failures surface as BenchError with a
+a one-file fix. All hardware/port failures surface as BenchError with an
 actionable hint — tools convert those to clean one-line exits.
 """
 
@@ -34,7 +34,8 @@ REG_PRESENT_POSITION = 56  # u16
 REG_PRESENT_VOLTAGE = 62  # units of 0.1 V
 REG_PRESENT_TEMPERATURE = 63  # deg C
 
-MAX_SCAN_ID = 252
+# Feetech IDs 0-253 are all valid (254 is broadcast); a servo can sit at 0.
+SCAN_IDS = list(range(0, 254))
 POSITION_RANGE = (0, 4095)  # single-turn tick range, 2048 = center
 
 
@@ -123,6 +124,13 @@ class FeetechBus:
         self.close()
 
     # ------------------------------------------------------------------ raw
+    def _clear_latch(self) -> None:
+        """Reset the SDK's is_using flag. An exception mid-transaction leaves
+        it latched True, after which EVERY call returns COMM_PORT_BUSY without
+        touching the wire — fatal for torque-off cleanup paths. We are strictly
+        single-threaded, so a set flag at call entry is always stale."""
+        self._port.is_using = False
+
     def _check(self, servo_id: int, comm: int, error: int, what: str) -> None:
         if comm != COMM_SUCCESS:
             raise BenchError(
@@ -138,26 +146,31 @@ class FeetechBus:
             )
 
     def read_u8(self, servo_id: int, addr: int, what: str) -> int:
+        self._clear_latch()
         value, comm, error = self._packet.read1ByteTxRx(self._port, servo_id, addr)
         self._check(servo_id, comm, error, what)
         return value
 
     def read_u16(self, servo_id: int, addr: int, what: str) -> int:
+        self._clear_latch()
         value, comm, error = self._packet.read2ByteTxRx(self._port, servo_id, addr)
         self._check(servo_id, comm, error, what)
         return value
 
     def write_u8(self, servo_id: int, addr: int, value: int, what: str) -> None:
+        self._clear_latch()
         comm, error = self._packet.write1ByteTxRx(self._port, servo_id, addr, value)
         self._check(servo_id, comm, error, what)
 
     def write_u16(self, servo_id: int, addr: int, value: int, what: str) -> None:
+        self._clear_latch()
         comm, error = self._packet.write2ByteTxRx(self._port, servo_id, addr, value)
         self._check(servo_id, comm, error, what)
 
     # ------------------------------------------------------------- services
     def ping(self, servo_id: int) -> int | None:
         """Model number if a servo answers at this ID, else None."""
+        self._clear_latch()
         model, comm, _error = self._packet.ping(self._port, servo_id)
         return model if comm == COMM_SUCCESS else None
 
@@ -196,6 +209,31 @@ class FeetechBus:
             f"torque {'on' if enabled else 'off'}",
         )
 
+    def safe_torque_off(self, servo_ids: list[int]) -> None:
+        """Best-effort torque cut for cleanup/e-stop paths: clears the SDK
+        latch, retries each servo, and NEVER fails silently — any servo that
+        could not be safed is shouted to stderr (the power switch is then the
+        real e-stop)."""
+        failed: list[int] = []
+        for servo_id in servo_ids:
+            for attempt in range(3):
+                try:
+                    self._clear_latch()
+                    self.set_torque(servo_id, False)
+                    break
+                except (BenchError, serial.SerialException):
+                    if attempt == 2:
+                        failed.append(servo_id)
+                    else:
+                        time.sleep(0.05)
+        if failed:
+            print(
+                f"\n*** WARNING: could not confirm torque OFF for servo(s) "
+                f"{failed} — the arm may still be energized and holding. "
+                f"Cut power at the switch before touching it. ***",
+                file=sys.stderr,
+            )
+
     def move_to(self, servo_id: int, position: int, speed: int = 400,
                 acceleration: int = 30) -> None:
         """Command a position with modest speed/acceleration defaults."""
@@ -222,6 +260,21 @@ def run_tool(run) -> int:
         if exc.hint:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
+    except serial.SerialException as exc:
+        print(f"error: serial adapter lost mid-session ({exc})", file=sys.stderr)
+        print("hint:  servos keep bus power and HOLD their last command — "
+              "use the power switch, then reconnect and re-run scan",
+              file=sys.stderr)
+        return 2
+    except EOFError:
+        print("\naborted (stdin closed — pass --yes for scripted use)",
+              file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print()
         return 130
+
+
+def confirm(prompt: str) -> bool:
+    """y/yes confirmation (EOFError handled by run_tool)."""
+    return input(prompt).strip().lower() in ("y", "yes")

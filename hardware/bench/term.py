@@ -30,6 +30,14 @@ else:
     import tty
 
     def read_key(timeout: float | None = None) -> str | None:
+        if not sys.stdin.isatty():
+            from .bus import BenchError
+
+            raise BenchError(
+                "this tool needs an interactive terminal",
+                "allocate one: `ssh -t cell1 '...'` (note -t), or run it "
+                "from a shell on the box",
+            )
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:
