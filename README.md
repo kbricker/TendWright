@@ -73,13 +73,18 @@ load → "machining" delay → unload cycle.
 - **Libraries:** `mujoco`, `mink` (differential IK), `numpy`
 
 ### P1 — The cell orchestrator
-Drive the sequence with a real finite state machine. Run the "CNC" as a
-*separate* async service exposing an **OPC UA** interface (`asyncua`) with
-states IDLE / MACHINING / DONE / DOOR_OPEN. The orchestrator (`asyncio` +
-`transitions`) commands the robot and waits on CNC signals, with timeouts and
-error recovery.
-- **Learn:** soft-real-time orchestration, industrial handshaking, OPC UA (the
-  real protocol), fault handling
+Drive the sequence with a real finite state machine — **hand-rolled** on a
+shared plain-Python FSM base class (states, transitions, guards, hooks,
+introspection; no FSM library), zero new dependencies. The "CNC" is a
+**mock cell**: a MockCell interface with a sim backend (the P0 cell), a
+scriptable fake, and a slot for the physical mock bay (printed nest
+fixture + part-present switch via the Pico bridge — see the mock-bay
+plan). Command-then-verify throughout: every load/unload is confirmed by
+the part-present sensor, never assumed; faults recover in place with a
+retry budget. (An OPC UA CNC handshake returns when a real CNC does,
+P6-era.)
+- **Learn:** soft-real-time orchestration, FSM design, sensor-verified
+  handshaking, fault handling
 - **This is the most industry-core skill in the ladder — the heart of every
   real machine-tending cell.**
 
@@ -133,7 +138,7 @@ Python/not-Python boundary physical.
 | Robot comms | `ur_rtde` (UR), socket/URScript, `pymodbus`, `asyncua` (OPC UA), ROS2 `rclpy` |
 | CNC | `pygcode`, `pyserial` + GRBL, MTConnect agent/client |
 | Vision / ML | `opencv-python`, `numpy`, `pupil-apriltags`, `open3d`, `torch`, `scikit-learn`, `ultralytics` (YOLO) |
-| Orchestration | `asyncio`, `transitions` / `python-statemachine` |
+| Orchestration | plain Python (hand-rolled FSM base — see `orchestrator/fsm.py`), `asyncio` later if the cell goes concurrent |
 | MES / data | `FastAPI`, `SQLModel`/`SQLAlchemy`, Postgres/SQLite, `Streamlit`, InfluxDB/TimescaleDB, Grafana |
 
 **Project convention: dependencies must be actively maintained.** The sim
@@ -170,24 +175,28 @@ above the two controllers is Python you write.
 ## 7. Status & next steps
 
 - [x] **P0** — Simulated cell digital twin (MuJoCo UR5e load/unload)
-- [ ] **P1** — Cell orchestrator (state machine + OPC UA CNC handshake)
+- [x] **P1** — Cell orchestrator (hand-rolled FSM + mock cell, command-then-verify)
 - [ ] **P2** — Vision-guided picking (sim camera → webcam + AprilTags)
 - [ ] **P3** — Quality inspection ML
 - [ ] **P4** — Mini-MES + dashboard
 - [ ] **P5** — Telemetry & predictive maintenance
 - [ ] **P6** — Capstone: hardware-in-the-loop cell
 
-**Running P0** (requires [uv](https://docs.astral.sh/uv/)):
+**Running** (requires [uv](https://docs.astral.sh/uv/)):
 
 ```sh
-uv sync                                  # create .venv, install mujoco/mink/numpy
-uv run python -m sim.run_cell            # watch the tending cycle in the viewer
-uv run python -m sim.validate --verbose  # headless validation (collisions/drops)
+uv sync                                    # create .venv, install deps
+uv run python -m sim.run_cell              # P0: scripted loop in the viewer
+uv run python -m sim.validate --verbose    # P0: headless validation
+uv run python -m orchestrator.run_cell     # P1: the FSM drives the cell (--fault for a live pick-miss recovery)
+uv run python -m orchestrator.validate     # P1: headless (happy path + 3 fault scenarios)
 ```
 
 P0 simplification to revisit: the gripper fingers close around the part for
-looks, but the hold itself is a toggled weld constraint (deterministic), and
-the fixture clamp works the same way.
+looks, but the hold itself is a toggled weld constraint (deterministic, and
+now proximity-guarded — closing on air grabs nothing); the fixture clamp
+works the same way.
 
-**Next:** P1 — drive the cycle with a real FSM and run the mock CNC as a
-separate OPC UA service (`asyncua`), replacing P0's hardcoded script.
+**Next:** the physical mock CNC bay (printed nest fixture + part-present
+switch + Pico bridge) so the same FSM can run against real sensors, then
+P2 vision-guided picking.

@@ -1,11 +1,12 @@
-"""The scripted P0 machine-tending cycle.
+"""Machine-tending motion programs for the sim cell.
 
-A flat list of steps (move / gripper / weld / door / dwell) is generated for
-each part and executed one at a time: pick a blank from the bin, load it into
-the CNC fixture, clamp, close the door, "machine" it, then unload the
-finished part to the outfeed tray. After all parts are done the blanks
-respawn in the bin and the loop starts over. P1 replaces this hardcoded
-script with a real FSM + OPC UA handshake.
+StepProgram builds waypoint/actuation step lists for each cell task (pick,
+load, machine, unload) against the P0 scene. Two consumers:
+
+  * TendingCycle — the P0 scripted demo loop (concatenates every segment
+    and plays them forever);
+  * the P1 orchestrator's sim backend (orchestrator/simcell.py) — runs one
+    segment at a time under FSM control.
 """
 
 from __future__ import annotations
@@ -29,8 +30,10 @@ CNC_STAGE = np.array([0.35, 0.24, 0.90])  # in front of the door opening
 CNC_ENTRY_Z = 0.88  # travel height inside the enclosure (clears the door-opening top edge)
 SEAT_Z = scene.FIXTURE_SEAT[2] + 0.006  # pinch height at the seated part
 TRAY_PLACE_Z = 0.79
-MACHINING_TIME = 2.0  # seconds of simulated "cutting"
+MACHINING_TIME = 2.0  # seconds of simulated "cutting" (P0 scripted loop)
 GRIP_SETTLE = 0.4  # seconds for the fingers to close/open around a part
+
+SAFE_POSE = np.array([0.35, -0.10, TRAVEL_Z])  # neutral spot over open table
 
 
 @dataclass
@@ -41,21 +44,15 @@ class Step:
     timer: float = 0.0
 
 
-class TendingCycle:
-    """Executes the scripted cycle; call tick() once per control step."""
+class StepProgram:
+    """Builds step lists for cell tasks; stateless between calls."""
 
-    def __init__(self, model: mujoco.MjModel, controller: ArmController, dt: float):
-        self.model = model
+    def __init__(self, controller: ArmController, dt: float):
         self.controller = controller
         self.dt = dt
-        self.loops_completed = 0
-        self.parts_completed = 0
-        self.steps: list[Step] = self._build_loop()
-        self.index = 0
-        self._step_started = False
 
     # ------------------------------------------------------------- primitives
-    def _move(self, label: str, pos: np.ndarray, yaw: float = YAW) -> Step:
+    def move(self, label: str, pos: np.ndarray, yaw: float = YAW) -> Step:
         ctrl = self.controller
         return Step(
             name=label,
@@ -63,8 +60,8 @@ class TendingCycle:
             done=lambda m, d: ctrl.goal_reached(d),
         )
 
-    def _timed(self, label: str, seconds: float,
-               start: Callable[[mujoco.MjModel, mujoco.MjData], None]) -> Step:
+    def timed(self, label: str, seconds: float,
+              start: Callable[[mujoco.MjModel, mujoco.MjData], None]) -> Step:
         """A step that runs `start` and completes after `seconds` of sim time.
         The done() closure captures its own Step, so it stays correct no
         matter which step is current when it is called."""
@@ -77,22 +74,37 @@ class TendingCycle:
         step.done = done
         return step
 
-    def _dwell(self, label: str, seconds: float) -> Step:
-        return self._timed(label, seconds, lambda m, d: None)
+    def dwell(self, label: str, seconds: float) -> Step:
+        return self.timed(label, seconds, lambda m, d: None)
 
-    def _gripper(self, label: str, closed: bool) -> Step:
+    def gripper(self, label: str, closed: bool) -> Step:
         ctrl = self.controller
-        return self._timed(label, GRIP_SETTLE,
-                           lambda m, d: ctrl.set_gripper(d, closed))
+        return self.timed(label, GRIP_SETTLE,
+                          lambda m, d: ctrl.set_gripper(d, closed))
 
-    def _weld(self, label: str, eq_name: str, active: bool) -> Step:
+    def weld(self, label: str, eq_name: str, active: bool) -> Step:
         return Step(
             name=label,
             start=lambda m, d: scene.set_weld_active(m, d, eq_name, active),
             done=lambda m, d: True,
         )
 
-    def _door(self, label: str, open_: bool) -> Step:
+    GRASP_RANGE = 0.05  # m — a grasp weld only latches within this reach
+
+    def grasp_on(self, part: str) -> Step:
+        """Activate the grasp weld ONLY if the part is actually between the
+        fingers — closing on air (or on a part that fell elsewhere) grabs
+        nothing, like a real gripper."""
+
+        def start(m: mujoco.MjModel, d: mujoco.MjData) -> None:
+            pinch = d.site(scene.PINCH_SITE).xpos
+            part_pos = d.joint(f"{part}_free").qpos[:3]
+            if np.linalg.norm(pinch - part_pos) <= self.GRASP_RANGE:
+                scene.set_weld_active(m, d, scene.GRASP_EQ[part], True)
+
+        return Step(name=f"{part}: grasp on", start=start, done=lambda m, d: True)
+
+    def door(self, label: str, open_: bool) -> Step:
         ctrl = self.controller
         return Step(
             name=label,
@@ -100,82 +112,139 @@ class TendingCycle:
             done=lambda m, d: ctrl.door_at(d, open_),
         )
 
-    def _mark_finished(self, part: str) -> Step:
+    def mark_finished(self, part: str) -> Step:
         def start(m: mujoco.MjModel, d: mujoco.MjData) -> None:
             m.geom(f"{part}_geom").rgba = scene.FINISHED_RGBA
 
         return Step(name=f"{part}: machined", start=start, done=lambda m, d: True)
 
-    def _respawn(self) -> Step:
+    def respawn(self) -> Step:
         def start(m: mujoco.MjModel, d: mujoco.MjData) -> None:
             scene.respawn_parts(m, d)
 
         return Step(name="respawn blanks", start=start, done=lambda m, d: True)
 
-    def _count_part(self, part: str) -> Step:
-        def start(m: mujoco.MjModel, d: mujoco.MjData) -> None:
-            self.parts_completed += 1
-
-        return Step(name=f"{part}: cycle complete", start=start, done=lambda m, d: True)
-
-    # ------------------------------------------------------------ the script
-    def _part_steps(self, part: str) -> list[Step]:
+    # -------------------------------------------------------------- segments
+    def pick(self, part: str, grasp: bool = True) -> list[Step]:
+        """Pick a blank from its bin slot. grasp=False induces a clean miss
+        for fault-recovery validation: the arm goes through the motions but
+        never closes the fingers or attaches, leaving the blank untouched
+        in its slot (so a retry can genuinely succeed)."""
         bin_pos = scene.BIN_SLOTS[part]
-        tray_pos = scene.TRAY_SLOTS[part]
+        above = np.array([bin_pos[0], bin_pos[1], TRAVEL_Z])
+        at = np.array([bin_pos[0], bin_pos[1], BIN_GRASP_Z])
+        steps = [
+            self.move(f"{part}: above bin", above),
+            self.move(f"{part}: descend to blank", at),
+        ]
+        if grasp:
+            steps.append(self.gripper(f"{part}: close gripper", closed=True))
+            steps.append(self.grasp_on(part))
+        steps.append(self.move(f"{part}: lift blank", above))
+        return steps
+
+    def load(self, part: str) -> list[Step]:
+        """Carry the held blank into the CNC and seat it in the fixture."""
         seat = scene.FIXTURE_SEAT
-        above_bin = np.array([bin_pos[0], bin_pos[1], TRAVEL_Z])
-        at_bin = np.array([bin_pos[0], bin_pos[1], BIN_GRASP_Z])
+        above_seat = np.array([seat[0], seat[1], CNC_ENTRY_Z])
+        at_seat = np.array([seat[0], seat[1], SEAT_Z])
+        return [
+            self.door(f"{part}: door open (load)", open_=True),
+            self.move(f"{part}: stage at door", CNC_STAGE),
+            self.move(f"{part}: enter CNC", above_seat),
+            self.move(f"{part}: lower into fixture", at_seat),
+            self.weld(f"{part}: clamp on", scene.CLAMP_EQ[part], True),
+            self.weld(f"{part}: grasp off", scene.GRASP_EQ[part], False),
+            self.gripper(f"{part}: open gripper", closed=False),
+            self.move(f"{part}: raise clear", above_seat),
+            self.move(f"{part}: exit CNC", CNC_STAGE),
+            self.door(f"{part}: door close", open_=False),
+        ]
+
+    def machine(self, part: str, seconds: float = MACHINING_TIME) -> list[Step]:
+        return [
+            self.dwell(f"{part}: machining", seconds),
+            self.mark_finished(part),
+        ]
+
+    def unload(self, part: str) -> list[Step]:
+        """Take the finished part out of the fixture to its tray slot."""
+        seat = scene.FIXTURE_SEAT
+        tray_pos = scene.TRAY_SLOTS[part]
         above_seat = np.array([seat[0], seat[1], CNC_ENTRY_Z])
         at_seat = np.array([seat[0], seat[1], SEAT_Z])
         above_tray = np.array([tray_pos[0], tray_pos[1], TRAVEL_Z])
         at_tray = np.array([tray_pos[0], tray_pos[1], TRAY_PLACE_Z])
-        grasp = scene.GRASP_EQ[part]
-        clamp = scene.CLAMP_EQ[part]
-
         return [
-            # --- pick a blank from the bin
-            self._move(f"{part}: above bin", above_bin),
-            self._move(f"{part}: descend to blank", at_bin),
-            self._gripper(f"{part}: close gripper", closed=True),
-            self._weld(f"{part}: grasp on", grasp, True),
-            self._move(f"{part}: lift blank", above_bin),
-            # --- load it into the CNC
-            self._door(f"{part}: door open (load)", open_=True),
-            self._move(f"{part}: stage at door", CNC_STAGE),
-            self._move(f"{part}: enter CNC", above_seat),
-            self._move(f"{part}: lower into fixture", at_seat),
-            self._weld(f"{part}: clamp on", clamp, True),
-            self._weld(f"{part}: grasp off", grasp, False),
-            self._gripper(f"{part}: open gripper", closed=False),
-            self._move(f"{part}: raise clear", above_seat),
-            self._move(f"{part}: exit CNC", CNC_STAGE),
-            self._door(f"{part}: door close", open_=False),
-            # --- machine it
-            self._dwell(f"{part}: machining", MACHINING_TIME),
-            self._mark_finished(part),
-            # --- unload to the tray
-            self._door(f"{part}: door open (unload)", open_=True),
-            self._move(f"{part}: re-enter CNC", above_seat),
-            self._move(f"{part}: down to part", at_seat),
-            self._gripper(f"{part}: close gripper", closed=True),
-            self._weld(f"{part}: grasp on", grasp, True),
-            self._weld(f"{part}: clamp off", clamp, False),
-            self._move(f"{part}: raise part", above_seat),
-            self._move(f"{part}: exit with part", CNC_STAGE),
-            self._door(f"{part}: door close (idle)", open_=False),
-            self._move(f"{part}: above tray", above_tray),
-            self._move(f"{part}: lower to tray", at_tray),
-            self._weld(f"{part}: grasp off", grasp, False),
-            self._gripper(f"{part}: open gripper", closed=False),
-            self._move(f"{part}: retract", above_tray),
-            self._count_part(part),
+            self.door(f"{part}: door open (unload)", open_=True),
+            self.move(f"{part}: re-enter CNC", above_seat),
+            self.move(f"{part}: down to part", at_seat),
+            self.gripper(f"{part}: close gripper", closed=True),
+            self.grasp_on(part),
+            self.weld(f"{part}: clamp off", scene.CLAMP_EQ[part], False),
+            self.move(f"{part}: raise part", above_seat),
+            self.move(f"{part}: exit with part", CNC_STAGE),
+            self.door(f"{part}: door close (idle)", open_=False),
+            self.move(f"{part}: above tray", above_tray),
+            self.move(f"{part}: lower to tray", at_tray),
+            self.weld(f"{part}: grasp off", scene.GRASP_EQ[part], False),
+            self.gripper(f"{part}: open gripper", closed=False),
+            self.move(f"{part}: retract", above_tray),
         ]
 
-    def _build_loop(self) -> list[Step]:
+    def retract_to_safe(self) -> list[Step]:
+        """Recovery: release EVERY hold and park the arm at a neutral pose.
+
+        Unconditionally deactivates all grasp AND clamp welds — a fault can
+        strike before the caller's bookkeeping knows which part is held or
+        clamped (e.g. mid-fetch, mid-load), and a leaked weld either drags a
+        part around welded to an open gripper or leaves the vise clamped on
+        a part the controller has forgotten."""
         steps: list[Step] = []
         for part in scene.PARTS:
-            steps.extend(self._part_steps(part))
-        steps.append(self._respawn())
+            steps.append(self.weld(f"{part}: grasp off (recover)",
+                                   scene.GRASP_EQ[part], False))
+            steps.append(self.weld(f"{part}: clamp off (recover)",
+                                   scene.CLAMP_EQ[part], False))
+        steps.extend([
+            self.gripper("recover: open gripper", closed=False),
+            self.move("recover: park", SAFE_POSE),
+            self.door("recover: door close", open_=False),
+        ])
+        return steps
+
+
+class TendingCycle:
+    """The P0 scripted demo loop: every segment for every part, forever."""
+
+    def __init__(self, model: mujoco.MjModel, controller: ArmController, dt: float):
+        self.model = model
+        self.controller = controller
+        self.dt = dt
+        self.program = StepProgram(controller, dt)
+        self.loops_completed = 0
+        self.parts_completed = 0
+        self.steps: list[Step] = self._build_loop()
+        self.index = 0
+        self._step_started = False
+
+    def _count_part(self, part: str) -> Step:
+        def start(m: mujoco.MjModel, d: mujoco.MjData) -> None:
+            self.parts_completed += 1
+
+        return Step(name=f"{part}: cycle complete", start=start,
+                    done=lambda m, d: True)
+
+    def _build_loop(self) -> list[Step]:
+        p = self.program
+        steps: list[Step] = []
+        for part in scene.PARTS:
+            steps.extend(p.pick(part))
+            steps.extend(p.load(part))
+            steps.extend(p.machine(part))
+            steps.extend(p.unload(part))
+            steps.append(self._count_part(part))
+        steps.append(p.respawn())
         return steps
 
     # --------------------------------------------------------------- runtime
