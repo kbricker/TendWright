@@ -33,6 +33,15 @@ spec `spec-tendwright-overview`).
 - `uv run python -m sim.validate --verbose` — headless P0 validation
   (contact policing, drop detection, per-step timeouts); exit 0 = pass.
 
+## Cell controller (hardware bench)
+
+- **cell1** — Minisforum UM350 (Ryzen 3550H, 8GB), Ubuntu 24.04, headless on
+  Kyle's bench. Runs the camera + arm + Pico at P2+.
+- Access: `ssh cell1` (alias in `~/.ssh/config`; key auth, works for Kyle and
+  spark — same Windows user). User `kyle` is in `dialout`.
+- Two more identical UM350s are spares/future roles (MES box etc.), not yet
+  imaged.
+
 ## Rules
 
 - **Git identity:** personal repo — commit as `Kyle Bricker <kyle.bricker@gmail.com>`
