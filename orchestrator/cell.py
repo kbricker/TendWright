@@ -16,6 +16,7 @@ detect; whether a part is actually seated is always the sensor's word.
 
 from __future__ import annotations
 
+import time
 from typing import Protocol
 
 
@@ -95,24 +96,24 @@ class PicoCell:
     raise until that exists (P6-era)."""
 
     def __init__(self, port: str | None = None):
-        # Deferred import: the reader module lands with plan #619.
-        from hardware.pico import NestReader  # type: ignore[import-not-found]
+        try:
+            # Deferred import: the reader module lands with plan #619.
+            from hardware.pico import NestReader  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "PicoCell needs hardware/pico (the Pico switch bridge) — "
+                "that module lands with plan #619") from exc
 
         self._reader = NestReader(port)
-        import time as _time
-
-        self._clock = _time.monotonic
 
     def part_present(self) -> bool:
         return self._reader.nest_state()
 
     def now(self) -> float:
-        return self._clock()
+        return time.monotonic()
 
     def dwell(self, seconds: float) -> None:
-        import time as _time
-
-        _time.sleep(seconds)
+        time.sleep(seconds)
 
     def mark_machined(self) -> None:
         pass

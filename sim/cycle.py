@@ -192,12 +192,20 @@ class StepProgram:
             self.move(f"{part}: retract", above_tray),
         ]
 
-    def retract_to_safe(self, part: str | None = None) -> list[Step]:
-        """Release everything and park the arm at a neutral pose (recovery)."""
+    def retract_to_safe(self) -> list[Step]:
+        """Recovery: release EVERY hold and park the arm at a neutral pose.
+
+        Unconditionally deactivates all grasp AND clamp welds — a fault can
+        strike before the caller's bookkeeping knows which part is held or
+        clamped (e.g. mid-fetch, mid-load), and a leaked weld either drags a
+        part around welded to an open gripper or leaves the vise clamped on
+        a part the controller has forgotten."""
         steps: list[Step] = []
-        if part is not None:
+        for part in scene.PARTS:
             steps.append(self.weld(f"{part}: grasp off (recover)",
                                    scene.GRASP_EQ[part], False))
+            steps.append(self.weld(f"{part}: clamp off (recover)",
+                                   scene.CLAMP_EQ[part], False))
         steps.extend([
             self.gripper("recover: open gripper", closed=False),
             self.move("recover: park", SAFE_POSE),

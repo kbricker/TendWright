@@ -99,10 +99,14 @@ def main() -> int:
     args = parser.parse_args()
 
     failures: list[str] = []
-    scenario_fake_flaky_pick(args.verbose, failures)
-    scenario_fake_never_seats(args.verbose, failures)
-    scenario_sim_pick_miss(args.verbose, failures)
-    scenario_sim_happy(args.verbose, failures)
+    try:
+        scenario_sim_happy(args.verbose, failures)
+        scenario_sim_pick_miss(args.verbose, failures)
+        scenario_fake_never_seats(args.verbose, failures)
+        scenario_fake_flaky_pick(args.verbose, failures)
+    except KeyboardInterrupt:
+        print()
+        return 130
 
     if failures:
         print(f"\nFAIL — {len(failures)} check(s):")

@@ -6,8 +6,11 @@ later) and they should all share one simple, fully-understood core.
 
 Usage: subclass StateMachine, declare STATES / INITIAL / TRANSITIONS, and
 optionally define `on_enter_<STATE>` / `on_exit_<STATE>` methods. Fire
-events with .fire(event, **data); hooks may themselves fire follow-up
-events (the state is committed before on_enter runs, so chaining is safe).
+events with .fire(event, **data); on_enter hooks may themselves fire
+follow-up events (the state is committed before on_enter runs, so
+chaining is safe). Firing from an on_exit hook is FORBIDDEN and raises —
+exit hooks run before the transition commits, so an inner fire would
+corrupt the state; keep exit hooks to cleanup only.
 
     class Door(StateMachine):
         STATES = ("OPEN", "CLOSED")
@@ -59,6 +62,7 @@ class StateMachine:
     def __init__(self) -> None:
         self._validate_definition()
         self._state = self.INITIAL
+        self._in_exit_hook = False
         self.history: list[HistoryEntry] = []
         self._run_hook("on_enter", self._state)
 
@@ -71,11 +75,20 @@ class StateMachine:
         if self.INITIAL not in self.STATES:
             raise FsmError(
                 f"{type(self).__name__}: INITIAL {self.INITIAL!r} not in STATES")
+        if self.HISTORY_LIMIT < 1:
+            raise FsmError(f"{type(self).__name__}: HISTORY_LIMIT must be >= 1")
         for t in self.TRANSITIONS:
             if t.source != "*" and t.source not in self.STATES:
                 raise FsmError(f"transition {t.event!r}: unknown source {t.source!r}")
             if t.target not in self.STATES:
                 raise FsmError(f"transition {t.event!r}: unknown target {t.target!r}")
+        # A typo'd hook name would otherwise be silently skipped forever.
+        for attr in dir(self):
+            for prefix in ("on_enter_", "on_exit_"):
+                if attr.startswith(prefix) and attr[len(prefix):] not in self.STATES:
+                    raise FsmError(
+                        f"{type(self).__name__}: hook {attr!r} does not match "
+                        f"any declared state")
 
     # ---------------------------------------------------------- introspection
     @property
@@ -113,11 +126,26 @@ class StateMachine:
     # ---------------------------------------------------------------- firing
     def fire(self, event: str, **data: Any) -> str:
         """Fire an event; returns the new state. Raises FsmError if no
-        transition matches (unknown event OR event not legal in this state)."""
+        transition matches (unknown event OR event not legal in this state),
+        if called from inside an on_exit hook, or if a guard raises."""
+        if self._in_exit_hook:
+            raise FsmError(
+                f"{type(self).__name__}: fire({event!r}) called from an "
+                f"on_exit hook — exit hooks must not fire events")
         for t in self.matching(event):
-            if t.guard is None or t.guard(self, **data):
+            try:
+                passed = t.guard is None or t.guard(self, **data)
+            except Exception as exc:
+                raise FsmError(
+                    f"{type(self).__name__}: guard for {t.source}"
+                    f" --{t.event}--> {t.target} raised {exc!r}") from exc
+            if passed:
                 source = self._state
-                self._run_hook("on_exit", source, event=event, **data)
+                self._in_exit_hook = True
+                try:
+                    self._run_hook("on_exit", source, event=event, **data)
+                finally:
+                    self._in_exit_hook = False
                 self._state = t.target
                 self.history.append(HistoryEntry(event, source, t.target))
                 del self.history[:-self.HISTORY_LIMIT]

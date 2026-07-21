@@ -73,12 +73,20 @@ class SimCell:
             self.runner.run(self.program.unload(part))
         except StepTimeout as exc:
             raise CellTaskError(str(exc)) from exc
+        # Device-level verify (mirror of fetch's lift check): the part must
+        # actually be at its tray slot before the books say it left the cell.
+        pos = self.data.joint(f"{part}_free").qpos[:3]
+        slot = scene.TRAY_SLOTS[part]
+        if np.linalg.norm(pos[:2] - slot[:2]) > 0.05 or pos[2] > 0.80:
+            raise CellTaskError(
+                f"unload incomplete — {part} at {np.round(pos, 3)} instead of "
+                f"its tray slot")
         self._queue.remove(part)
         self._current = None
 
     def safe_retract(self) -> None:
         try:
-            self.runner.run(self.program.retract_to_safe(self._current))
+            self.runner.run(self.program.retract_to_safe())
         except StepTimeout as exc:
             raise CellTaskError(f"recovery retract failed: {exc}") from exc
         self._current = None
