@@ -61,3 +61,9 @@ spec `spec-tendwright-overview`).
   `opencv-python` + `pupil-apriltags` (camera preview, tag detection).
 - **Python:** simulation-first. Hardware code only lands after the sim version
   of the same rung works.
+- **Review:** CodeRabbit is NOT on this repo. Before completing any plan, run
+  internal subagent reviews and address findings: adversarial review (try to
+  break it — edge cases, failure modes, unsafe hardware states), code-quality
+  review, and functional review against the plan checklist. Safety-critical
+  paths (anything that can move the arm) get the adversarial pass without
+  exception.
