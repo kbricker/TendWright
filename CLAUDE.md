@@ -20,7 +20,7 @@ spec `spec-tendwright-overview`).
 | Folder | Component | Rungs |
 |---|---|---|
 | `sim/` | MuJoCo digital twin (arm, mock CNC, bin, fixture) | P0 |
-| `orchestrator/` | Cell FSM + OPC UA CNC handshake | P1 |
+| `orchestrator/` | Hand-rolled FSM base + cell FSM + MockCell backends | P1 |
 | `vision/` | Pick-pose detection, calibration, inspection ML | P2, P3 |
 | `mes/` | FastAPI job queue + OEE + Streamlit dashboard | P4 |
 | `telemetry/` | Time-series ingestion + predictive maintenance | P5 |
