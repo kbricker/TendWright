@@ -12,7 +12,7 @@ Pieces:
 - `../pico/` — host-side reader (`NestReader`, the PicoCell sensor
   backend) + `uv run python -m hardware.pico.watch` wiring checker
 
-## How the switch mounts (rev 2 — bottom-load)
+## How the switch mounts (rev 3 — bottom-load)
 
 The switch mounts **from underneath** (no insertion tunnel): it sits
 lever-up on a **separate printed riser block** inside a fully open-bottom
@@ -20,10 +20,11 @@ bay, positioned so the **roller sits under the pocket center**
 (`roller_x_offset`) and the **pressed roller lands ~0.3 mm below the
 blank seat** (the stack is derived from the measured lever geometry).
 The whole switch-top envelope is open through the pocket floor — the
-lever rises through the window and the 40 mm blank bridges it with >6 mm
-bearing all round. Retention: an M2 screw/pin per mounting hole, driven
-from the **outside** −Y face through the wall, through the switch hole,
-into a pilot in the far wall. Assembly: riser on the bench, switch on the
+lever rises through the window and the 40 mm blank bridges it on three
+sides (>6 mm bearing on +X and both Y sides; the −X end of the window
+deliberately runs past the blank edge). Retention: a 2 mm pin per
+mounting hole, driven from the **outside** −Y face through the wall,
+through the switch hole, into a pilot in the far wall. Assembly: riser on the bench, switch on the
 riser, lower the fixture over both, drive the pins, clamp down (the
 bench closes the bay). Wires run in a groove under the flange to the −X
 edge. **The riser height is the engagement tuner** — print a few at

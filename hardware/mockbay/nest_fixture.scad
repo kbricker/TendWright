@@ -1,4 +1,4 @@
-// TendWright mock CNC bay — nest fixture (plan #619, rev 2)
+// TendWright mock CNC bay — nest fixture (plan #619, rev 3)
 //
 // A self-centering pocket the arm drops 40x40x20 mm blanks into, with a
 // KW12-3 roller microswitch under the floor as the part-present sensor.
@@ -134,6 +134,10 @@ module riser() {
     }
 }
 
+// Equality at defaults (6.0 == 9-3) is safe: the slot floor at z=3 only
+// exists on the 1.6 mm side ledges — terminals narrower than the 7 mm
+// bottom channel clear straight down to z~0. Only >7 mm-wide terminals
+// could actually bottom on the ledges.
 assert(sw_term_len <= riser_h - 3,
        "terminals would bottom on the riser slot floor and lift the switch");
 assert(bay_x1 < blank_xy/2 - 6,
