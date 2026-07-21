@@ -56,5 +56,8 @@ spec `spec-tendwright-overview`).
 - **Approved stack (P0, per Kyle 2026-07-15):** `mujoco`, `mink`, `numpy`;
   `uv` + `pyproject.toml` for project tooling; MuJoCo Menagerie UR5e +
   gripper model files vendored into the repo (not a dependency).
+- **Approved stack (bench toolkit, per Kyle 2026-07-21):** `feetech-servo-sdk`
+  + `pyserial` (STS3215 bus control — minimal-SDK route, NOT LeRobot);
+  `opencv-python` + `pupil-apriltags` (camera preview, tag detection).
 - **Python:** simulation-first. Hardware code only lands after the sim version
   of the same rung works.
