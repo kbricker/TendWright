@@ -97,14 +97,22 @@ class PicoCell:
 
     def __init__(self, port: str | None = None):
         try:
-            # Deferred import: the reader module lands with plan #619.
-            from hardware.pico import NestReader  # type: ignore[import-not-found]
+            from hardware.pico import NestReader
         except ImportError as exc:
             raise RuntimeError(
-                "PicoCell needs hardware/pico (the Pico switch bridge) — "
-                "that module lands with plan #619") from exc
+                f"PicoCell could not import the Pico bridge "
+                f"(hardware.pico): {exc}") from exc
 
         self._reader = NestReader(port)
+
+    def close(self) -> None:
+        self._reader.close()
+
+    def __enter__(self) -> "PicoCell":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     def part_present(self) -> bool:
         return self._reader.nest_state()

@@ -13,9 +13,11 @@ import argparse
 import sys
 import time
 
-from hardware.bench.bus import run_tool
+from hardware.errors import make_run_tool
 
 from .reader import NestReader
+
+run_tool = make_run_tool("check the Pico's USB cable, then re-run")
 
 
 def run() -> int:
@@ -28,7 +30,8 @@ def run() -> int:
     with NestReader(args.port) as reader:
         state = reader.nest_state()
         print(f"connected to {reader.port_name}"
-              + (f" ({reader.hello})" if reader.hello else ""))
+              + (f" ({reader.hello})" if reader.hello else
+                 " (hello line arrives within ~5s)"))
         print(f"nest: {'OCCUPIED' if state else 'empty'} — press the switch "
               f"or seat a blank; Ctrl+C to stop")
         while True:

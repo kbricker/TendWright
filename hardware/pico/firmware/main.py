@@ -18,11 +18,18 @@ import time
 from machine import Pin
 
 INPUTS = {
-    # name: (gpio, invert)  — invert=True for switch-to-GND with pull-up
+    # name: (gpio, invert)  — invert=True for switch-to-GND with pull-up.
+    # Digital switches only; the future FSR needs an ADC read path this
+    # map doesn't model yet.
     "nest": (16, True),
 }
-DEBOUNCE_MS = 15
+# Effective debounce is max(DEBOUNCE_MS, one sample period) because a
+# candidate change is only re-examined at the next sample: at 20 Hz a
+# change commits on the 2nd consecutive agreeing sample (50-100 ms).
+DEBOUNCE_MS = 30
 RATE_HZ = 20
+HELLO_EVERY = 100  # re-emit the hello line every N samples (~5 s) — the
+                   # boot-time hello is lost if no host session is attached
 VERSION = 1
 
 _pins = {name: Pin(gpio, Pin.IN, Pin.PULL_UP)
@@ -39,6 +46,8 @@ def read_debounced(name):
     logical = (raw == 0) if invert else (raw == 1)
     now = time.ticks_ms()
     if name not in _stable:
+        # First sample seeds the stable state undebounced; a bounce edge
+        # caught here self-corrects within ~2 sample periods.
         _stable[name] = logical
         _candidate[name] = logical
         _since[name] = now
@@ -52,13 +61,19 @@ def read_debounced(name):
     return _stable[name]
 
 
-def main():
+def hello():
     print(json.dumps({"hello": "tendwright-pico", "version": VERSION,
                       "inputs": sorted(INPUTS.keys())}))
+
+
+def main():
+    hello()
     seq = 0
     period_ms = 1000 // RATE_HZ
     while True:
         start = time.ticks_ms()
+        if seq % HELLO_EVERY == 0 and seq:
+            hello()
         sample = {name: read_debounced(name) for name in INPUTS}
         sample["seq"] = seq
         sample["t_ms"] = start

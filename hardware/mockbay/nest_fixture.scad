@@ -1,14 +1,25 @@
-// TendWright mock CNC bay — nest fixture (plan #619)
+// TendWright mock CNC bay — nest fixture (plan #619, rev 2)
 //
 // A self-centering pocket the arm drops 40x40x20 mm blanks into, with a
 // KW12-3 roller microswitch under the floor as the part-present sensor.
-// Print in PETG, pocket up (chamfers face up = no elephant's foot in the
-// lead-in). Re-render:  openscad -o nest_fixture.stl nest_fixture.scad
+//
+// Topology (rev 2, after adversarial mech review): the switch BOTTOM-LOADS —
+// it drops vertically into an open-bottom bay and rests on two side rails,
+// so there is no insertion tunnel and the lever needs no travel path. The
+// pocket floor has a window the size of the whole switch top envelope; the
+// lever rises through it and the roller (positioned under the pocket center
+// via roller_x_offset) meets the blank. Rail height derives from the
+// MEASURED lever geometry so the pressed roller sits ~flush with the blank
+// seat. Retention: an M2 cross-pin driven from the OUTSIDE -Y face through
+// both switch mounting holes. Wires exit through the open bay bottom into a
+// groove in the flange underside.
+//
+// Print PETG, pocket up. Re-render: openscad -o nest_fixture.stl nest_fixture.scad
 //
 // ============================ MEASURE ME =============================
-// Values marked MEASURE are nominal/datasheet guesses and MUST be
-// checked with calipers (switch) or the A1 tolerance test (clearance)
-// before printing. The full list also lives in hardware/mockbay/README.md.
+// Values marked MEASURE are nominal guesses and MUST be verified with
+// calipers (switch/blank) or the A1 tolerance test (clearances) before
+// printing. Full list: hardware/mockbay/README.md + Hive plan #619.
 // =====================================================================
 
 // ---- blank ----------------------------------------------------------
@@ -17,18 +28,22 @@ blank_h         = 20.0;  // MEASURE: actual blank height
 pocket_clear    = 0.30;  // MEASURE: per-side clearance from A1 tolerance test
 
 // ---- pocket ---------------------------------------------------------
-pocket_depth    = 12.0;  // blank stands 8 mm proud for the gripper
+pocket_depth    = 12.0;  // blank stands ~8 mm proud for the gripper
 chamfer_w       = 5.0;   // 45-degree lead-in width (self-centering funnel)
-floor_t         = 3.0;   // pocket floor above the switch bay
+floor_t         = 3.0;   // pocket floor slab (outside the switch window)
 
-// ---- KW12-3 switch (MEASURE ALL FIVE with the real part) ------------
-sw_len          = 27.0;  // MEASURE: body length
-sw_w            = 10.4;  // MEASURE: body width  (incl. clearance)
-sw_h            = 16.0;  // MEASURE: body height (base to top, lever down)
-sw_hole_pitch   = 22.0;  // MEASURE: mounting-hole center spacing
-sw_hole_d       = 2.0;   // MEASURE: pilot for M2 self-tappers
-lever_window_l  = 16.0;  // MEASURE: roller-lever travel footprint in floor
-lever_window_w  = 6.0;   // MEASURE: window width for the roller
+// ---- KW12-3 switch (MEASURE ALL with the real part) -----------------
+sw_len          = 27.0;  // MEASURE: body length (x)
+sw_w            = 10.4;  // MEASURE: body width  (y)
+sw_h            = 16.0;  // MEASURE: body height, base to top, LEVER EXCLUDED
+sw_hole_pitch   = 22.0;  // MEASURE: mounting-hole center spacing (x)
+sw_hole_h       = 5.0;   // MEASURE: mounting-hole height above the body base
+sw_hole_d       = 2.0;   // MEASURE: hole bore (M2 pin/screw)
+roller_x_offset = 11.0;  // MEASURE: roller contact point ahead of body center
+lever_free_h    = 19.0;  // MEASURE: roller top above body base, lever free
+lever_pressed_h = 16.5;  // MEASURE: roller top above body base, fully pressed
+press_margin    = 0.3;   // pressed roller sits this far below the blank seat
+bay_clear       = 0.4;   // MEASURE-ish: per-side switch drop-in clearance (A1 test)
 
 // ---- body -----------------------------------------------------------
 block_xy        = 64.0;  // pocket block outer size
@@ -36,14 +51,37 @@ flange_xy       = 92.0;  // base flange (clamp/screw to bench)
 flange_t        = 6.0;
 clamp_slot_d    = 5.5;   // M5 clearance slots in the flange corners
 clamp_slot_l    = 10.0;
+riser_h         = 9.0;   // separate riser block the switch rests on; its
+                         // height TUNES lever engagement — reprint only the
+                         // riser to adjust, never the fixture
+riser_term_slot = 8.0;   // slot in the riser top for bottom-exit terminals
+wire_groove_w   = 8.0;
+wire_groove_d   = 3.0;   // groove depth into the flange underside
 
 $fn = 48;
 
+// ---- derived (echoed for review) ------------------------------------
 pocket_xy   = blank_xy + 2 * pocket_clear;
-block_h     = flange_t + sw_h + floor_t + pocket_depth;
-bay_z       = flange_t;                 // switch bay sits on the flange top
-floor_z     = bay_z + sw_h;             // pocket floor bottom
-pocket_z    = floor_z + floor_t;        // pocket floor top
+// Switch body center sits at -roller_x_offset so the ROLLER lands at x=0
+// (pocket center), where the blank presses it.
+sw_cx       = -roller_x_offset;
+rail_top    = riser_h;                            // switch base z (on the riser)
+seat_z      = rail_top + lever_pressed_h + press_margin;  // blank seat (floor top)
+floor_bot   = seat_z - floor_t;
+block_h     = seat_z + pocket_depth;
+bay_x0      = sw_cx - sw_len/2 - bay_clear;
+bay_x1      = sw_cx + sw_len/2 + bay_clear;
+bay_y       = sw_w/2 + bay_clear;
+
+echo(pocket_xy=pocket_xy, seat_z=seat_z, floor_bot=floor_bot,
+     block_h=block_h, rail_top=rail_top, sw_cx=sw_cx,
+     body_top=rail_top+sw_h, roller_free=rail_top+lever_free_h,
+     roller_pressed=rail_top+lever_pressed_h);
+assert(rail_top + sw_h < seat_z,
+       "switch body top would touch the seated blank");
+assert(lever_free_h > lever_pressed_h, "lever heights inverted");
+assert(pocket_xy > 2*bay_y + 12,
+       "floor window too wide for the blank to bridge with bearing");
 
 module clamp_slot() {
     hull() {
@@ -54,20 +92,30 @@ module clamp_slot() {
 }
 
 module body() {
-    // flange
     translate([-flange_xy/2, -flange_xy/2, 0])
         cube([flange_xy, flange_xy, flange_t]);
-    // pocket block
     translate([-block_xy/2, -block_xy/2, 0])
         cube([block_xy, block_xy, block_h]);
 }
 
+module riser() {
+    // SEPARATE printed part: the switch rests on this inside the open bay
+    // (assembly: riser on bench, switch on riser, lower the fixture over
+    // both, drive the pins, clamp down). Height sets lever engagement —
+    // print a few at ±0.5 mm and pick the one the bench test likes.
+    difference() {
+        translate([-(bay_x1 - bay_x0 - 1)/2, -(2*bay_y - 1)/2, 0])
+            cube([bay_x1 - bay_x0 - 1, 2*bay_y - 1, riser_h]);
+        // slot for bottom-exit terminals / wire dressing
+        translate([-riser_term_slot/2, -bay_y - 1, riser_h - 4])
+            cube([riser_term_slot, 2*bay_y + 2, 5]);
+    }
+}
+
 module pocket_cut() {
-    // straight pocket walls
-    translate([-pocket_xy/2, -pocket_xy/2, pocket_z])
+    translate([-pocket_xy/2, -pocket_xy/2, seat_z])
         cube([pocket_xy, pocket_xy, pocket_depth + 1]);
-    // 45-degree chamfer funnel at the top
-    hull() {
+    hull() {  // 45-degree chamfer funnel at the top
         translate([-pocket_xy/2, -pocket_xy/2, block_h - chamfer_w])
             cube([pocket_xy, pocket_xy, 0.01]);
         translate([-pocket_xy/2 - chamfer_w, -pocket_xy/2 - chamfer_w, block_h])
@@ -75,40 +123,56 @@ module pocket_cut() {
     }
 }
 
-module switch_bay_cut() {
-    // Bay under the pocket floor, open to the +X face for insertion/wiring.
-    // The switch lies on its side wall, lever up, roller poking through the
-    // floor window; screw pilots in the -Y bay wall.
-    translate([-sw_len/2, -sw_w/2, bay_z])
-        cube([block_xy/2 - (-sw_len/2) + 1, sw_w, sw_h]);
-    // lever window through the pocket floor (offset toward -X so the roller
-    // sits under the blank's footprint, not its exact center)
-    translate([-lever_window_l/2, -lever_window_w/2, floor_z - 1])
-        cube([lever_window_l, lever_window_w, floor_t + 2]);
-    // wiring channel out through the flange edge
-    translate([block_xy/2 - 1, -4, bay_z])
-        cube([(flange_xy - block_xy)/2 + 2, 8, 6]);
+module bay_cut() {
+    // Open-bottom drop-in bay: from z=0 (through the flange) up to the
+    // pocket floor slab; the switch enters from below before the fixture
+    // is clamped to the bench (the bench closes the bay).
+    translate([bay_x0, -bay_y, -1])
+        cube([bay_x1 - bay_x0, 2*bay_y, floor_bot + 1 + 1]);
+    // Full switch-envelope window through the floor slab (full bay
+    // footprint — any inset ledge would collide with the switch body top,
+    // which sits inside the slab band). The lever and roller rise through
+    // it to meet the blank; the 40 mm blank bridges the ~27.8 x 11.6 mm
+    // window with >6 mm bearing on every side.
+    translate([bay_x0, -bay_y, floor_bot - 1])
+        cube([bay_x1 - bay_x0, 2*bay_y, floor_t + 3]);
 }
 
-module switch_pilots() {
-    // Two M2 pilot holes into the -Y wall of the bay, matching the KW12-3
-    // mounting holes (switch screwed against that wall).
+module pin_holes() {
+    // M2 cross-pin per mounting hole, driven from the OUTSIDE -Y block
+    // face: clearance bore through the -Y wall, pilot into the +Y wall.
     for (dx = [-sw_hole_pitch/2, sw_hole_pitch/2])
-        translate([dx, -sw_w/2 - 6, bay_z + sw_h/2])
-            rotate([-90, 0, 0])
-                cylinder(d = sw_hole_d, h = 8);
+        translate([sw_cx + dx, 0, rail_top + sw_hole_h]) {
+            translate([0, -block_xy/2 - 1, 0])
+                rotate([-90, 0, 0])
+                    cylinder(d = sw_hole_d + 0.3,
+                             h = block_xy/2 - bay_y + 2);  // through -Y wall
+            translate([0, bay_y - 0.5, 0])
+                rotate([-90, 0, 0])
+                    cylinder(d = sw_hole_d - 0.2, h = 8);  // pilot, +Y wall
+        }
+}
+
+module wire_groove_cut() {
+    // Groove in the flange UNDERSIDE from under the bay out the -X edge;
+    // wires drop from the open bay bottom and run beneath the flange.
+    translate([-flange_xy/2 - 1, -wire_groove_w/2, -1])
+        cube([bay_x0 + 2 + flange_xy/2, wire_groove_w, wire_groove_d + 1]);
 }
 
 difference() {
     body();
     pocket_cut();
-    switch_bay_cut();
-    switch_pilots();
-    // flange clamp slots, one per corner, radially oriented. Radius must
-    // clear the block footprint (block corner is at block_xy/2 * sqrt(2)
-    // = ~45 on the diagonal) but stay inside the flange corner (~65).
+    bay_cut();
+    pin_holes();
+    wire_groove_cut();
+    // flange clamp slots: inner end at r=50 clears the block corner
+    // (~45.3) with washer room; outer end 60 stays inside the corner (~65)
     for (a = [45, 135, 225, 315])
         rotate([0, 0, a])
-            translate([48, 0, -1])
+            translate([50, 0, -1])
                 clamp_slot();
 }
+
+// the riser prints alongside the fixture
+translate([flange_xy/2 + 25, 0, 0]) riser();

@@ -4,21 +4,24 @@ Opens the Pico's USB-CDC serial port, consumes the firmware's JSON lines,
 and exposes the latest debounced nest state. This is the sensor half of
 orchestrator.cell.PicoCell.
 
-Port resolution: --port/argument wins; else a udev alias /dev/tty-pico if
-present (see the hardware plan's udev-rule note); else the single serial
-device with the Raspberry Pi Pico USB VID (0x2E8A).
+Port resolution: --port/argument wins; else (Linux) a udev alias
+/dev/tty-pico if present (see the hardware plan's udev-rule note); else
+the single serial device with the Raspberry Pi USB VID (0x2E8A). Note
+that VID matches any RP2-family CDC board — on a bench with several USB
+serial devices, set up the udev alias.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 
 import serial
 from serial.tools import list_ports
 
-from hardware.bench.bus import BenchError
+from hardware.errors import BenchError
 
 PICO_VID = 0x2E8A  # Raspberry Pi (MicroPython CDC)
 BAUD = 115200  # nominal; USB-CDC ignores it
@@ -28,7 +31,7 @@ UDEV_ALIAS = "/dev/tty-pico"
 def resolve_pico_port(port: str | None) -> str:
     if port:
         return port
-    if os.path.exists(UDEV_ALIAS):
+    if sys.platform.startswith("linux") and os.path.exists(UDEV_ALIAS):
         return UDEV_ALIAS
     picos = [p.device for p in list_ports.comports() if p.vid == PICO_VID]
     if len(picos) == 1:
@@ -72,33 +75,47 @@ class NestReader:
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def _handle(self, line: bytes) -> None:
+        try:
+            doc = json.loads(line.decode("ascii", "replace"))
+        except json.JSONDecodeError:
+            return  # partial line at connect time
+        if "hello" in doc:
+            self.hello = doc
+        elif "nest" in doc:
+            self.last = doc
+            self._last_at = time.monotonic()
+
     def _pump(self) -> None:
-        """Drain pending lines; keep the newest state sample."""
-        while True:
-            line = self._ser.readline()
-            if not line:
-                return
-            try:
-                doc = json.loads(line.decode("ascii", "replace"))
-            except json.JSONDecodeError:
-                continue  # partial line at connect time
-            if "hello" in doc:
-                self.hello = doc
-            elif "nest" in doc:
-                self.last = doc
-                self._last_at = time.monotonic()
+        """Drain lines already BUFFERED, keeping the newest sample. Bounded:
+        only reads while bytes are waiting, so a healthy 20 Hz stream can
+        never trap us in the drain loop (a partial trailing line costs at
+        most one 0.2 s readline timeout)."""
+        try:
+            while self._ser.in_waiting:
+                line = self._ser.readline()
+                if not line:
+                    return
+                self._handle(line)
+        except serial.SerialException as exc:
+            raise BenchError(
+                f"lost the Pico on {self.port_name}: {exc}",
+                "check the USB cable, then re-run",
+            ) from exc
 
     def nest_state(self) -> bool:
         self._pump()
         if self.last is None:
+            # First read after connect: wait up to stale_after for one sample.
             deadline = time.monotonic() + self.stale_after
             while self.last is None and time.monotonic() < deadline:
+                time.sleep(0.02)
                 self._pump()
             if self.last is None:
                 raise BenchError(
                     f"no data from the Pico on {self.port_name}",
-                    "is main.py flashed? `mpremote` or a serial terminal "
-                    "should show a JSON line every 50 ms",
+                    "is main.py flashed? a serial terminal should show a "
+                    "JSON line every 50 ms",
                 )
         if time.monotonic() - self._last_at > self.stale_after:
             raise BenchError(
