@@ -9,6 +9,10 @@ dependencies = [
     "mujoco>=3.10",
     "mink>=1.2",
     "numpy>=2.0",
+    "feetech-servo-sdk>=1.0.0",
+    "pyserial>=3.5",
+    "opencv-python>=5.0.0.93",
+    "pupil-apriltags>=1.0.4.post11",
 ]
 
 # Not a distributable package: the repo is run in place (`uv run python -m
