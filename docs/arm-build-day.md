@@ -1,6 +1,6 @@
 # Bench Day: A1 Setup + SO-101 Follower Build
 
-Companion to `hardware-shopping-list.md`. Software-side work (LeRobot config, calibration scripts, MuJoCo) is spark's; this doc is the hands-on sequence.
+Companion to `hardware-shopping-list.md`. Software-side work (the bench toolkit under `hardware/bench/`, MuJoCo) is spark's; this doc is the hands-on sequence.
 
 ## 1. Bambu A1 setup (~30 min)
 1. Unbox, remove ALL orange shipping restraints (there's one under the bed too), attach spool holder, follow the on-screen guided setup — full auto-calibration (bed level, vibration, flow) runs itself.
@@ -24,7 +24,7 @@ Companion to `hardware-shopping-list.md`. Software-side work (LeRobot config, ca
 Start the biggest plate overnight; the rest run while assembling.
 
 ## 4. Assemble the follower — the two gotchas that matter
-1. **Set servo IDs BEFORE assembly.** Each of the 6 STS3215s needs a unique bus ID (1–6, base→gripper) programmed over the servo adapter board *while the servo is loose on the bench*. Assembling first means tearing joints apart later. Follow the Seeed wiki / LeRobot SO-101 docs section on motor setup — spark can prep the ID-setting script ahead of time.
+1. **Set servo IDs BEFORE assembly.** Each of the 6 STS3215s needs a unique bus ID (1–6, base→gripper) programmed over the servo adapter board *while the servo is loose on the bench*. Assembling first means tearing joints apart later. Use the bench toolkit: `uv run python -m hardware.bench.set_id` (one servo on the bus at a time; it guards against multi-servo buses).
 2. **Center servos before attaching horns.** Command each servo to its center position, THEN screw the horn/bracket at the documented neutral angle (use the printed jig). A horn attached one spline-tooth off = permanent calibration offset.
 
 Other assembly notes:
@@ -33,7 +33,7 @@ Other assembly notes:
 - 12V PSU = follower. The 5V one is for the leader — set it aside with the leader servos (not building that now).
 
 ## 5. First power-on (with spark)
-- Follower → USB adapter → PC. LeRobot calibration flow: joint ranges + zero positions.
+- Follower → USB adapter → PC. Bench toolkit flow: `scan` (expect IDs 1–6), then `monitor --ids 1-6` to sweep each joint by hand and record tick ranges + zero positions.
 - First motion test: small joint jogs from Python, one joint at a time, hand hovering near the power switch.
 - Nothing gets scripted beyond jogs until the MuJoCo model and real arm agree on zero positions.
 
