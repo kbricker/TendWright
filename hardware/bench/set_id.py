@@ -43,7 +43,8 @@ def run() -> int:
         if not found:
             raise BenchError(
                 "no servo answered on the bus",
-                "check servo power (7.4V supply on) and the cable; two servos "
+                "check servo power (12V follower supply on) and the cable; "
+                "two servos "
                 "sharing one ID also answer garbled — connect ONE servo only",
             )
         if len(found) > 1:

@@ -26,7 +26,8 @@ COM port on Windows); override with `--port`.
    its ID (base → gripper = 1 → 6):
    `uv run python -m hardware.bench.set_id --new-id 1` … `--new-id 6`
 2. **After wiring the full chain** — `scan` should list exactly IDs 1–6,
-   sane voltage (~7.4 V nominal supply) and room temperature.
+   sane voltage (~12 V — the SO-ARM101 Pro kit's follower servos and PSU
+   are the 12 V variant; only the leader runs lower) and room temperature.
 3. **Ranges + wiring order** — `monitor --ids 1-6` (it cuts torque after
    a confirm prompt — support the arm, it drops under gravity), move each
    joint by hand, confirm the right column moves and that no joint's
