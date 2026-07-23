@@ -26,8 +26,14 @@ def parse_ids(spec: str) -> list[int]:
         for chunk in spec.split(","):
             chunk = chunk.strip()
             if "-" in chunk:
-                lo, hi = chunk.split("-", 1)
-                ids.extend(range(int(lo), int(hi) + 1))
+                lo, hi = (int(part) for part in chunk.split("-", 1))
+                if hi < lo:
+                    raise BenchError(f"reversed range '{chunk}' in --ids",
+                                     "write it low-high, e.g. '1-6'")
+                if hi - lo > 253:
+                    raise BenchError(f"range '{chunk}' is too wide",
+                                     "servo bus IDs only go 0-253")
+                ids.extend(range(lo, hi + 1))
             elif chunk:
                 ids.append(int(chunk))
     except ValueError as exc:

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -31,7 +30,7 @@ from pathlib import Path
 
 from .bus import POSITION_RANGE, BenchError, FeetechBus, confirm, run_tool
 from .monitor import parse_ids
-from .term import read_key
+from .term import flush_input, read_key
 
 FORMAT_VERSION = 1
 SAMPLE_HZ = 20.0
@@ -68,6 +67,8 @@ JOINT_POSITIVE = {
 
 @dataclass
 class JointCal:
+    # Field names mirror the JSON keys — renaming any of them changes the
+    # on-disk file format.
     id: int
     name: str
     min: int
@@ -78,8 +79,23 @@ class JointCal:
 
 def _valid_tick(value: object) -> bool:
     lo, hi = POSITION_RANGE
-    return isinstance(value, int) and not isinstance(value, bool) \
-        and lo <= value <= hi
+    return (type(value) is int and lo <= value <= hi)
+
+
+def _rest_ok(lo: int, hi: int, rest: int) -> bool:
+    return lo - REST_TOL_TICKS <= rest <= hi + REST_TOL_TICKS
+
+
+def _joint_ok(cal: JointCal) -> bool:
+    """One shared validity predicate for load AND pre-write — capture must
+    never produce a file its own loader rejects."""
+    return (type(cal.id) is int
+            and cal.id in JOINT_NAMES
+            and cal.name == JOINT_NAMES[cal.id]
+            and all(_valid_tick(v) for v in (cal.min, cal.rest, cal.max))
+            and type(cal.sign) is int and cal.sign in (-1, 1)
+            and cal.max - cal.min >= MIN_SPAN_TICKS
+            and _rest_ok(cal.min, cal.max, cal.rest))
 
 
 def load_calibration(path: Path) -> dict[int, JointCal]:
@@ -87,14 +103,15 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
     bad = BenchError(
         f"{path} is not a valid calibration file",
         "expected JSON {version, joints:[{id,name,min,rest,max,sign}]} from "
-        "calibrate capture — fix or delete it, or point --out elsewhere",
+        "calibrate capture — fix or delete it, or point the tool at a "
+        "different file",
     )
     try:
         doc = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
         raise BenchError(
             f"could not read {path}: {exc}",
-            "fix or delete the file, or point --out elsewhere",
+            "fix or delete the file, or point the tool at a different file",
         ) from exc
     if not isinstance(doc, dict) or doc.get("version") != FORMAT_VERSION:
         raise bad
@@ -106,19 +123,12 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
         if not isinstance(entry, dict):
             raise bad
         try:
-            cal = JointCal(**{k: entry[k]
-                              for k in ("id", "name", "min", "rest", "max",
-                                        "sign")})
-        except (KeyError, TypeError) as exc:
+            cal = JointCal(id=entry["id"], name=entry["name"],
+                           min=entry["min"], rest=entry["rest"],
+                           max=entry["max"], sign=entry["sign"])
+        except KeyError as exc:
             raise bad from exc
-        if (cal.id not in JOINT_NAMES or cal.id in result
-                or not isinstance(cal.name, str)
-                or not all(_valid_tick(v)
-                           for v in (cal.min, cal.rest, cal.max))
-                or cal.sign not in (-1, 1)
-                or cal.max - cal.min < MIN_SPAN_TICKS
-                or not cal.min - REST_TOL_TICKS
-                        <= cal.rest <= cal.max + REST_TOL_TICKS):
+        if not _joint_ok(cal) or cal.id in result:
             raise bad
         result[cal.id] = cal
     return result
@@ -132,7 +142,7 @@ def write_calibration(path: Path, cals: dict[int, JointCal]) -> None:
     }
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n")
-    os.replace(tmp, path)
+    tmp.replace(path)
 
 
 def print_table(cals: dict[int, JointCal]) -> None:
@@ -177,39 +187,48 @@ def sweep_joint(bus: FeetechBus, servo_id: int) -> tuple[int, int, bool]:
 
 
 def capture_rest(bus: FeetechBus, ids: list[int],
-                 ranges: dict[int, tuple[int, int]]) -> dict[int, int]:
-    """One whole-arm rest pose; every (non-wrapped) joint must land inside
-    its swept range, else the sweep missed part of the joint's travel."""
+                 ranges: dict[int, tuple[int, int]],
+                 rerun_spec: str) -> dict[int, int]:
+    """One whole-arm rest pose; every joint must land inside its swept
+    range, else the sweep missed part of the joint's travel."""
     for attempt in range(1, REST_ATTEMPTS + 1):
+        flush_input()
         input("\npose the WHOLE arm at its rest/neutral pose "
               "(per the assembly guide), then press Enter: ")
         rest = {i: bus.read_position(i) for i in ids}
-        off = [i for i in ids if i in ranges and not
-               ranges[i][0] - REST_TOL_TICKS
-               <= rest[i] <= ranges[i][1] + REST_TOL_TICKS]
+        off = [i for i in ids if not _rest_ok(*ranges[i], rest[i])]
         if not off:
             return rest
         for i in off:
             print(f"  joint {i} ({JOINT_NAMES[i]}) reads {rest[i]} — outside "
                   f"its swept range {ranges[i]}")
         if attempt < REST_ATTEMPTS:
-            print("  re-pose the arm and try again (or Ctrl+C and re-sweep "
-                  "the joint(s) above — their sweep may have missed range)")
+            print("  re-pose the arm and try again (or Ctrl+C and re-run — "
+                  "the sweep for the joint(s) above may have missed range)")
     raise BenchError(
         f"rest pose kept landing outside the swept range for joint(s) {off}",
-        "the sweep for those joints missed part of their travel — re-run: "
-        f"calibrate capture --ids {','.join(str(i) for i in off)}",
+        "the sweep for those joints missed part of their travel; NOTHING "
+        f"from this run was saved — re-run: calibrate capture "
+        f"--ids {rerun_spec}",
     )
 
 
-def capture_direction(bus: FeetechBus, servo_id: int, rest: int) -> int:
+def capture_direction(bus: FeetechBus, servo_id: int) -> int:
     """Nudge the joint in its canonical positive direction; the tick delta's
-    sign is the recording. Re-prompts until the nudge is unambiguous."""
+    sign is the recording. The baseline is read fresh at each prompt (torque
+    is off, so joints drift between phases), and a delta that jumps the
+    encoder wrap re-prompts instead of recording an inverted sign."""
     while True:
+        baseline = bus.read_position(servo_id)
+        flush_input()
         input(f"  nudge joint {servo_id} ({JOINT_NAMES[servo_id]}) in its "
               f"POSITIVE direction — {JOINT_POSITIVE[servo_id]} — hold it "
               f"there and press Enter: ")
-        delta = bus.read_position(servo_id) - rest
+        delta = bus.read_position(servo_id) - baseline
+        if abs(delta) > WRAP_JUMP_TICKS:
+            print("  the reading jumped across the encoder wrap — move the "
+                  "joint away from its end stop and nudge again")
+            continue
         if abs(delta) >= DIR_MIN_DELTA_TICKS:
             sign = 1 if delta > 0 else -1
             print(f"  moved {delta:+d} ticks -> sign {sign:+d}")
@@ -219,13 +238,21 @@ def capture_direction(bus: FeetechBus, servo_id: int, rest: int) -> int:
 
 
 def capture(args: argparse.Namespace) -> int:
-    ids = parse_ids(args.ids)
+    ids = list(dict.fromkeys(parse_ids(args.ids)))  # dedupe, keep order
     unknown = sorted(set(ids) - set(JOINT_NAMES))
     if unknown:
         raise BenchError(f"unknown joint ID(s) {unknown}",
                          "the SO-101 follower uses IDs 1-6 (base to gripper)")
     out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)  # fail HERE, not after capture
+    # Fail on an unwritable destination HERE, not after the guided capture.
+    out.parent.mkdir(parents=True, exist_ok=True)
+    probe = out.with_name(out.name + ".tmp")
+    try:
+        probe.touch()
+        probe.unlink()
+    except OSError as exc:
+        raise BenchError(f"cannot write next to {out}: {exc}",
+                         "pick a writable --out location") from exc
     existing = load_calibration(out) if out.exists() else {}
 
     with FeetechBus(args.port) as bus:
@@ -245,10 +272,11 @@ def capture(args: argparse.Namespace) -> int:
         if not args.yes and not confirm("support the arm, then type y to continue: "):
             print("aborted")
             return 1
-        for servo_id in ids:
-            bus.set_torque(servo_id, False)
 
         try:
+            for servo_id in ids:
+                bus.set_torque(servo_id, False)
+
             ranges: dict[int, tuple[int, int]] = {}
             wrapped_ids: list[int] = []
             print(f"\n--- step 1/3: range sweeps ({len(ids)} joint(s)) ---")
@@ -263,30 +291,59 @@ def capture(args: argparse.Namespace) -> int:
                 else:
                     ranges[servo_id] = (lo, hi)
 
-            print("\n--- step 2/3: rest pose ---")
-            rest = capture_rest(bus, ids, ranges)
-
             good_ids = [i for i in ids if i not in wrapped_ids]
             captured: dict[int, JointCal] = {}
             if good_ids:
+                print("\n--- step 2/3: rest pose ---")
+                rest = capture_rest(bus, good_ids, ranges, args.ids)
                 print("\n--- step 3/3: direction nudges ---")
                 for servo_id in good_ids:
-                    sign = capture_direction(bus, servo_id, rest[servo_id])
+                    sign = capture_direction(bus, servo_id)
                     lo, hi = ranges[servo_id]
                     captured[servo_id] = JointCal(
                         id=servo_id, name=JOINT_NAMES[servo_id],
                         min=lo, rest=rest[servo_id], max=hi, sign=sign)
 
+            bad_caps = sorted(c.id for c in captured.values()
+                              if not _joint_ok(c))
+            if bad_caps:
+                raise BenchError(
+                    f"servo(s) {bad_caps} reported positions outside "
+                    f"0-4095 — nothing saved",
+                    "that usually means wheel/multi-turn mode leftovers; "
+                    "power-cycle, run the scan tool, and re-capture",
+                )
+
+            # A wrapped joint's PRE-EXISTING entry is dropped too: the fix is
+            # a horn remount, after which the old numbers are wrong anyway.
+            stale = [i for i in wrapped_ids if i in existing]
+            merged = {i: c for i, c in {**existing, **captured}.items()
+                      if i not in wrapped_ids}
+            try:
+                if captured or stale:
+                    if merged:
+                        write_calibration(out, merged)
+                    elif out.exists():
+                        out.unlink()
+            except OSError as exc:
+                raise BenchError(
+                    f"could not write {out}: {exc}",
+                    "this run's data was lost — fix the location and re-run",
+                ) from exc
             if captured:
-                merged = {**existing, **captured}
-                write_calibration(out, merged)
                 print(f"\nsaved {len(captured)} joint(s) to {out} "
                       f"({len(merged)} total):")
                 print_table(merged)
+            if stale:
+                print(f"\nremoved stale prior entr"
+                      f"{'y' if len(stale) == 1 else 'ies'} for wrapped "
+                      f"joint(s) {stale} from {out}"
+                      + ("" if merged else " — the file is gone (it held "
+                         "nothing else)"))
             if wrapped_ids:
                 raise BenchError(
                     f"joint(s) {wrapped_ids} crossed the encoder wrap during "
-                    f"the sweep — NOT saved",
+                    f"the sweep — not saved",
                     "re-mount that horn one spline tooth away from the wrap, "
                     "then re-run: calibrate capture --ids "
                     + ",".join(str(i) for i in wrapped_ids),
