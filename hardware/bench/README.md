@@ -47,10 +47,11 @@ COM port on Windows); override with `--port`.
 6. **First trajectory** — `teach record --out wave.json`, move the arm
    through a simple arc by hand, then
    `teach replay --in wave.json --speed 0.25` with the workspace clear.
-   Once `jog` feels right, `exercise` runs the full scripted limber-up
-   (all joints, one at a time) from the calibration — a good end-of-session
-   health check and the quickest way to spot a bad calibration entry.
-7. **Camera scouting** — `campreview` while trying wall-mount positions;
+7. **Scripted limber-up** — once `jog` feels right, `exercise` runs the
+   full routine (all calibrated joints, one at a time) from the
+   calibration — a good end-of-session health check and the quickest way
+   to spot a bad calibration entry.
+8. **Camera scouting** — `campreview` while trying wall-mount positions;
    check tag detection at
    candidate distances/angles (print `docs/bench-apriltags.html` at 100%
    scale — tag36h11 IDs 0–7 at 40 mm).
@@ -85,17 +86,21 @@ MuJoCo mapping consume the recorded sign, never re-guess it:
   e-stop (exit code 3); enabling torque re-syncs to the current hand-moved
   position, so it holds in place. Soft limits default to 200 ticks inside
   the 0–4095 range until real joint limits are measured (`--min/--max`).
-- `teach replay` defaults to 25% speed, prompts before moving, approaches
-  the start pose slowly and polls until every joint has ARRIVED before
-  streaming frames, and torques off on exit or Ctrl+C.
+- `teach replay` defaults to 25% speed, prompts before moving, syncs each
+  goal to the present position before enabling torque (no stale-goal
+  lurch), approaches the start pose slowly and polls until every joint has
+  ARRIVED before streaming frames, and torques off on exit or Ctrl+C.
 - `exercise` moves the arm on its own: run it with the workspace clear and
   the gripper EMPTY. It refuses to start without a valid `calibration.json`
-  or with the arm away from its rest pose; every commanded position stays
-  inside the calibrated range (default sweep = middle 70%); wake pre-loads
-  each goal to the present position before enabling torque (no lurch); ANY
-  key during motion halts in place, then torque cuts on your Enter (exit
-  code 3). A joint that fails to settle (obstruction) halts the arm and
-  errors out with torque cut.
+  or with the arm away from its rest pose (re-checked after the confirm
+  prompt, right before anything energizes); every commanded position stays
+  strictly inside the calibrated range (default sweep = middle 70%); wake
+  pre-loads each goal to the present position before enabling torque (no
+  lurch). `--ids` narrows which joints SWEEP — every calibrated joint is
+  always checked, woken, and held so a sweeping shoulder can't whip a limp
+  wrist. On e-stop (ANY key), obstruction timeout, or Ctrl+C the arm halts
+  and HOLDS under torque until you press Enter with a hand on it — torque
+  never cuts mid-air unannounced.
 - Cleanup torque-offs are retried and never fail silently — if a servo
   can't be confirmed safe you get a loud warning; the POWER SWITCH is the
   real e-stop. If the USB adapter is yanked mid-session, servos keep bus

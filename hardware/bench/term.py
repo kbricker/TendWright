@@ -5,6 +5,19 @@ from __future__ import annotations
 import sys
 
 
+def require_interactive() -> None:
+    """Refuse early when stdin can't deliver keypresses — for tools whose
+    e-stop key is the safety channel, this must fail BEFORE any motion."""
+    if not sys.stdin.isatty():
+        from hardware.errors import BenchError
+
+        raise BenchError(
+            "this tool needs an interactive terminal",
+            "allocate one: `ssh -t cell1 '...'` (note -t), or run it "
+            "from a shell on the box",
+        )
+
+
 if sys.platform == "win32":
     import msvcrt
 
@@ -42,14 +55,7 @@ else:
             termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
 
     def read_key(timeout: float | None = None) -> str | None:
-        if not sys.stdin.isatty():
-            from .bus import BenchError
-
-            raise BenchError(
-                "this tool needs an interactive terminal",
-                "allocate one: `ssh -t cell1 '...'` (note -t), or run it "
-                "from a shell on the box",
-            )
+        require_interactive()
         fd = sys.stdin.fileno()
         old = termios.tcgetattr(fd)
         try:

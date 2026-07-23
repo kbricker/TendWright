@@ -24,12 +24,12 @@ from pathlib import Path
 
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .monitor import parse_ids
+from .motion import wait_settle
 from .term import read_key
 
 FORMAT_VERSION = 1
 REPLAY_SPEED_TICKS = 250  # servo-side speed cap during replay moves
 APPROACH_SPEED_TICKS = 120  # extra-slow move to the first frame
-APPROACH_TOL_TICKS = 25  # "arrived at the start pose" tolerance
 MIN_RECORD_HZ = 0.5
 MAX_RECORD_HZ = 30.0
 
@@ -109,24 +109,13 @@ def load_recording(path: Path) -> tuple[list[int], float, list[list[int]]]:
 
 
 def approach_start_pose(bus: FeetechBus, ids: list[int],
-                        first: list[int], drift: int) -> None:
+                        first: list[int]) -> None:
     """Move slowly to frame 0 and poll until every joint has ARRIVED —
-    never start streaming frames on a timer guess."""
+    never start streaming frames on a timer guess. Settle logic is the
+    shared plant-gated helper (position + stillness)."""
     for servo_id, pos in zip(ids, first):
         bus.move_to(servo_id, pos, speed=APPROACH_SPEED_TICKS)
-    deadline = time.monotonic() + drift / APPROACH_SPEED_TICKS + 5.0
-    while True:
-        errors = [abs(bus.read_position(i) - p) for i, p in zip(ids, first)]
-        if max(errors) <= APPROACH_TOL_TICKS:
-            return
-        if time.monotonic() > deadline:
-            raise BenchError(
-                f"arm did not reach the start pose (worst joint off by "
-                f"{max(errors)} ticks)",
-                "a joint may be obstructed or too weak for the pose — "
-                "torque has been cut",
-            )
-        time.sleep(0.1)
+    wait_settle(bus, dict(zip(ids, first)), APPROACH_SPEED_TICKS, "approach")
 
 
 def replay(args: argparse.Namespace) -> int:
@@ -150,9 +139,14 @@ def replay(args: argparse.Namespace) -> int:
             return 1
 
         try:
+            # Pre-load each goal to the present position BEFORE enabling
+            # torque — the goal register may be stale from an earlier
+            # session, and enabling against it lurches (same rule as jog).
             for servo_id in ids:
+                bus.move_to(servo_id, bus.read_position(servo_id),
+                            speed=APPROACH_SPEED_TICKS)
                 bus.set_torque(servo_id, True)
-            approach_start_pose(bus, ids, first, drift)
+            approach_start_pose(bus, ids, first)
 
             period = 1.0 / hz / args.speed
             for n, frame in enumerate(frames[1:], start=2):
