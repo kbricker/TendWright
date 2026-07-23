@@ -53,6 +53,41 @@ inside one revolution. A horn mounted across the wrap makes readings jump
 
 ---
 
+## Re-spotting a horn (the wrap fix)
+
+If `monitor` (or a `** WRAP **` in calibrate) shows a joint's readout
+flipping 0↔4095 mid-swing, the horn is mounted across the encoder wrap.
+Disassemble down to that horn, then:
+
+1. **Re-center the servo** — it rotated during disassembly. With the horn
+   off:
+   ```
+   uv run python -m hardware.bench.jog --id 1        # matching ID
+   ```
+   These are single KEYPRESSES inside the tool (no Enter):
+   `t` = torque ON (servo stiffens) → `c` = go to center 2048 (it moves) →
+   wait for the readout to settle at ~2048 → `q` = quit, torque off.
+   Careful: any unbound key in jog is an E-STOP that exits — touch only
+   the keys you mean. Don't rotate the shaft after centering.
+2. **Hold the joint part at its mid-travel orientation** (joint 1: base
+   pointing straight ahead, halfway between its swing extremes) and drop
+   the horn onto the spline at the closest-fitting tooth. The spline
+   quantizes to ~160 ticks per tooth — landing within a tooth or two of
+   2048 (±300) is fine.
+3. **Verify before re-burying it:**
+   ```
+   uv run python -m hardware.bench.monitor --ids 1
+   ```
+   Sweep end to end. PASS = no 0↔4095 flip anywhere, and min/max each at
+   least ~150 ticks away from the ends. Mid-swing near 2048 is the
+   nice-to-have; no-flip plus the margins are the requirement.
+
+The exact centering error doesn't matter beyond that — `calibrate capture`
+measures and stores the true min/rest/max later. The only unforgivable sin
+is travel that touches the wrap.
+
+---
+
 ## Phase 2 — After the full chain is wired
 
 1. **Everything answers:**
