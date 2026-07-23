@@ -23,6 +23,9 @@ merged and synced on cell1. Companion docs: `arm-build-day.md` (arm detail),
       `calibration.json` — commit it / send it to spark
 - [ ] `jog` — one joint at a time, small moves, hand near the switch
 - [ ] `teach` / replay a slow air-move — no load, reduced speed
+- [ ] `exercise` — scripted limber-up: wake → rest → sweep every joint
+      through 70% of its calibrated range → rest → torque off. Needs
+      `calibration.json`; starts only from the rest pose; ANY key = e-stop
 
 ## 3. Mock bay: measure before printing (calipers)
 
