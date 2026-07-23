@@ -8,6 +8,12 @@ import sys
 if sys.platform == "win32":
     import msvcrt
 
+    def flush_input() -> None:
+        """Drop pending keypresses (e.g. a stray extra Enter after a
+        read_key phase) so the next input() prompt actually waits."""
+        while msvcrt.kbhit():
+            msvcrt.getwch()
+
     def read_key(timeout: float | None = None) -> str | None:
         """One keypress, or None if timeout elapses without input."""
         import time
@@ -28,6 +34,12 @@ else:
     import select
     import termios
     import tty
+
+    def flush_input() -> None:
+        """Drop pending keypresses (e.g. a stray extra Enter after a
+        read_key phase) so the next input() prompt actually waits."""
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
 
     def read_key(timeout: float | None = None) -> str | None:
         if not sys.stdin.isatty():

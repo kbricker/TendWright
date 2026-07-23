@@ -33,7 +33,7 @@ Other assembly notes:
 - 12V PSU = follower. The 5V one is for the leader — set it aside with the leader servos (not building that now).
 
 ## 5. First power-on (with spark)
-- Follower → USB adapter → PC. Bench toolkit flow: `scan` (expect IDs 1–6), then `monitor --ids 1-6` to sweep each joint by hand and record tick ranges + zero positions.
+- Follower → USB adapter → PC. Bench toolkit flow: `scan` (expect IDs 1–6), then `monitor --ids 1-6` to sweep each joint by hand and verify wiring order, then `calibrate capture` to formally record each joint's range, the rest pose, and direction signs into `calibration.json`.
 - First motion test: small joint jogs from Python, one joint at a time, hand hovering near the power switch.
 - Nothing gets scripted beyond jogs until the MuJoCo model and real arm agree on zero positions.
 
@@ -45,4 +45,5 @@ Other assembly notes:
 - [ ] Servo IDs 1–6 set before assembly
 - [ ] Horns attached at centered positions via jig
 - [ ] Follower assembled, wired, powers up
+- [ ] `calibration.json` captured (`calibrate capture` — ranges, rest, signs)
 - [ ] First jog from Python moves the right joint the right way

@@ -18,6 +18,9 @@ merged and synced on cell1. Companion docs: `arm-build-day.md` (arm detail),
 
 - [ ] `scan` — all 6 servos report in, sane voltage/temp
 - [ ] `monitor` — torque off, move joints by hand, positions track
+- [ ] `calibrate capture` — guided (torque off, can't move the arm): sweep
+      each joint, pose at rest, nudge each joint positive; writes
+      `calibration.json` — commit it / send it to spark
 - [ ] `jog` — one joint at a time, small moves, hand near the switch
 - [ ] `teach` / replay a slow air-move — no load, reduced speed
 
