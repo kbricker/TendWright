@@ -111,11 +111,15 @@ def load_recording(path: Path) -> tuple[list[int], float, list[list[int]]]:
 def approach_start_pose(bus: FeetechBus, ids: list[int],
                         first: list[int]) -> None:
     """Move slowly to frame 0 and poll until every joint has ARRIVED —
-    never start streaming frames on a timer guess. Settle logic is the
-    shared plant-gated helper (position + stillness)."""
+    never start streaming frames on a timer guess. Arrival-only settle
+    (require_still=False): replay's original semantics, tolerant of a
+    gravity-loaded joint dithering inside the tolerance."""
     for servo_id, pos in zip(ids, first):
         bus.move_to(servo_id, pos, speed=APPROACH_SPEED_TICKS)
-    wait_settle(bus, dict(zip(ids, first)), APPROACH_SPEED_TICKS, "approach")
+    wait_settle(bus, dict(zip(ids, first)), APPROACH_SPEED_TICKS,
+                "approach", require_still=False,
+                fail_hint="a joint may be obstructed or too weak for the "
+                          "pose — torque has been cut")
 
 
 def replay(args: argparse.Namespace) -> int:

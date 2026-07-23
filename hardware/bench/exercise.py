@@ -26,6 +26,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import serial
+
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .calibrate import JOINT_NAMES, JointCal, load_calibration
 from .monitor import parse_ids
@@ -83,14 +85,15 @@ def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
             )
 
 
-def held_torque_cut(bus: FeetechBus, ids: list[int], why: str) -> None:
+def held_torque_cut(why: str) -> None:
     """The arm is (or may be) holding under torque somewhere mid-routine.
     Never drop it on an unwarned operator: hold until they have a hand on
-    it, then let the caller's cleanup cut torque."""
-    print(f"\n{why} — the arm is HOLDING under torque. get a hand on it — "
-          "it drops when torque cuts.", file=sys.stderr)
-    flush_input()
+    it, then let the caller's cleanup cut torque. A Ctrl+C anywhere in
+    here (not just at the input) skips ahead to that same cleanup."""
     try:
+        print(f"\n{why} — the arm is HOLDING under torque. get a hand on "
+              "it — it drops when torque cuts.", file=sys.stderr)
+        flush_input()
         input("press Enter to cut torque: ")
     except (EOFError, KeyboardInterrupt):
         pass  # fall through to the caller's torque cut
@@ -133,10 +136,20 @@ def run() -> int:
             "`calibrate capture` first (or point --cal at the file)",
         )
     cals = load_calibration(cal_path)
+    uncaptured = sorted(set(JOINT_NAMES) - set(cals))
+    if uncaptured:
+        raise BenchError(
+            f"{cal_path} covers joint(s) {sorted(cals)} but the SO-101 "
+            f"has 1-6 — joint(s) {uncaptured} would hang limp while the "
+            "others sweep",
+            "capture the missing joint(s) first: calibrate capture --ids "
+            + ",".join(str(i) for i in uncaptured),
+        )
 
-    # --ids selects the SWEEP subset; every calibrated joint is preflighted,
-    # woken, and held regardless — big joints must never sweep past limp,
-    # unmonitored distal ones.
+    # --ids selects the SWEEP subset; every joint is preflighted, woken,
+    # and held regardless — big joints must never sweep past limp,
+    # unmonitored distal ones (which is also why a partial calibration
+    # file is refused above).
     ids = sorted(cals)
     if args.ids is None:
         sweep_ids = ids
@@ -224,18 +237,30 @@ def run() -> int:
             return 0
         except EStop:
             print("\nE-STOP — halting at present position", file=sys.stderr)
-            halt_all(bus, ids)
-            held_torque_cut(bus, ids, "e-stop")
+            try:
+                halt_all(bus, ids)
+            except KeyboardInterrupt:
+                pass
+            held_torque_cut("e-stop")
             return 3
-        except BenchError:
-            # wait_settle timeouts arrive here already halted; comm errors
-            # may not be halted, but the arm may still be holding mid-air —
-            # same rule either way: never cut torque on an unwarned operator.
-            held_torque_cut(bus, ids, "error")
+        except (BenchError, serial.SerialException):
+            # SerialException is the raw pyserial fault _check doesn't
+            # wrap — a transient USB glitch mid-sweep must get the same
+            # held cut, not a surprise drop. Halt is best-effort (a dead
+            # bus just no-ops per joint); the arm may still be holding
+            # mid-air — never cut torque on an unwarned operator.
+            try:
+                halt_all(bus, ids)
+            except KeyboardInterrupt:
+                pass
+            held_torque_cut("error")
             raise
         except KeyboardInterrupt:
-            halt_all(bus, ids)
-            held_torque_cut(bus, ids, "interrupted")
+            try:
+                halt_all(bus, ids)
+            except KeyboardInterrupt:
+                pass
+            held_torque_cut("interrupted")
             raise
         finally:
             bus.safe_torque_off(ids)

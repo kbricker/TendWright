@@ -44,19 +44,29 @@ def halt_all(bus: FeetechBus, ids: list[int]) -> None:
 def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
                 label: str,
                 poll_key: Callable[[float], str | None] | None = None,
+                require_still: bool = True,
+                fail_hint: str = "a joint may be obstructed or too weak "
+                                 "for this pose or speed; clear the "
+                                 "workspace and re-run",
                 ) -> None:
-    """Poll until every joint in targets is at its target AND still.
+    """Poll until every joint in targets has arrived at its target.
+
+    require_still additionally demands 3 consecutive low-movement samples
+    (exercise: settle fully before the next waypoint); without it, arrival
+    within tolerance is enough (teach's approach — its original semantics,
+    tolerant of a gravity-loaded joint dithering inside the tolerance).
 
     poll_key (when given) is called between samples with a timeout; any
     non-None return raises EStop — the caller owns the halt/hold response.
-    Without poll_key the wait is uninterruptible except Ctrl+C (teach's
-    replay approach). A joint that never settles (obstruction, too weak)
-    halts the arm and raises BenchError; the arm is left HOLDING at its
-    present position — the caller decides how torque comes off.
+    A joint that never arrives (obstruction, too weak) gets every joint's
+    goal re-set to its present position, then raises BenchError. The
+    message makes no claim about torque — torque state after failure is
+    the CALLER's affair; put it in fail_hint.
     """
     ids = sorted(targets)
     prev = {i: bus.read_position(i) for i in ids}
     still: dict[int, int] = {i: 0 for i in ids}
+    needed = STILL_SAMPLES if require_still else 1
     worst_travel = max(abs(prev[i] - targets[i]) for i in ids)
     # Servo speed units approximate ticks/s closely enough for a deadline.
     deadline = (time.monotonic() + SETTLE_GRACE_S
@@ -69,12 +79,14 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
             pos = bus.read_position(i)
             err = abs(pos - targets[i])
             worst = max(worst, err)
-            if err <= SETTLE_TOL_TICKS and abs(pos - prev[i]) <= STILL_TICKS:
+            arrived = err <= SETTLE_TOL_TICKS
+            if arrived and (not require_still
+                            or abs(pos - prev[i]) <= STILL_TICKS):
                 still[i] += 1
             else:
                 still[i] = 0
             prev[i] = pos
-            if still[i] < STILL_SAMPLES:
+            if still[i] < needed:
                 done = False
         print(f"\r  {label}: worst error {worst:>4} ticks   ",
               end="", flush=True)
@@ -84,13 +96,11 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
         if time.monotonic() > deadline:
             print()
             halt_all(bus, ids)
-            lagging = sorted(i for i in ids if still[i] < STILL_SAMPLES)
+            lagging = sorted(i for i in ids if still[i] < needed)
             raise BenchError(
                 f"joint(s) {lagging} did not settle at their target "
-                f"(worst error {worst} ticks) — halted in place",
-                "a joint may be obstructed or too weak for this pose or "
-                "speed; clear the workspace and re-run (check the joint's "
-                "calibrated range if it repeats)",
+                f"(worst error {worst} ticks)",
+                fail_hint,
             )
         remaining = max(0.0, SAMPLE_S - (time.monotonic() - start))
         if poll_key is None:

@@ -92,8 +92,9 @@ MuJoCo mapping consume the recorded sign, never re-guess it:
   ARRIVED before streaming frames, and torques off on exit or Ctrl+C.
 - `exercise` moves the arm on its own: run it with the workspace clear and
   the gripper EMPTY. It refuses to start without a valid `calibration.json`
-  or with the arm away from its rest pose (re-checked after the confirm
-  prompt, right before anything energizes); every commanded position stays
+  covering ALL six joints (a limp uncalibrated joint must not be whipped
+  around by the others) or with the arm away from its rest pose (re-checked
+  after the confirm prompt, right before anything energizes); every commanded position stays
   strictly inside the calibrated range (default sweep = middle 70%); wake
   pre-loads each goal to the present position before enabling torque (no
   lurch). `--ids` narrows which joints SWEEP — every calibrated joint is
