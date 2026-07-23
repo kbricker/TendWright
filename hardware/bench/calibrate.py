@@ -215,19 +215,25 @@ def capture_rest(bus: FeetechBus, ids: list[int],
 
 def capture_direction(bus: FeetechBus, servo_id: int) -> int:
     """Nudge the joint in its canonical positive direction; the tick delta's
-    sign is the recording. The baseline is read fresh at each prompt (torque
-    is off, so joints drift between phases), and a delta that jumps the
-    encoder wrap re-prompts instead of recording an inverted sign."""
+    sign is the recording. The baseline is read fresh before the first
+    prompt (torque is off, so joints drift between phases) and KEPT across
+    too-small retries — the user is mid-nudge then, and re-reading would
+    measure from their hand's position. A delta that jumps the encoder wrap
+    forces a release-and-settle step before a new baseline."""
+    baseline = bus.read_position(servo_id)
     while True:
-        baseline = bus.read_position(servo_id)
         flush_input()
         input(f"  nudge joint {servo_id} ({JOINT_NAMES[servo_id]}) in its "
               f"POSITIVE direction — {JOINT_POSITIVE[servo_id]} — hold it "
               f"there and press Enter: ")
         delta = bus.read_position(servo_id) - baseline
         if abs(delta) > WRAP_JUMP_TICKS:
-            print("  the reading jumped across the encoder wrap — move the "
-                  "joint away from its end stop and nudge again")
+            print("  the reading jumped across the encoder wrap — release "
+                  "the joint")
+            flush_input()
+            input("  let it settle away from its end stop, then press "
+                  "Enter: ")
+            baseline = bus.read_position(servo_id)
             continue
         if abs(delta) >= DIR_MIN_DELTA_TICKS:
             sign = 1 if delta > 0 else -1
