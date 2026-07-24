@@ -44,8 +44,10 @@ JPEG_QUALITY = 80
 STREAM_FPS_CAP = 20.0  # per-client send cap; capture runs at camera rate
 FRAME_WAIT_S = 5.0  # client wait for a fresh frame before re-checking
 # A stalled reader (zero-window TCP: sleeping phone, paused player) must
-# error its handler thread out, not wedge it forever in wfile.write.
-STREAM_SEND_TIMEOUT_S = 10.0
+# error its handler thread out, not wedge it forever in wfile.write —
+# applied to EVERY request via the handler's timeout attribute, so the
+# snapshot path (1080p JPEGs exceed the socket buffer) is covered too.
+SEND_TIMEOUT_S = 10.0
 # With the camera stalled, a vanished client is undetectable (disconnects
 # only surface on write) — after this many empty waits, drop the client so
 # its thread is reaped; a live viewer just reconnects.
@@ -100,6 +102,8 @@ class FrameBox:
 
 def make_handler(box: FrameBox):
     class Handler(BaseHTTPRequestHandler):
+        timeout = SEND_TIMEOUT_S  # socket timeout for every read/write
+
         def log_message(self, fmt, *args):  # one terse line per request
             print(f"  {self.address_string()} {fmt % args}", file=sys.stderr)
 
@@ -129,7 +133,6 @@ def make_handler(box: FrameBox):
                 pass  # client left / socket fault mid-write — never fatal
 
         def _stream(self) -> None:
-            self.connection.settimeout(STREAM_SEND_TIMEOUT_S)
             self.send_response(200)
             self.send_header("Content-Type",
                              "multipart/x-mixed-replace; boundary=frame")
@@ -222,14 +225,15 @@ def run() -> int:
               "Ctrl+C to stop.")
         capture_loop(cap, box, detector)
     finally:
-        try:
-            box.close()  # release every waiting client thread
-            server.shutdown()
-            server.server_close()
-            if cap is not None:
-                cap.release()
-        except KeyboardInterrupt:
-            pass  # a second Ctrl+C must not skip the remaining cleanup
+        # Best-effort PER STEP: a second Ctrl+C (or an OSError from one
+        # step) must neither skip the remaining steps nor replace the
+        # in-flight exception's exit code with a traceback.
+        for step in (box.close, server.shutdown, server.server_close,
+                     cap.release if cap is not None else (lambda: None)):
+            try:
+                step()
+            except (KeyboardInterrupt, OSError):
+                continue
 
 
 def main() -> int:
