@@ -9,6 +9,10 @@ that isn't starting from its rest pose. The routine:
     3 elbow, 2 shoulder, 1 base pan — rest is a compact fold; unfold the
     light end before slinging the heavy joints) -> rest -> torque off
 
+    While the shoulder (2) sweeps, the elbow (3) holds ~45 deg open
+    instead of at its folded rest — a refolded elbow would be pressed
+    down into the table — and refolds after.
+
     uv run python -m hardware.bench.exercise
     uv run python -m hardware.bench.exercise --ids 2,3 --span 50 --speed 0.5
 
@@ -50,6 +54,14 @@ PREFLIGHT_REST_TOL_TICKS = 300  # how far from rest the arm may start
 # fold slings the whole folded stack around — worst inertia, and the
 # worst place to discover a range/sign surprise.
 SWEEP_ORDER = (4, 5, 6, 3, 2, 1)
+# Clearance holds (Kyle, second bench flow review): sweeping the shoulder
+# with the elbow refolded to rest drives the tucked elbow/wrist stack
+# down into the table. While joint k sweeps, the joints listed here hold
+# ~45 deg open from their folded rest instead of at rest, and refold
+# once k is back at rest.
+CLEARANCE_HOLDS = {2: (3,)}
+CLEARANCE_DEG = 45
+CLEARANCE_TICKS = round(CLEARANCE_DEG * 4096 / 360)  # ~512
 
 
 def sweep_window(cal: JointCal, span_pct: int) -> tuple[int, int]:
@@ -63,6 +75,13 @@ def clamp_goal(cal: JointCal, position: int) -> int:
     even the rest pose and wake holds (the loader tolerates a rest up to
     25 ticks outside [min,max]; commands must not)."""
     return max(cal.min, min(cal.max, position))
+
+
+def clearance_pose(cal: JointCal) -> int:
+    """~45 deg open from a folded rest: away from whichever range end the
+    rest pose sits nearest (the fold direction), clamped in-range."""
+    direction = -1 if cal.rest > (cal.min + cal.max) // 2 else 1
+    return clamp_goal(cal, cal.rest + direction * CLEARANCE_TICKS)
 
 
 def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
@@ -233,14 +252,36 @@ def run() -> int:
             for n, i in enumerate(sweep_ids, start=1):
                 lo, hi = windows[i]
                 name = cals[i].name
+                clearance = {j: clearance_pose(cals[j])
+                             for j in CLEARANCE_HOLDS.get(i, ())
+                             if j != i}
+                hold = {**rest, **clearance}
                 print(f"\n[{n}/{len(sweep_ids)}] sweeping joint {i} "
                       f"({name}): {lo} -> {hi} -> rest {rest[i]}")
+                if clearance:
+                    for j, pose in clearance.items():
+                        print(f"  opening joint {j} ({cals[j].name}) to "
+                              f"{pose} (~{CLEARANCE_DEG} deg clear of the "
+                              f"fold) so joint {i} can't press it into "
+                              f"the table")
+                        bus.move_to(j, pose, speed=speed,
+                                    acceleration=ACCELERATION)
+                    wait_settle(bus, hold, speed, "clearance",
+                                poll_key=read_key)
                 for label, target in (("low", lo), ("high", hi),
                                       ("rest", rest[i])):
                     bus.move_to(i, clamp_goal(cals[i], target),
                                 speed=speed, acceleration=ACCELERATION)
-                    goals = {**rest, i: clamp_goal(cals[i], target)}
+                    goals = {**hold, i: clamp_goal(cals[i], target)}
                     wait_settle(bus, goals, speed, f"{name} {label}",
+                                poll_key=read_key)
+                if clearance:
+                    for j in clearance:
+                        print(f"  refolding joint {j} ({cals[j].name}) "
+                              f"to rest")
+                        bus.move_to(j, rest[j], speed=speed,
+                                    acceleration=ACCELERATION)
+                    wait_settle(bus, rest, speed, "refold",
                                 poll_key=read_key)
 
             print("\nroutine complete — arm at rest, cutting torque")

@@ -16,7 +16,7 @@ COM port on Windows); override with `--port`.
 | `jog` | Keyboard single-joint moves with soft limits; any unbound key = e-stop. |
 | `teach` | `record`: sample a hand-moved trajectory to JSON (torque off). `replay`: play it back slowly after a confirm prompt. |
 | `calibrate` | `capture`: guided torque-off capture of each joint's range, the arm's rest pose, and each joint's direction sign → `calibration.json` (atomic write; re-runs merge per joint). `show`: print + validate the file. |
-| `exercise` | Scripted limber-up from `calibration.json`: wake (no lurch) → rest pose → sweep each joint through a sub-range of its calibrated span, one at a time, distal first (4→5→6→3→2→1 — rest is a compact fold, so the wrist unfolds before the heavy joints move) → rest → torque off. Refuses without a calibration or away from rest; ANY key = e-stop. |
+| `exercise` | Scripted limber-up from `calibration.json`: wake (no lurch) → rest pose → sweep each joint through a sub-range of its calibrated span, one at a time, distal first (4→5→6→3→2→1 — rest is a compact fold, so the wrist unfolds before the heavy joints move). The elbow (3) holds ~45° open while the shoulder (2) sweeps — a refolded elbow would be pressed into the table — then refolds. Ends at rest, torque off. Refuses without a calibration or away from rest; ANY key = e-stop. |
 | `campreview` | Live camera window with tag36h11 AprilTag overlay + FPS; `--grab N` for headless snapshots. |
 
 ## Assembly-day order
