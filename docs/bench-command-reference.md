@@ -47,6 +47,30 @@ health check.
 | `uv run python -m hardware.bench.campreview [--camera 0] [--width 1280 --height 720]` | Live window with tag36h11 AprilTag overlay + FPS. `--grab N --outdir D` = headless snapshots. `--calib FILE.npz` applies camera intrinsics. |
 | `uv run python -m hardware.pico.watch` | Stream the KW12-3 seat-switch state from the Pico bridge; state should flip on press. |
 
+### Camera scouting quickstart (ELP-USBFHD01M-L36)
+
+The camera is UVC plug-and-play — no driver setup. It's the manual-focus
+variant: focus by twisting the lens barrel, judged by the overlay, ONCE at
+the final working distance; then never touch it.
+
+```
+# live view with tag overlay + FPS (needs a display on cell1)
+uv run python -m hardware.bench.campreview --width 1920 --height 1080
+
+# headless: grab 5 stills to check a mount position over plain ssh
+uv run python -m hardware.bench.campreview --width 1920 --height 1080 \
+    --grab 5 --outdir /tmp/scout
+```
+
+- Expect ~30 fps at 1080p / ~60 fps at 720p (the tool forces MJPEG; if
+  the FPS overlay reads ~5, something regressed — flag it).
+- Judge mount positions by what the SOFTWARE detects, not your eye:
+  print `docs/bench-apriltags.html` at 100% scale (tag36h11 IDs 0–7,
+  40 mm) and require solid corner locks at the candidate distance/angle.
+- Wall-mount starting point: ~28–32" up, ~20–25° downward tilt.
+- Focus the barrel LAST, at the chosen distance, then mark the spot —
+  the wedge bracket gets designed to that measurement.
+
 ## Sim / orchestrator (reference)
 
 | Command | What it does |
