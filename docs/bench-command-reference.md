@@ -60,6 +60,13 @@ uv run python -m hardware.bench.campreview --width 1920 --height 1080
 # headless: grab 5 stills to check a mount position over plain ssh
 uv run python -m hardware.bench.campreview --width 1920 --height 1080 \
     --grab 5 --outdir /tmp/scout
+
+# REMOTE view from the desk: stream server on cell1 (no display needed)
+uv run python -m hardware.bench.camserve --width 1920 --height 1080
+#   then on any LAN machine:  http://cell1:8081/        (live, tag overlay)
+#                             http://cell1:8081/snapshot (single JPEG)
+#   raw video: --no-tags · different port: --listen N · Ctrl+C stops it
+#   NO AUTH - home LAN only, never port-forward it
 ```
 
 - Expect ~30 fps at 1080p / ~60 fps at 720p (the tool forces MJPEG; if
