@@ -62,11 +62,14 @@ P = {
     "screw_spacing": 28.0,  # hole centers, horizontal
     "screw_shank": 4.2,     # clearance for #6 / 3.5 mm woodscrew
     "screw_head": 8.6,      # countersink head diameter
-    # T-beam neck: flange (top, horizontal) + web (below, vertical)
+    # T-beam neck: flange (top, horizontal) + web (below, vertical).
+    # web_h 12->8 (Kyle): a shorter neck silhouette needs a shorter top
+    # wall, preserving >= back_open_min of open frame back at 60 deg.
     "flange_w": 22.0,
     "flange_t": 5.0,
     "web_w": 8.0,
-    "web_h": 12.0,
+    "web_h": 8.0,
+    "back_open_min": 10.0,  # guaranteed open gap below the top wall
     "wall_clearance": 12.0,  # min gap frame-to-wall (plate 4 + 8 free)
     # variants: tilt below horizontal
     "angles_deg": (45, 60),
@@ -194,10 +197,15 @@ def build_variant(angle_deg, p):
     neck_top = web_top + p["flange_t"]                 # +12
     neck_bot = -(p["web_h"] / 2 + 1)                   # -7
     neck_mid = (neck_top + neck_bot) / 2               # +2.5
-    cover = (neck_top - neck_bot) + 3                  # 22
+    cover = (neck_top - neck_bot) + 3
     wall_len = math.ceil(cover / math.sin(phi))
     half_len_frame = p["frame_len"] / 2
-    wall_on_frame = min(wall_len, p["frame_len"] - 12)
+    # the on-frame part of the wall may never close the back below it
+    # past back_open_min (Kyle: >= 1 cm open gap on every variant) —
+    # any excess extends past the +Y frame end instead
+    stop_in = -half_len_frame + p["stop_t"] + 1.0
+    on_frame_cap = half_len_frame - stop_in - p["back_open_min"]
+    wall_on_frame = min(wall_len, on_frame_cap)
     wall_y0 = half_len_frame - wall_on_frame
     wall_ext = wall_len - wall_on_frame                # past the +Y end
 
@@ -273,7 +281,7 @@ def build_variant(angle_deg, p):
                                sink, x, p["plate_t"] - sink / 2 + 0.01,
                                hole_z))
     mount.name = f"CameraMount{angle_deg}"
-    return mount, neck_len
+    return mount, neck_len, wall_y0 - stop_in
 
 
 def add_preview_rig():
@@ -309,7 +317,7 @@ def render(path):
 
 def main():
     for angle in P["angles_deg"]:
-        mount, neck_len = build_variant(angle, P)
+        mount, neck_len, back_open = build_variant(angle, P)
         center = (0, 34, -14)
         cam = add_preview_rig()
         aim(cam, (170, -130, 100), center)
@@ -327,8 +335,8 @@ def main():
         bpy.ops.wm.stl_export(filepath=stl, export_selected_objects=True)
         bpy.ops.wm.save_as_mainfile(
             filepath=os.path.join(OUT_DIR, f"camera_mount_{angle}.blend"))
-        print(f"[mounts] {angle} deg: neck_len={neck_len} -> "
-              f"camera_mount_{angle}.blend/.stl")
+        print(f"[mounts] {angle} deg: neck_len={neck_len} "
+              f"back_open={back_open:.1f} -> camera_mount_{angle}.blend/.stl")
     print("[mounts] done")
 
 
