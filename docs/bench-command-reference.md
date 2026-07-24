@@ -24,7 +24,7 @@ servos powered and HOLDING their last command.
 | `calibrate show [--in FILE]` | Print + validate the calibration table. | no |
 | `teach record [--out teach.json] [--ids 1-6] [--hz 10]` | Torque off (confirm), sample a hand-moved trajectory; Enter stops. | no (cuts torque) |
 | `teach replay --in FILE [--speed 0.25]` | Confirm, sync goals (no lurch), slow-approach frame 0, wait for real arrival, stream frames. Workspace clear. | yes |
-| `exercise [--ids RANGE] [--span 70] [--speed 1.0] [--cal FILE]` | Scripted limber-up: wake (no lurch) → rest → sweep each joint through `span`% of its calibrated range, one at a time (others held) → rest → torque off. Needs ALL SIX joints in `calibration.json`; starts only from the rest pose; gripper empty. | yes |
+| `exercise [--ids RANGE] [--span 70] [--speed 1.0] [--cal FILE]` | Scripted limber-up: wake (no lurch) → rest → sweep each joint through `span`% of its calibrated range, one at a time (others held), distal first: 4 wrist_flex → 5 wrist_roll → 6 gripper → 3 elbow → 2 shoulder → 1 base pan (rest is a compact fold — unfold the light end before the heavy joints move) → rest → torque off. Needs ALL SIX joints in `calibration.json`; starts only from the rest pose; gripper empty. | yes |
 
 ### exercise, the 10-second version
 

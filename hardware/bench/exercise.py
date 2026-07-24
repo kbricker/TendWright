@@ -5,7 +5,9 @@ pose, per-joint soft limits) and REFUSES to move an uncalibrated arm or one
 that isn't starting from its rest pose. The routine:
 
     wake (no lurch) -> rest pose -> per-joint sweep, one joint at a time,
-    others holding -> rest pose -> torque off
+    others holding, DISTAL FIRST (4 wrist_flex, 5 wrist_roll, 6 gripper,
+    3 elbow, 2 shoulder, 1 base pan — rest is a compact fold; unfold the
+    light end before slinging the heavy joints) -> rest -> torque off
 
     uv run python -m hardware.bench.exercise
     uv run python -m hardware.bench.exercise --ids 2,3 --span 50 --speed 0.5
@@ -41,6 +43,13 @@ SPAN_MIN, SPAN_MAX = 10, 90  # sweep % of calibrated span; >=5% end margin
 SPAN_DEFAULT = 70
 PREFLIGHT_RANGE_MARGIN = 25  # start-pose slack outside [min,max]
 PREFLIGHT_REST_TOL_TICKS = 300  # how far from rest the arm may start
+# Sweep order is distal-first (Kyle, first bench flow review): rest is a
+# folded, compact pose, so unfold the wrist (4), roll it (5), work the
+# gripper (6) while the heavy joints hold still, THEN open the elbow (3)
+# and shoulder (2), and swing the base (1) last. Proximal-first from a
+# fold slings the whole folded stack around — worst inertia, and the
+# worst place to discover a range/sign surprise.
+SWEEP_ORDER = (4, 5, 6, 3, 2, 1)
 
 
 def sweep_window(cal: JointCal, span_pct: int) -> tuple[int, int]:
@@ -152,15 +161,16 @@ def run() -> int:
     # file is refused above).
     ids = sorted(cals)
     if args.ids is None:
-        sweep_ids = ids
+        sweep_ids = [i for i in SWEEP_ORDER if i in cals]
     else:
-        sweep_ids = sorted(dict.fromkeys(parse_ids(args.ids)))
-        unknown = sorted(set(sweep_ids) - set(JOINT_NAMES))
+        requested = set(parse_ids(args.ids))
+        sweep_ids = [i for i in SWEEP_ORDER if i in requested]
+        unknown = sorted(requested - set(JOINT_NAMES))
         if unknown:
             raise BenchError(
                 f"unknown joint ID(s) {unknown}",
                 "the SO-101 follower uses IDs 1-6 (base to gripper)")
-        uncalibrated = sorted(set(sweep_ids) - set(cals))
+        uncalibrated = sorted(requested - set(cals))
         if uncalibrated:
             raise BenchError(
                 f"joint(s) {uncalibrated} are not in {cal_path}",
