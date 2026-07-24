@@ -5,11 +5,14 @@
 
 Shows resolution + measured FPS, draws detected tag corners/centers/IDs.
 Keys in the window: s = save a snapshot PNG, q/Esc = quit.
+The view window opens 960 px wide (~quarter of the bench 1080p screen),
+drag-resizable; override with --view-width. Capture, detection, and
+snapshots always run at full camera resolution — only the view scales.
 Headless cell1 note: run over `ssh -X cell1`, or use --grab to save N
 frames to disk without a window.
 
 Usage: campreview [--camera N] [--width W] [--height H] [--calib FILE.npz]
-                  [--grab N] [--outdir DIR]
+                  [--view-width PX] [--grab N] [--outdir DIR]
 """
 
 from __future__ import annotations
@@ -34,6 +37,11 @@ from hardware.errors import BenchError, make_run_tool  # noqa: E402
 
 TAG_FAMILY = "tag36h11"
 FPS_WINDOW = 30  # sliding-window samples for the FPS readout (~1-3 s)
+# Default view-window width: 960x540 is a quarter of the bench's 1080p
+# screen by area — Kyle never watches the preview at 100%. The clamp is a
+# sanity envelope, not a screen query (single known bench monitor).
+VIEW_WIDTH_DEFAULT = 960
+VIEW_WIDTH_MIN, VIEW_WIDTH_MAX = 160, 3840
 
 # Camera-flavored CLI wrapper (vs bus.py's servo-flavored unplug hint).
 run_tool = make_run_tool("unplug/replug the camera and re-run")
@@ -114,6 +122,12 @@ def run() -> int:
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--calib", default=None,
                         help=".npz with K + dist to undistort")
+    parser.add_argument("--view-width", type=int, default=VIEW_WIDTH_DEFAULT,
+                        help="view window width in px (default "
+                             f"{VIEW_WIDTH_DEFAULT}, ~quarter of a 1080p "
+                             f"screen; clamped {VIEW_WIDTH_MIN}-"
+                             f"{VIEW_WIDTH_MAX}; capture stays full "
+                             "resolution)")
     parser.add_argument("--grab", type=int, default=0, metavar="N",
                         help="headless: save N annotated frames and exit")
     parser.add_argument("--outdir", default=".", help="snapshot directory")
@@ -124,9 +138,16 @@ def run() -> int:
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
+    view_width = min(VIEW_WIDTH_MAX, max(VIEW_WIDTH_MIN, args.view_width))
     if not args.grab:
         try:
-            cv2.namedWindow("campreview")
+            # WINDOW_NORMAL decouples window size from frame size (the
+            # default AUTOSIZE locks the window to full capture resolution,
+            # which fills the bench screen) and makes it drag-resizable.
+            # Both flags are literally 0 — the OR documents intent; what
+            # matters is the absence of WINDOW_AUTOSIZE (0x1).
+            cv2.namedWindow("campreview",
+                            cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
         except cv2.error as exc:
             raise BenchError(
                 "cannot open a display window (headless session?)",
@@ -138,6 +159,7 @@ def run() -> int:
     session = int(time.time())
     fps_counter = FpsCounter()
     saved = 0
+    view_sized = False  # size once from the first frame's real aspect
     try:
         while True:
             frame = read_frame(cap)
@@ -159,6 +181,15 @@ def run() -> int:
                     return 0
                 continue
 
+            if not view_sized:
+                # The camera negotiates its own frame size (it may ignore
+                # --width/--height), so derive the view height from the
+                # first delivered frame — then never touch the size again,
+                # so an operator drag-resize sticks.
+                h, w = frame.shape[:2]
+                cv2.resizeWindow("campreview", view_width,
+                                 max(1, round(view_width * h / w)))
+                view_sized = True
             cv2.imshow("campreview", frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
