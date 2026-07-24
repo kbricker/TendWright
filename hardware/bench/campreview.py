@@ -41,6 +41,10 @@ def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
             "check the USB connection; try --camera 1 (or 2); on Linux, "
             "`ls /dev/video*` shows what exists",
         )
+    # Request MJPEG BEFORE the frame size: over USB 2.0 the ELP camera
+    # otherwise negotiates uncompressed YUY2, which silently caps 1080p at
+    # ~5 fps. Best-effort — backends that ignore FOURCC just keep working.
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     return cap
