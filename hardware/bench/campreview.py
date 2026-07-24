@@ -28,9 +28,38 @@ import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 from pupil_apriltags import Detector  # noqa: E402
 
-from .bus import BenchError, run_tool  # noqa: E402
+# Camera tools import from hardware.errors, NOT .bus — keeps the Feetech
+# servo SDK out of their import graph entirely (errors.py exists for this).
+from hardware.errors import BenchError, make_run_tool  # noqa: E402
 
 TAG_FAMILY = "tag36h11"
+FPS_WINDOW = 30  # sliding-window samples for the FPS readout (~1-3 s)
+
+# Camera-flavored CLI wrapper (vs bus.py's servo-flavored unplug hint).
+run_tool = make_run_tool("unplug/replug the camera and re-run")
+
+
+class FpsCounter:
+    """Measured FPS over a sliding window of frame timestamps."""
+
+    def __init__(self):
+        self._times: list[float] = []
+
+    def tick(self) -> float:
+        self._times.append(time.monotonic())
+        self._times = self._times[-FPS_WINDOW:]
+        if len(self._times) < 2:
+            return 0.0
+        return (len(self._times) - 1) / (self._times[-1] - self._times[0])
+
+
+def read_frame(cap: cv2.VideoCapture):
+    """One frame, or the shared dead-camera BenchError."""
+    ok, frame = cap.read()
+    if not ok:
+        raise BenchError("camera stopped returning frames",
+                         "unplug/replug the camera and retry")
+    return frame
 
 
 def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
@@ -107,20 +136,15 @@ def run() -> int:
 
     cap = open_camera(args.camera, args.width, args.height)
     session = int(time.time())
-    times: list[float] = []
+    fps_counter = FpsCounter()
     saved = 0
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
-                raise BenchError("camera stopped returning frames",
-                                 "unplug/replug the camera and retry")
+            frame = read_frame(cap)
             if K is not None:
                 frame = cv2.undistort(frame, K, dist)
 
-            times.append(time.monotonic())
-            times = times[-30:]
-            fps = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 else 0.0
+            fps = fps_counter.tick()
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             detections = detector.detect(gray)
