@@ -60,17 +60,22 @@ uv run python -m hardware.bench.campreview --width 1920 --height 1080
 # headless: grab 5 stills to check a mount position over plain ssh
 uv run python -m hardware.bench.campreview --width 1920 --height 1080 \
     --grab 5 --outdir /tmp/scout
-
-# REMOTE view from the desk: stream server on cell1 (no display needed)
-uv run python -m hardware.bench.camserve --width 1920 --height 1080
-#   then on any LAN machine:  http://cell1:8081/        (live, tag overlay)
-#                             http://cell1:8081/snapshot (single JPEG)
-#   raw video: --no-tags · different port: --listen N · Ctrl+C stops it
-#   NO AUTH - home LAN only, never port-forward it
 ```
 
-- Expect ~30 fps at 1080p / ~60 fps at 720p (the tool forces MJPEG; if
-  the FPS overlay reads ~5, something regressed — flag it).
+Both tools force MJPEG — expect ~30 fps at 1080p / ~60 fps at 720p; a
+reading near 5 fps means the format negotiation regressed, flag it.
+
+Remote view from the desk (`camserve`, no display needed on cell1):
+
+```
+uv run python -m hardware.bench.camserve --width 1920 --height 1080
+# then on any LAN machine:
+#   http://cell1:8081/                             live view, tag overlay
+#   curl -o snap.jpg http://cell1:8081/snapshot    single current frame
+# raw video: --no-tags · different port: --listen N · Ctrl+C stops it
+# NO AUTH - home LAN only, never port-forward it
+```
+
 - Judge mount positions by what the SOFTWARE detects, not your eye:
   print `docs/bench-apriltags.html` at 100% scale (tag36h11 IDs 0–7,
   40 mm) and require solid corner locks at the candidate distance/angle.
