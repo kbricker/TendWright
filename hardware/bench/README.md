@@ -18,7 +18,8 @@ COM port on Windows); override with `--port`.
 | `calibrate` | `capture`: guided torque-off capture of each joint's range, the arm's rest pose, and each joint's direction sign → `calibration.json` (atomic write; re-runs merge per joint). `show`: print + validate the file. |
 | `exercise` | Scripted limber-up from `calibration.json`: wake (no lurch) → rest pose → sweep each joint through a sub-range of its calibrated span, one at a time, distal first (4→5→6→3→2→1 — rest is a compact fold, so the wrist unfolds before the heavy joints move). The elbow (3) holds ~45° open while the shoulder (2) sweeps — a refolded elbow would be pressed into the table — then refolds. Ends at rest, torque off. Refuses without a calibration or away from rest; ANY key = e-stop. |
 | `campreview` | Live camera window with tag36h11 AprilTag overlay + FPS; `--grab N` for headless snapshots. |
-| `camserve` | LAN MJPEG stream of the camera for remote iteration: `/` live page, `/stream` multipart MJPEG, `/snapshot` single JPEG (curl-able). Tag overlay default on (`--no-tags` for raw). No auth — home LAN only, never port-forward. Never touches the servo bus. |
+| `cameras` | The camera registry (`cameras.json`): `discover` prints paste-ready entries for attached cameras (identified by stable USB port path), `list` shows what is registered, `check` reconciles registry against reality. |
+| `camserve` | The camera bus: every registered camera from one server. `/` picker, `/all` 3×3 tiles, `/cam/<name>/` full-res view, `/cam/<name>/snapshot` (curl-able), `/status` JSON. Cameras open only while watched; cameras with `still_interval_s` write full-res stills to `stills/<name>/` with no viewer attached. Tag overlay on the full-res view (`--no-tags` for raw). No auth — home LAN only, never port-forward. Never touches the servo bus. |
 
 ## Assembly-day order
 
