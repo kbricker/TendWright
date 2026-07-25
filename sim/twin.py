@@ -104,6 +104,17 @@ CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 #     changes nothing, because the disagreement is not noise around the
 #     keyframe — it IS the keyframe being a different slump than today's.
 #
+# The waiver is DEPTH-UNBOUNDED for structural pairs during the settle —
+# stated plainly because it is the sharpest edge here. No depth cap is
+# imposed, for three reasons: the settle is the one phase where the twin
+# provably cannot resolve the geometry, so a cap would be a number
+# pretending to be a measurement; the arm is at torque-off rest, so it is
+# resting on itself under gravity rather than being driven into itself;
+# and the start pose is independently bounded by check_start_pose, which
+# reads the ENCODERS and refuses a start more than 300 ticks off rest or
+# outside the calibrated range. If that pre-flight bound is ever loosened,
+# revisit this.
+#
 # What this does NOT relax, ever:
 #   - the table. The arm is not built to rest on it, so a table contact
 #     is a finding in the settle too. Enforced by construction: table
