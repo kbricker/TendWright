@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "_comment": "Camera bus registry. Generate entries with `uv run python -m hardware.bench.cameras discover` on cell1 (plug the camera in first), then fill in name + location. path MUST be a /dev/v4l/by-path entry — it encodes the physical hub port, which is what stays stable across reboots (the ELP boards all share one USB serial). solo = full-res view + interval stills; tile = the reduced profile the 3x3 view uses. still_interval_s 0 disables interval capture for that camera.",
+  "cameras": [
+    {
+      "name": "bench",
+      "location": "wall bracket, 60 deg down over the arm",
+      "path": "/dev/v4l/by-path/REPLACE-WITH-DISCOVER-OUTPUT-video-index0",
+      "solo": {"width": 1920, "height": 1080, "fps": 30},
+      "tile": {"width": 640, "height": 360, "fps": 10},
+      "tags": true,
+      "still_interval_s": 0,
+      "still_keep": 200,
+      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet"
+    }
+  ]
+}

@@ -33,3 +33,6 @@ MUJOCO_LOG.TXT
 # OS
 Thumbs.db
 .DS_Store
+
+# Camera bus (plan #656): interval stills are local artifacts
+stills/

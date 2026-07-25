@@ -65,16 +65,29 @@ uv run python -m hardware.bench.campreview --width 1920 --height 1080 \
 Both tools force MJPEG — expect ~30 fps at 1080p / ~60 fps at 720p; a
 reading near 5 fps means the format negotiation regressed, flag it.
 
-Remote view from the desk (`camserve`, no display needed on cell1):
+Remote view from the desk (`camserve`, no display needed on cell1).
+Cameras come from `cameras.json`, not flags — wire a camera, then:
 
 ```
-uv run python -m hardware.bench.camserve --width 1920 --height 1080
+uv run python -m hardware.bench.cameras discover   # paste-ready entries
+uv run python -m hardware.bench.cameras check      # registry vs reality
+uv run python -m hardware.bench.camserve           # serve every camera
 # then on any LAN machine:
-#   http://cell1:8081/                             live view, tag overlay
-#   curl -o snap.jpg http://cell1:8081/snapshot    single current frame
+#   http://cell1:8081/                    picker: pick a camera
+#   http://cell1:8081/all                 3x3 tile view
+#   http://cell1:8081/cam/<name>/         one camera, full resolution
+#   http://cell1:8081/status              JSON state of every camera
+#   curl -o snap.jpg http://cell1:8081/cam/<name>/snapshot
 # raw video: --no-tags · different port: --listen N · Ctrl+C stops it
+# viewer only (no interval stills): --no-stills
 # NO AUTH - home LAN only, never port-forward it
 ```
+
+A camera is opened only while something is watching it, so the shared
+USB2 uplink carries only what is actually in use. Any camera with
+`still_interval_s` set writes full-resolution stills to `stills/<name>/`
+on that interval with or without a viewer — that is the primary use;
+live views are the scouting aid.
 
 - Judge mount positions by what the SOFTWARE detects, not your eye:
   print `docs/bench-apriltags.html` at 100% scale (tag36h11 IDs 0–7,
