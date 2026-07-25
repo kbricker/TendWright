@@ -9,9 +9,12 @@ that isn't starting from its rest pose. The routine:
     3 elbow, 2 shoulder, 1 base pan — rest is a compact fold; unfold the
     light end before slinging the heavy joints) -> rest -> torque off
 
-    While the shoulder (2) sweeps, the elbow (3) holds ~45 deg open
-    instead of at its folded rest — a refolded elbow would be pressed
-    down into the table — and refolds after.
+    While the shoulder (2) sweeps, the elbow (3) AND wrist (4) hold
+    90 deg open and the sweep is capped at 40% of the calibrated span —
+    the contact-free envelope derived from the digital twin (sim.twin,
+    plan #648), which correctly predicted both earlier bench collisions.
+    They refold after. The whole routine is simulated in the twin as a
+    pre-flight collision gate before anything moves (--no-gate to skip).
 
     uv run python -m hardware.bench.exercise
     uv run python -m hardware.bench.exercise --ids 2,3 --span 50 --speed 0.5
@@ -56,14 +59,17 @@ PREFLIGHT_REST_TOL_TICKS = 300  # how far from rest the arm may start
 # fold slings the whole folded stack around — worst inertia, and the
 # worst place to discover a range/sign surprise.
 SWEEP_ORDER = (4, 5, 6, 3, 2, 1)
-# Clearance holds (Kyle, second bench flow review): sweeping the shoulder
-# with the elbow refolded to rest drives the tucked elbow/wrist stack
-# down into the table. While joint k sweeps, the joints listed here hold
-# ~45 deg open from their folded rest instead of at rest, and refold
-# once k is back at rest.
-CLEARANCE_HOLDS = {2: (3,)}
-CLEARANCE_DEG = 45
-CLEARANCE_TICKS = round(CLEARANCE_DEG / DEG_PER_TICK)  # ~512
+# Clearance holds + the m2 span cap are DERIVED FROM THE DIGITAL TWIN
+# (`python -m sim.twin derive-clearance`, plan #648, 2026-07-25), which
+# also predicted both real bench collisions: the original hand-tuned
+# 45-deg elbow hold cleared neither the table at the sweep's low end
+# (with the wrist folded) nor the arm's own shoulder at the high end.
+# The model's contact-free fixed-hold answer: m2 sweeps at most 40% of
+# its span while the elbow AND wrist hold 90 deg open, refolding after.
+CLEARANCE_HOLDS = {2: (3, 4)}
+CLEARANCE_DEG = 90
+CLEARANCE_TICKS = round(CLEARANCE_DEG / DEG_PER_TICK)  # ~1024
+SWEEP_SPAN_CAPS = {2: 40}  # per-joint ceiling on --span, from the twin
 
 
 def show(cal: JointCal, tick: int) -> str:
@@ -83,11 +89,39 @@ def clamp_goal(cal: JointCal, position: int) -> int:
     return max(cal.min, min(cal.max, position))
 
 
-def clearance_pose(cal: JointCal) -> int:
-    """~45 deg open from a folded rest: away from whichever range end the
+def clearance_pose(cal: JointCal, deg: float = CLEARANCE_DEG) -> int:
+    """`deg` open from a folded rest: away from whichever range end the
     rest pose sits nearest (the fold direction), clamped in-range."""
     direction = -1 if cal.rest > (cal.min + cal.max) // 2 else 1
-    return clamp_goal(cal, cal.rest + direction * CLEARANCE_TICKS)
+    return clamp_goal(cal, cal.rest
+                      + direction * round(deg / DEG_PER_TICK))
+
+
+def gate_waypoints(cals: dict[int, JointCal], rest: dict[int, int],
+                   windows: dict[int, tuple[int, int]],
+                   sweep_ids: list[int],
+                   start: dict[int, int] | None = None,
+                   ) -> list[dict[int, int]]:
+    """The routine's full pose sequence — the ONE definition shared by
+    the bench pre-flight gate and `sim.twin exercise`. `start` (the
+    measured present pose) leads, because the wake -> rest move is real
+    motion too: preflight admits a start up to 300 ticks off rest."""
+    seq: list[dict[int, int]] = []
+    if start is not None:
+        seq.append(dict(start))
+    seq.append(dict(rest))
+    for i in sweep_ids:
+        lo, hi = windows[i]
+        clearance = {j: clearance_pose(cals[j])
+                     for j in CLEARANCE_HOLDS.get(i, ()) if j != i}
+        hold = {**rest, **clearance}
+        if clearance:
+            seq.append(dict(hold))
+        for target in (lo, hi, rest[i]):
+            seq.append({**hold, i: clamp_goal(cals[i], target)})
+        if clearance:
+            seq.append(dict(rest))
+    return seq
 
 
 def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
@@ -148,6 +182,9 @@ def run() -> int:
     parser.add_argument("--cal", default="calibration.json",
                         help="calibration file from calibrate capture")
     parser.add_argument("--port", default=None, help="serial port override")
+    parser.add_argument("--no-gate", action="store_true",
+                        help="skip the digital-twin collision gate "
+                             "(sim.twin) — bench emergencies only")
     parser.add_argument("--yes", action="store_true",
                         help="skip the confirmation prompt (never the "
                              "preflight checks)")
@@ -220,7 +257,11 @@ def run() -> int:
         bus.safe_torque_off(ids)
 
         rest = {i: clamp_goal(cals[i], cals[i].rest) for i in ids}
-        windows = {i: sweep_window(cals[i], args.span) for i in sweep_ids}
+        # Per-joint span caps from the twin: --span still shrinks a
+        # sweep, but can never widen past the derived-safe ceiling.
+        windows = {i: sweep_window(
+            cals[i], min(args.span, SWEEP_SPAN_CAPS.get(i, SPAN_MAX)))
+            for i in sweep_ids}
         print(f"exercise routine on {bus.port_name}: sweep joint(s) "
               f"{sweep_ids}, hold {[i for i in ids if i not in sweep_ids] or 'none'}")
         print(f"  wake -> rest -> sweep each joint through {args.span}% of "
@@ -233,6 +274,34 @@ def run() -> int:
         print("  keep the workspace clear and the gripper empty.")
         print("  ANY key during motion is an E-STOP (halt + hold, torque "
               "cuts on your Enter). The power switch is the hard e-stop.")
+
+        # Pre-flight collision gate: simulate the exact routine in the
+        # digital twin BEFORE anything energizes. Waypoints mirror the
+        # execution loop below — keep them in sync until #649's FSM port
+        # drives both from one plan structure.
+        if not args.no_gate:
+            try:
+                from sim.twin import Twin
+            except ImportError as exc:
+                raise BenchError(
+                    f"collision gate unavailable ({exc})",
+                    "run `uv sync` for mujoco, or --no-gate to skip "
+                    "(bench emergencies only)") from exc
+            start = {i: bus.read_position(i) for i in ids}
+            report = Twin(cal_path).check_trajectory(
+                gate_waypoints(cals, rest, windows, sweep_ids, start))
+            # The summary carries clamp warnings — an anchor/range
+            # mismatch is loudest exactly when the gate PASSES, so
+            # always print it, never only on failure.
+            print(report.summary(cals),
+                  file=sys.stderr if not report.clean else sys.stdout)
+            if not report.clean:
+                raise BenchError(
+                    "collision gate predicts contact — refusing to run",
+                    "the twin says this routine would collide (details "
+                    "above); adjust --span/--ids, or --no-gate only if "
+                    "you are CERTAIN the model is wrong")
+
         if not args.yes and not confirm("type y to start: "):
             print("aborted")
             return 1
