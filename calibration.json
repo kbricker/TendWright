@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "joints": [
     {
       "id": 1,
@@ -7,7 +7,13 @@
       "min": 922,
       "rest": 2008,
       "max": 3259,
-      "sign": -1
+      "sign": -1,
+      "frame": {
+        "unit": "deg",
+        "zero_tick": 2090,
+        "positive": -1,
+        "label": "0 = mid-travel; + = CCW from above"
+      }
     },
     {
       "id": 2,
@@ -15,7 +21,13 @@
       "min": 795,
       "rest": 799,
       "max": 3127,
-      "sign": 1
+      "sign": 1,
+      "frame": {
+        "unit": "deg",
+        "zero_tick": 1823,
+        "positive": 1,
+        "label": "-90 = folded at rest; + = arm rises"
+      }
     },
     {
       "id": 3,
@@ -23,7 +35,13 @@
       "min": 932,
       "rest": 3135,
       "max": 3136,
-      "sign": 1
+      "sign": 1,
+      "frame": {
+        "unit": "deg",
+        "zero_tick": 3135,
+        "positive": -1,
+        "label": "0 = fully folded (rest); + = elbow opens"
+      }
     },
     {
       "id": 4,
@@ -31,7 +49,13 @@
       "min": 902,
       "rest": 2952,
       "max": 3278,
-      "sign": 1
+      "sign": 1,
+      "frame": {
+        "unit": "deg",
+        "zero_tick": 2090,
+        "positive": 1,
+        "label": "0 = mid-travel; + = gripper tips up"
+      }
     },
     {
       "id": 5,
@@ -39,7 +63,13 @@
       "min": 1369,
       "rest": 2062,
       "max": 2570,
-      "sign": -1
+      "sign": -1,
+      "frame": {
+        "unit": "deg",
+        "zero_tick": 2062,
+        "positive": -1,
+        "label": "0 = rest; + = CCW viewed head-on"
+      }
     },
     {
       "id": 6,
@@ -47,7 +77,13 @@
       "min": 961,
       "rest": 1114,
       "max": 2446,
-      "sign": -1
+      "sign": -1,
+      "frame": {
+        "unit": "pct_open",
+        "closed_tick": 961,
+        "open_tick": 2446,
+        "label": "0% = jaws closed, 100% = fully open"
+      }
     }
   ]
 }

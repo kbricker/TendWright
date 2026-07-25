@@ -22,6 +22,8 @@ import sys
 import time
 from pathlib import Path
 
+from hardware.units import span_deg
+
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .monitor import parse_ids
 from .motion import wait_settle
@@ -137,7 +139,8 @@ def replay(args: argparse.Namespace) -> int:
         drift = max(abs(a - b) for a, b in zip(current, first))
         print(f"replaying {len(frames)} frames for servos {ids} at "
               f"{args.speed:.0%} speed ({len(frames) / hz / args.speed:.1f}s)")
-        print(f"largest joint move to reach the start pose: {drift} ticks")
+        print(f"largest joint move to reach the start pose: "
+              f"{span_deg(drift):.1f} deg ({drift} ticks)")
         if not args.yes and not confirm("clear the workspace, then type y to run: "):
             print("aborted")
             return 1
