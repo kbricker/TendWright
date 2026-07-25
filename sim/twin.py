@@ -554,7 +554,11 @@ def cmd_selftest(twin: Twin) -> int:
     would pass it — so every acceptance here is paired with a refusal.
     """
     rest = {i: twin.cals[i].rest for i in sorted(twin.cals)}
-    slump = {i: clamp_ok(twin, i, rest[i] + d)
+    # NOT clamped to the calibrated range on purpose: the real slump had
+    # j3 seven ticks PAST its own calibrated max (that joint's max sits
+    # one tick above its rest, so the capture never swept past the fold).
+    # Clamping the fixture would erase the very penetration under test.
+    slump = {i: rest[i] + d
              for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
     lift = {**rest, 2: rest[2] + round(25 / span_deg(1))}
     fails: list[str] = []
@@ -590,11 +594,6 @@ def cmd_selftest(twin: Twin) -> int:
     pose("rest is clean", rest, True)
     print("twin selftest " + ("OK" if not fails else f"FAILED: {fails}"))
     return 1 if fails else 0
-
-
-def clamp_ok(twin: Twin, i: int, tick: int) -> int:
-    """Keep a fixture pose inside the joint's calibrated range."""
-    return max(twin.cals[i].min, min(twin.cals[i].max, tick))
 
 
 def main() -> int:
