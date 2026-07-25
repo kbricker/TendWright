@@ -23,7 +23,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from hardware.errors import BenchError, make_run_tool
@@ -159,11 +159,16 @@ class Found:
     node: str  # the /dev/videoN it currently resolves to
     port: str  # human summary of the USB port chain
     registered_as: str | None = None
+    # other by-path spellings of this same camera (see discover)
+    aliases: list[str] = field(default_factory=list)
 
 
 def _port_of(by_path_name: str) -> str:
-    """'pci-0000:04:00.3-usb-0:2.4:1.0-video-index0' -> 'root 2, hub port 4'"""
-    m = re.search(r"usb-\d+:([\d.]+):", by_path_name)
+    """'pci-0000:04:00.3-usb-0:2.4:1.0-video-index0' -> 'root 2, hub port 4'
+
+    Handles the `usbv2-` spelling too: an xhci controller exposes the
+    same physical port under both its USB3 and USB2 companion buses."""
+    m = re.search(r"usb(?:v\d+)?-\d+:([\d.]+):", by_path_name)
     if not m:
         return "?"
     chain = m.group(1).split(".")
@@ -173,13 +178,22 @@ def _port_of(by_path_name: str) -> str:
 
 
 def discover() -> list[Found]:
-    """Every capture-capable camera currently attached, by stable path."""
+    """Every capture-capable camera currently attached, by stable path.
+
+    ONE PER PHYSICAL CAMERA. An xhci controller publishes each port
+    under two by-path names — `...-usb-0:1:1.0-...` and
+    `...-usbv2-0:1:1.0-...` — which are different strings resolving to
+    the SAME /dev/video node. Listing both would invite registering one
+    camera twice under two names (and the registry's duplicate-path
+    check could not catch it, because the paths genuinely differ). The
+    non-`v2` spelling is canonical; the alias is reported, not offered.
+    """
     if not BY_PATH_DIR.exists():
         raise BenchError(
             f"{BY_PATH_DIR} does not exist",
             "no V4L2 cameras have ever been attached, or this is not "
             "Linux — discovery runs on cell1")
-    found: list[Found] = []
+    by_node: dict[str, Found] = {}
     for entry in sorted(BY_PATH_DIR.iterdir()):
         if not entry.name.endswith(CAPTURE_SUFFIX):
             continue
@@ -187,9 +201,19 @@ def discover() -> list[Found]:
             node = entry.resolve().name
         except OSError:
             continue
-        found.append(Found(path=str(entry), node=node,
-                           port=_port_of(entry.name)))
-    return found
+        seen = by_node.get(node)
+        if seen is None:
+            by_node[node] = Found(path=str(entry), node=node,
+                                  port=_port_of(entry.name))
+            continue
+        # Same camera under a second spelling: keep the canonical one.
+        alias, canonical = str(entry), seen.path
+        if "usbv2-" in canonical and "usbv2-" not in alias:
+            canonical, alias = alias, canonical
+            seen.path = canonical
+            seen.port = _port_of(Path(canonical).name)
+        seen.aliases.append(alias)
+    return sorted(by_node.values(), key=lambda f: f.path)
 
 
 def _suggest_entry(f: Found, index: int) -> dict:
@@ -221,10 +245,14 @@ def cmd_discover(args: argparse.Namespace) -> int:
                   f"every camera as new\n", file=sys.stderr)
     print(f"{len(found)} camera(s) attached:\n")
     for f in found:
-        f.registered_as = known.get(f.path)
+        # An entry registered under an alias spelling is still registered.
+        f.registered_as = known.get(f.path) or next(
+            (known[a] for a in f.aliases if a in known), None)
         tag = f"registered as {f.registered_as}" if f.registered_as else "NEW"
         print(f"  {f.node:<12} {f.port:<34} {tag}")
         print(f"    {f.path}")
+        for alias in f.aliases:
+            print(f"    (same camera, alias: {alias})")
 
     fresh = [f for f in found if not f.registered_as]
     if not fresh:

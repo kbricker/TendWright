@@ -5,13 +5,13 @@
     {
       "name": "bench",
       "location": "wall bracket, 60 deg down over the arm",
-      "path": "/dev/v4l/by-path/REPLACE-WITH-DISCOVER-OUTPUT-video-index0",
+      "path": "/dev/v4l/by-path/pci-0000:05:00.4-usb-0:1:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 360, "fps": 10},
       "tags": true,
       "still_interval_s": 0,
       "still_keep": 200,
-      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet"
+      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Path captured 2026-07-25 plugged DIRECTLY into cell1 root port 1 — it changes when the camera moves onto a hub port, which is the point: identity is location."
     }
   ]
 }

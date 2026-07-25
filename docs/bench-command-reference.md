@@ -123,6 +123,21 @@ live views are the scouting aid.
   slot cap). Regenerate after a parameter change:
   `blender --background --python cad/camera-mount/generate_mounts.py`.
 
+### Known-harmless camera messages
+
+- **"Note that Qt no longer ships fonts. Deploy some ... or switch to
+  fontconfig."** — from OpenCV's bundled Qt when `campreview` opens its
+  window. Cosmetic only: the overlay text (tag IDs, FPS, resolution) is
+  drawn by OpenCV's own Hershey fonts, not Qt, so nothing in the picture
+  is affected. cell1 has 500+ system fonts; the pip OpenCV wheel's Qt
+  just isn't built against fontconfig. Ignore it.
+- **Two by-path entries per camera** (`...-usb-0:1:1.0-...` and
+  `...-usbv2-0:1:1.0-...`) — one physical camera, published under both
+  the USB3 and USB2 halves of the same controller. `cameras discover`
+  reports one entry per camera and names the alias; use the canonical
+  (non-`v2`) path. Registering both spellings would be the same camera
+  twice under two names.
+
 ### Wiring the camera bus
 
 - Powered hub only (~200 mA/camera), on one of cell1's four main ports —
