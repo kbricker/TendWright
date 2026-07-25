@@ -12,6 +12,17 @@ e-stop). Full detail: `hardware/bench/README.md`.
 **The power switch is the only hard e-stop.** A yanked USB adapter leaves
 servos powered and HOLDING their last command.
 
+**Everything speaks degrees now** (plan #647). Positions print in each
+joint's ratified convention with raw ticks in parentheses — m2's rest is
+`-90.0°`, the gripper reads `% open`. The conventions live in
+`calibration.json`; edit a joint's `frame` there to change how it reads.
+
+**Motion is gated twice** (plans #648/#649): before anything moves, the
+routine is simulated against the digital twin from the arm's MEASURED
+pose and refused if it would collide; during motion, held joints are
+re-verified from the encoders every sample and the arm halts-and-holds
+if one sags. A command sent is never assumed to be a joint moved.
+
 ## Servo / arm tools (`uv run python -m hardware.bench.<tool>`)
 
 | Command | What it does | Moves the arm? |
@@ -19,12 +30,12 @@ servos powered and HOLDING their last command.
 | `set_id --new-id N` | Program ONE loose servo to bus ID N (1–6, base→gripper). Refuses if >1 servo on the bus. Power off between servos. | no |
 | `scan` / `scan --full` | List servos: ID, model, firmware, voltage (~12 V follower), temp, position. Fast = IDs 0–20; `--full` = 0–253. | no |
 | `monitor [--ids 1-6] [--hz 10]` | Torque OFF (confirm; support the arm), live positions while you move joints by hand. Watch for 0↔4095 jumps = horn across the encoder wrap. | no (cuts torque) |
-| `jog --id N [--step 20] [--min T --max T]` | Keyboard single-joint moves. Keys: `+`/`-` jog, `[`/`]` step size, `c` center (2048), `t` torque toggle, `q` quit, ANY other key = e-stop. Use min/max from `calibrate show`. | yes |
+| `jog --id N [--step 20 \| --step-deg D] [--min T --max T]` | Keyboard single-joint moves. Keys: `+`/`-` jog, `[`/`]` step size, `c` go to the joint's zero pose (gripper: half open), `t` torque toggle, `q` quit, ANY other key = e-stop. **Soft limits default to that joint's CALIBRATED range** when `calibration.json` exists — no need to pass min/max. | yes |
 | `calibrate capture [--ids 1-6] [--out FILE]` | Guided, torque-off, CANNOT move the arm: hand-sweep ranges → rest pose → direction nudges → `calibration.json` (atomic; re-runs merge per joint: `--ids 3` redoes one joint). | no (cuts torque) |
-| `calibrate show [--in FILE]` | Print + validate the calibration table. | no |
+| `calibrate show [--in FILE]` | Print + validate the calibration table — ranges in each joint's ratified units with its convention spelled out underneath. | no |
 | `teach record [--out teach.json] [--ids 1-6] [--hz 10]` | Torque off (confirm), sample a hand-moved trajectory; Enter stops. | no (cuts torque) |
 | `teach replay --in FILE [--speed 0.25]` | Confirm, sync goals (no lurch), slow-approach frame 0, wait for real arrival, stream frames. Workspace clear. | yes |
-| `exercise [--ids RANGE] [--span 70] [--speed 1.0] [--cal FILE]` | Scripted limber-up: wake (no lurch) → rest → sweep each joint through `span`% of its calibrated range, one at a time (others held), distal first: 4 wrist_flex → 5 wrist_roll → 6 gripper → 3 elbow → 2 shoulder → 1 base pan (rest is a compact fold — unfold the light end before the heavy joints move). The elbow holds ~45° open during the shoulder sweep (a refolded elbow gets pressed into the table), then refolds. Ends at rest, torque off. Needs ALL SIX joints in `calibration.json`; starts only from the rest pose; gripper empty. | yes |
+| `exercise [--ids RANGE] [--span 70] [--speed 1.0] [--cal FILE] [--no-gate]` | Scripted limber-up: wake (no lurch) → rest → sweep each joint through `span`% of its calibrated range, one at a time (others held), distal first: 4 wrist_flex → 5 wrist_roll → 6 gripper → 3 elbow → 2 shoulder → 1 base pan. **The whole routine is simulated in the twin first and refused if it would collide.** During the shoulder sweep the elbow AND wrist hold 90° open and m2 is capped at 40% span — the envelope the twin derived after 45° proved insufficient; those holds are then verified from the encoders before the sweep starts and re-checked while it runs. Ends at rest, torque off. Needs ALL SIX joints in `calibration.json`; starts only from the rest pose; gripper empty. | yes |
 
 ### exercise, the 10-second version
 
@@ -35,10 +46,24 @@ cd ~/TendWright && uv run python -m hardware.bench.exercise
 
 Refuses unless the arm is at its torque-off rest slump. ANY key during
 motion = e-stop: the arm halts and HOLDS; torque cuts when you press Enter
-with a hand on it. Same held cut on obstruction timeouts, Ctrl+C, and
-serial faults — it never drops the arm unannounced. `--ids 2,3` sweeps
-only those joints (all six are still woken and held). Good end-of-session
-health check.
+with a hand on it. Same held cut on obstruction timeouts, guard
+violations, Ctrl+C, and serial faults — it never drops the arm
+unannounced. `--ids 2,3` sweeps only those joints (all six are still
+woken and held). Good end-of-session health check.
+
+If it refuses with a contact report, believe the twin before you reach
+for `--no-gate` — it has already been right about two real collisions.
+
+## Simulation tools (`uv run python -m sim.<tool>`) — no hardware needed
+
+| Command | What it does |
+|---|---|
+| `twin check` | Is the rest pose contact-free? Also prints which joint mappings are still provisional. |
+| `twin exercise [--span N]` | Dry-run the exercise routine through the collision gate — same simulation the arm runs before it moves. |
+| `twin derive-clearance` | Scan sweep span × elbow × wrist holds for a contact-free combination. How the shipped envelope was chosen. |
+| `twin validate` | Regression: the twin must predict both real bench collisions. Run after ANY change to the model, calibration, or mappings. |
+| `rig spec` | Joint centerpoints + rotation axes, origin at m1's centerpoint, and the center-to-center link lengths (calipers-checkable against the real arm). |
+| `rig where [--deg a,b,c,d,e,f]` | Where every joint and the tool point land for a pose, in mm. Pose authoring without touching hardware. |
 
 ## Camera + mock bay
 
@@ -93,8 +118,24 @@ live views are the scouting aid.
   print `docs/bench-apriltags.html` at 100% scale (tag36h11 IDs 0–7,
   40 mm) and require solid corner locks at the candidate distance/angle.
 - Wall-mount starting point: ~28–32" up, ~20–25° downward tilt.
-- Focus the barrel LAST, at the chosen distance, then mark the spot —
-  the wedge bracket gets designed to that measurement.
+- Focus the barrel LAST, at the chosen distance, then mark the spot.
+- Printed brackets live in `cad/camera-mount/` (45° and 60° down, plus a
+  slot cap). Regenerate after a parameter change:
+  `blender --background --python cad/camera-mount/generate_mounts.py`.
+
+### Wiring the camera bus
+
+- Powered hub only (~200 mA/camera), on one of cell1's four main ports —
+  those share one USB2 uplink; the other two ports are a separate
+  controller, which is where a SECOND hub would go.
+- **UARTs never go behind the camera hub** — the servo adapter and the
+  Pico plug directly into cell1, so a hub reset can't drop the motion bus
+  mid-move.
+- 4 m of cable route per camera (1 m pigtail + 3 m extension max). Label
+  the hub ports: a camera's identity IS its port, so moving it changes
+  its registry entry.
+- Keep cable runs clear of the arm's 376 mm reach from the m1 centerpoint
+  — a dangling cable is grabbable, and the twin does not model it.
 
 ## Sim / orchestrator (reference)
 
@@ -104,9 +145,15 @@ live views are the scouting aid.
 
 ## Files the tools read/write
 
-- `calibration.json` — per-joint `{id, name, min, rest, max, sign}` from
-  `calibrate capture`; consumed by `exercise` (and later the arm driver).
-  Commit it after capture.
+- `calibration.json` — per-joint `{id, name, min, rest, max, sign, frame}`
+  from `calibrate capture`; consumed by `exercise`, `jog`, `monitor`, the
+  twin, and the rig. `frame` is the hand-ratified display convention (v2)
+  — edit it to change how a joint reads; re-capturing a joint drops its
+  frame on purpose, since the geometry may have changed. Commit it after
+  capture.
+- `cameras.json` — the camera registry: name, location, stable by-path
+  identity, capture profiles, still interval. Commit it; `stills/` is
+  gitignored.
 - `teach.json` (or `--out` name) — recorded trajectories for `teach replay`.
 
 ## Bring-up order
