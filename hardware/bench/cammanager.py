@@ -352,6 +352,16 @@ def _selftest() -> None:
         def release(self):
             self.alive = False
 
+    def wait_for(predicate, what, timeout=5.0):
+        """Capture threads start asynchronously — never assert on thread
+        progress immediately (that raced and passed only on fast hosts)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.01)
+        raise AssertionError(what)
+
     real_cap, cv2.VideoCapture = cv2.VideoCapture, FakeCap
     try:
         big, small = Profile(320, 240, 10), Profile(80, 60, 5)
@@ -362,7 +372,8 @@ def _selftest() -> None:
         # 1. lazy: no capture until acquired
         assert not opens
         run = cam.acquire(small)
-        assert cam.profile == small and opens, "tile acquire did not open"
+        assert cam.profile == small, cam.profile
+        wait_for(lambda: opens, "tile acquire never opened the device")
 
         # 2. a second subscriber at the same size reuses the session
         before = len(opens)
@@ -409,11 +420,12 @@ def _selftest() -> None:
         wedged = Camera(CameraSpec("w", "-", "/dev/fake/wedge", big, small,
                                    tags=False), None)
         w1 = wedged.acquire(big)
+        wait_for(lambda: w1.thread.is_alive(), "wedged session never ran")
         with wedged._lock:
             wedged._retire_locked(w1)
         w2 = wedged.acquire(big)
         assert w2 is not w1 and not w2.box.closed
-        time.sleep(0.3)
+        time.sleep(0.3)  # let the orphan run through its exit path
         assert not w2.box.closed, "the orphan closed the live session's box"
         wedged.release()
 
