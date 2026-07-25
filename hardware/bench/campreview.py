@@ -27,6 +27,26 @@ from pathlib import Path
 # chatter so our clean one-line errors stay clean.
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
+# The opencv-python wheel bundles its own Qt5 built WITHOUT fontconfig,
+# so Qt finds no fonts and repeats "Note that Qt no longer ships fonts"
+# every time the window touches text — it floods the terminal the tool
+# is being read in. Qt's documented answer for a fontconfig-less build
+# is QT_QPA_FONTDIR: point it at real TTFs and the complaint goes away
+# because the cause does. (Overlay text is unaffected either way — that
+# is drawn with OpenCV's built-in Hershey fonts, not Qt.)
+if "QT_QPA_FONTDIR" not in os.environ:
+    for _fontdir in ("/usr/share/fonts/truetype/dejavu",
+                     "/usr/share/fonts/truetype/liberation",
+                     "/usr/share/fonts/truetype",
+                     "/usr/share/fonts"):
+        if os.path.isdir(_fontdir):
+            os.environ["QT_QPA_FONTDIR"] = _fontdir
+            break
+# Belt and braces: if this Qt still cannot use those fonts, silence that
+# one message category rather than let it drown the output. Scoped to
+# qt.qpa.fonts ONLY — real Qt/display errors still print.
+os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false")
+
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 from pupil_apriltags import Detector  # noqa: E402
