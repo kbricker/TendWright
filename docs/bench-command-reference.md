@@ -125,12 +125,26 @@ live views are the scouting aid.
 
 ### Known-harmless camera messages
 
-- **"Note that Qt no longer ships fonts. Deploy some ... or switch to
-  fontconfig."** — from OpenCV's bundled Qt when `campreview` opens its
-  window. Cosmetic only: the overlay text (tag IDs, FPS, resolution) is
-  drawn by OpenCV's own Hershey fonts, not Qt, so nothing in the picture
-  is affected. cell1 has 500+ system fonts; the pip OpenCV wheel's Qt
-  just isn't built against fontconfig. Ignore it.
+- **"Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=
+  wayland to run on Wayland anyway."** — cell1 runs GNOME on Wayland and
+  OpenCV's Qt ships only the `xcb` plugin, so the window goes through
+  XWayland. Prints once, costs nothing. Do NOT "fix" it by forcing
+  `QT_QPA_PLATFORM=wayland` — that plugin isn't in the wheel and the
+  window then fails to open at all.
+- **"WRN: Matrix is singular."** — from `libapriltag.so`, not our code:
+  the detector's homography solve hit a degenerate quad (something
+  tag-shaped seen too obliquely to resolve). Harmless, and a sign the
+  detector is actually looking. Printed from C to stderr, so no Python
+  logging setting will suppress it. A steady stream of them means the
+  camera is seeing tag-like clutter — reposition or retighten focus.
+- **"Note that Qt no longer ships fonts."** — FIXED, plan #651 follow-up
+  (2026-07-25); recorded here because the fix is non-obvious and easy to
+  undo. `cv2` overwrites `QT_QPA_FONTDIR` **at import time** to its own
+  bundled fonts dir, which ships EMPTY, so Qt had no fonts at all and
+  repeated the complaint until it flooded the terminal. `campreview`
+  re-points it at the system DejaVu fonts *after* `import cv2` — setting
+  it before the import is silently clobbered. If this ever comes back,
+  check that `_fix_qt_fonts()` still runs after the import.
 - **Two by-path entries per camera** (`...-usb-0:1:1.0-...` and
   `...-usbv2-0:1:1.0-...`) — one physical camera, published under both
   the USB3 and USB2 halves of the same controller. `cameras discover`
