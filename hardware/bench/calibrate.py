@@ -14,6 +14,13 @@ in its canonical positive direction so the encoder sign is recorded. Writes
 calibration.json atomically; re-runs merge per joint (an existing file keeps
 every joint you did not re-capture).
 
+v2 files additionally carry an optional per-joint "frame" — the RATIFIED
+display convention (which tick reads as zero, which direction is +, or the
+gripper's closed/open ticks) that makes tools speak degrees / % open
+instead of ticks. Frames are hand-edited into calibration.json and never
+captured; re-capturing a joint DROPS its frame (the geometry may have
+changed — re-ratify). See hardware/units.py for the shape.
+
 Usage:
   calibrate capture [--ids RANGE] [--out FILE] [--port PORT] [--yes]
   calibrate show [--in FILE]
@@ -28,11 +35,16 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from hardware.units import Frame, frame_from_dict, frame_to_dict
+
 from .bus import POSITION_RANGE, BenchError, FeetechBus, confirm, run_tool
 from .monitor import parse_ids
 from .term import flush_input, read_key
 
-FORMAT_VERSION = 1
+# v2 adds the optional per-joint "frame" (semantic display convention —
+# see hardware/units.py). v1 files still load, with no frames.
+FORMAT_VERSION = 2
+LOADABLE_VERSIONS = (1, 2)
 SAMPLE_HZ = 20.0
 # Between 50 ms samples a hand-moved joint cannot travel this far; a jump
 # this size is the single-turn encoder wrapping 0 <-> 4095 mid-range, which
@@ -68,13 +80,16 @@ JOINT_POSITIVE = {
 @dataclass
 class JointCal:
     # Field names mirror the JSON keys — renaming any of them changes the
-    # on-disk file format.
+    # on-disk file format. `frame` is the ratified display convention
+    # (None until Kyle ratifies one); it is data Kyle edits, not a
+    # captured measurement.
     id: int
     name: str
     min: int
     rest: int
     max: int
     sign: int
+    frame: Frame | None = None
 
 
 def _valid_tick(value: object) -> bool:
@@ -102,9 +117,9 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
     """Load + strictly validate a calibration file -> {joint id: JointCal}."""
     bad = BenchError(
         f"{path} is not a valid calibration file",
-        "expected JSON {version, joints:[{id,name,min,rest,max,sign}]} from "
-        "calibrate capture — fix or delete it, or point the tool at a "
-        "different file",
+        "expected JSON {version, joints:[{id,name,min,rest,max,sign,"
+        "frame?}]} from calibrate capture — fix or delete it, or point "
+        "the tool at a different file",
     )
     try:
         doc = json.loads(path.read_text())
@@ -113,7 +128,8 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
             f"could not read {path}: {exc}",
             "fix or delete the file, or point the tool at a different file",
         ) from exc
-    if not isinstance(doc, dict) or doc.get("version") != FORMAT_VERSION:
+    version = doc.get("version") if isinstance(doc, dict) else None
+    if type(version) is not int or version not in LOADABLE_VERSIONS:
         raise bad
     joints = doc.get("joints")
     if not isinstance(joints, list) or not joints:
@@ -122,10 +138,22 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
     for entry in joints:
         if not isinstance(entry, dict):
             raise bad
+        frame = None
+        if entry.get("frame") is not None:
+            try:
+                frame = frame_from_dict(entry["frame"])
+            except ValueError as exc:
+                raise BenchError(
+                    f"{path}: joint {entry.get('id')} has an invalid "
+                    f"frame: {exc}",
+                    "frames are hand-ratified — fix the frame object in "
+                    "the file (see hardware/units.py for the shape)",
+                ) from exc
         try:
             cal = JointCal(id=entry["id"], name=entry["name"],
                            min=entry["min"], rest=entry["rest"],
-                           max=entry["max"], sign=entry["sign"])
+                           max=entry["max"], sign=entry["sign"],
+                           frame=frame)
         except KeyError as exc:
             raise bad from exc
         if not _joint_ok(cal) or cal.id in result:
@@ -136,22 +164,39 @@ def load_calibration(path: Path) -> dict[int, JointCal]:
 
 def write_calibration(path: Path, cals: dict[int, JointCal]) -> None:
     """Atomic write: an interrupted run never corrupts an existing file."""
-    doc = {
-        "version": FORMAT_VERSION,
-        "joints": [asdict(cals[i]) for i in sorted(cals)],
-    }
+    joints = []
+    for i in sorted(cals):
+        entry = asdict(cals[i])
+        # asdict flattens the frame dataclass WITHOUT its unit tag —
+        # serialize it through the canonical converter instead.
+        del entry["frame"]
+        if cals[i].frame is not None:
+            entry["frame"] = frame_to_dict(cals[i].frame)
+        joints.append(entry)
+    doc = {"version": FORMAT_VERSION, "joints": joints}
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n")
     tmp.replace(path)
 
 
 def print_table(cals: dict[int, JointCal]) -> None:
-    print(f"{'ID':>3}  {'joint':<13}  {'min':>4}  {'rest':>4}  {'max':>4}  "
-          f"{'span':>4}  {'sign':>4}")
+    """Human units first (per the joint's ratified frame), ticks in a
+    trailing column; the convention label gets its own indented line so
+    rows stay inside an 80-col terminal."""
+    print(f"{'ID':>3}  {'joint':<13}  {'min':>10}  {'rest':>10}  "
+          f"{'max':>10}  {'ticks m/r/M':>14}  {'sign':>4}")
     for i in sorted(cals):
         c = cals[i]
-        print(f"{c.id:>3}  {c.name:<13}  {c.min:>4}  {c.rest:>4}  "
-              f"{c.max:>4}  {c.max - c.min:>4}  {c.sign:>+4}")
+        ticks = f"{c.min}/{c.rest}/{c.max}"
+        if c.frame is not None:
+            lo, rest, hi = (c.frame.fmt(v) for v in (c.min, c.rest, c.max))
+            label = c.frame.label or "-"
+        else:
+            lo, rest, hi = "-", "-", "-"
+            label = "no frame — ratify one in calibration.json"
+        print(f"{c.id:>3}  {c.name:<13}  {lo:>10}  {rest:>10}  {hi:>10}  "
+              f"{ticks:>14}  {c.sign:>+4}")
+        print(f"{'':>5}  {label}")
 
 
 def sweep_joint(bus: FeetechBus, servo_id: int) -> tuple[int, int, bool]:
@@ -306,6 +351,13 @@ def capture(args: argparse.Namespace) -> int:
                 for servo_id in good_ids:
                     sign = capture_direction(bus, servo_id)
                     lo, hi = ranges[servo_id]
+                    # A re-captured joint DROPS its old frame: the numbers
+                    # changed (possibly a horn remount), so the ratified
+                    # zero anchor can no longer be trusted.
+                    if servo_id in existing and existing[servo_id].frame:
+                        print(f"  note: joint {servo_id} had a ratified "
+                              f"frame — dropped (geometry may have "
+                              f"changed); re-ratify it in the output file")
                     captured[servo_id] = JointCal(
                         id=servo_id, name=JOINT_NAMES[servo_id],
                         min=lo, rest=rest[servo_id], max=hi, sign=sign)
@@ -365,7 +417,7 @@ def show(args: argparse.Namespace) -> int:
         raise BenchError(f"no such file: {path}",
                          "run calibrate capture first")
     cals = load_calibration(path)
-    print(f"{path} — {len(cals)} joint(s), format v{FORMAT_VERSION}")
+    print(f"{path} — {len(cals)} joint(s)")
     print_table(cals)
     missing = sorted(set(JOINT_NAMES) - set(cals))
     if missing:

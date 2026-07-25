@@ -5,9 +5,14 @@ prints their positions at ~10 Hz on one refreshing line. Move each joint
 by hand and watch the numbers to verify wiring order and ranges. Ctrl+C
 to stop (torque stays off — that is the tool's resting state).
 
+Positions print in each joint's ratified units (degrees / % open) when
+calibration.json carries a frame for it; raw ticks otherwise, or always
+with --raw. Pre-calibration bring-up needs no calibration file.
+
     uv run python -m hardware.bench.monitor --ids 1-6
 
-Usage: monitor [--ids RANGE] [--port PORT] [--hz N] [--yes]
+Usage: monitor [--ids RANGE] [--port PORT] [--hz N] [--cal FILE] [--raw]
+               [--yes]
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
 
 from .bus import BenchError, FeetechBus, confirm, run_tool
 
@@ -51,11 +57,29 @@ def run() -> int:
     parser.add_argument("--ids", default="1-6", help="servo IDs (default 1-6)")
     parser.add_argument("--port", default=None, help="serial port override")
     parser.add_argument("--hz", type=float, default=10.0, help="update rate")
+    parser.add_argument("--cal", default="calibration.json",
+                        help="calibration file for unit display (optional)")
+    parser.add_argument("--raw", action="store_true",
+                        help="always print raw ticks")
     parser.add_argument("--yes", action="store_true",
                         help="skip the support-the-arm confirmation")
     args = parser.parse_args()
 
     ids = parse_ids(args.ids)
+    # Lazy import: calibrate imports parse_ids from THIS module — a
+    # module-level import back the other way would be a cycle. (The
+    # loader's proper shared home is #637's load_calibration move.)
+    frames = {}
+    cal_path = Path(args.cal)
+    if not args.raw and cal_path.exists():
+        from .calibrate import load_calibration
+        try:
+            frames = {i: c.frame for i, c in
+                      load_calibration(cal_path).items()
+                      if c.frame is not None}
+        except BenchError as exc:
+            print(f"warning: {cal_path} unusable ({exc}) — printing raw "
+                  f"ticks", file=sys.stderr)
     with FeetechBus(args.port) as bus:
         present = [i for i in ids if bus.ping(i) is not None]
         missing = sorted(set(ids) - set(present))
@@ -76,8 +100,12 @@ def run() -> int:
 
         period = 1.0 / max(0.1, args.hz)
         while True:
-            readings = [f"id{sid}:{bus.read_position(sid):>4}"
-                        for sid in present]
+            readings = []
+            for sid in present:
+                pos = bus.read_position(sid)
+                frame = frames.get(sid)
+                value = frame.fmt(pos) if frame else f"{pos:>4}t"
+                readings.append(f"id{sid}:{value:>9}")
             print("\r" + "  ".join(readings) + "   ", end="", flush=True)
             time.sleep(period)
 

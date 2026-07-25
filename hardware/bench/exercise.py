@@ -34,6 +34,8 @@ from pathlib import Path
 
 import serial
 
+from hardware.units import DEG_PER_TICK, fmt_ticks
+
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .calibrate import JOINT_NAMES, JointCal, load_calibration
 from .monitor import parse_ids
@@ -61,7 +63,11 @@ SWEEP_ORDER = (4, 5, 6, 3, 2, 1)
 # once k is back at rest.
 CLEARANCE_HOLDS = {2: (3,)}
 CLEARANCE_DEG = 45
-CLEARANCE_TICKS = round(CLEARANCE_DEG * 4096 / 360)  # ~512
+CLEARANCE_TICKS = round(CLEARANCE_DEG / DEG_PER_TICK)  # ~512
+
+
+def show(cal: JointCal, tick: int) -> str:
+    return fmt_ticks(cal.frame, tick)
 
 
 def sweep_window(cal: JointCal, span_pct: int) -> tuple[int, int]:
@@ -97,16 +103,17 @@ def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
         hi = c.max + PREFLIGHT_RANGE_MARGIN
         if not lo <= pos <= hi:
             raise BenchError(
-                f"joint {i} ({c.name}) reads {pos}, outside its "
-                f"calibrated range [{c.min}, {c.max}]",
+                f"joint {i} ({c.name}) reads {show(c, pos)}, outside its "
+                f"calibrated range [{show(c, c.min)}, {show(c, c.max)}]",
                 "if the horn was remounted, re-run `calibrate capture "
                 f"--ids {i}`; otherwise move the arm near its rest "
                 "pose and re-run",
             )
         if abs(pos - c.rest) > PREFLIGHT_REST_TOL_TICKS:
             raise BenchError(
-                f"joint {i} ({c.name}) reads {pos}, "
-                f"{abs(pos - c.rest)} ticks from its rest pose ({c.rest})",
+                f"joint {i} ({c.name}) reads {show(c, pos)}, "
+                f"{abs(pos - c.rest)} ticks from its rest pose "
+                f"({show(c, c.rest)})",
                 "place the arm at its rest pose (torque-off slump) and "
                 "re-run — support it first if it is holding itself (a "
                 "crashed tool may have left torque latched on)",
@@ -220,8 +227,9 @@ def run() -> int:
               f"its range -> rest -> torque off")
         for i in sweep_ids:
             lo, hi = windows[i]
-            print(f"    joint {i} ({cals[i].name:<13}) rest {rest[i]:>4}"
-                  f"  sweep {lo:>4} -> {hi:>4}")
+            print(f"    joint {i} ({cals[i].name:<13}) "
+                  f"rest {show(cals[i], rest[i]):>16}  "
+                  f"sweep {show(cals[i], lo):>16} -> {show(cals[i], hi)}")
         print("  keep the workspace clear and the gripper empty.")
         print("  ANY key during motion is an E-STOP (halt + hold, torque "
               "cuts on your Enter). The power switch is the hard e-stop.")
@@ -257,13 +265,14 @@ def run() -> int:
                              if j != i}
                 hold = {**rest, **clearance}
                 print(f"\n[{n}/{len(sweep_ids)}] sweeping joint {i} "
-                      f"({name}): {lo} -> {hi} -> rest {rest[i]}")
+                      f"({name}): {show(cals[i], lo)} -> {show(cals[i], hi)}"
+                      f" -> rest {show(cals[i], rest[i])}")
                 if clearance:
                     for j, pose in clearance.items():
                         print(f"  opening joint {j} ({cals[j].name}) to "
-                              f"{pose} (~{CLEARANCE_DEG} deg clear of the "
-                              f"fold) so joint {i} can't press it into "
-                              f"the table")
+                              f"{show(cals[j], pose)} (~{CLEARANCE_DEG} deg "
+                              f"clear of the fold) so joint {i} can't "
+                              f"press it into the table")
                         bus.move_to(j, pose, speed=speed,
                                     acceleration=ACCELERATION)
                     wait_settle(bus, hold, speed, "clearance",

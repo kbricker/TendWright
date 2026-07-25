@@ -13,6 +13,8 @@ from typing import Callable
 
 import serial
 
+from hardware.units import span_deg
+
 from .bus import BenchError, FeetechBus
 
 SETTLE_TOL_TICKS = 25  # "arrived" position tolerance
@@ -88,8 +90,8 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
             prev[i] = pos
             if still[i] < needed:
                 done = False
-        print(f"\r  {label}: worst error {worst:>4} ticks   ",
-              end="", flush=True)
+        print(f"\r  {label}: worst error {span_deg(worst):5.1f} deg "
+              f"({worst}t)   ", end="", flush=True)
         if done:
             print()
             return
