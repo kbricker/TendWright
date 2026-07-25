@@ -23,6 +23,17 @@ pose and refused if it would collide; during motion, held joints are
 re-verified from the encoders every sample and the arm halts-and-holds
 if one sags. A command sent is never assumed to be a joint moved.
 
+One deliberate blind spot, stated so it is never a surprise: during the
+opening settle (measured slump → rest) the twin does not judge link
+pairs that nest structurally in the fold. The arm's torque-off slump
+does not reproduce itself — two captures differed by 4.7° — and in the
+fold that is worth more travel than the clearance being measured, so
+the model cannot tell "nested" from "touching" there. **The table is
+never waived**, in the settle or out of it, and normal gating resumes
+the moment the arm reaches rest. What covers the arm during the settle
+is the encoder pre-flight, not the twin. `sim.twin selftest` pins all
+of this; the gate prints a note whenever it waives anything.
+
 ## Servo / arm tools (`uv run python -m hardware.bench.<tool>`)
 
 | Command | What it does | Moves the arm? |
@@ -62,6 +73,7 @@ for `--no-gate` — it has already been right about two real collisions.
 | `twin exercise [--span N]` | Dry-run the exercise routine through the collision gate — same simulation the arm runs before it moves. |
 | `twin derive-clearance` | Scan sweep span × elbow × wrist holds for a contact-free combination. How the shipped envelope was chosen. |
 | `twin validate` | Regression: the twin must predict both real bench collisions. Run after ANY change to the model, calibration, or mappings. |
+| `twin selftest` | Pins the gate's safety contracts: the settle waiver accepts the observed slump, does NOT leak past the settle, and never waives the table. Run alongside `validate`. |
 | `rig spec` | Joint centerpoints + rotation axes, origin at m1's centerpoint, and the center-to-center link lengths (calipers-checkable against the real arm). |
 | `rig where [--deg a,b,c,d,e,f]` | Where every joint and the tool point land for a pose, in mm. Pose authoring without touching hardware. |
 
