@@ -290,7 +290,9 @@ def run() -> int:
                     "(bench emergencies only)") from exc
             start = {i: bus.read_position(i) for i in ids}
             report = Twin(cal_path).check_trajectory(
-                gate_waypoints(cals, rest, windows, sweep_ids, start))
+                gate_waypoints(cals, rest, windows, sweep_ids, start),
+                # waypoint 0 is the arm's measured slump, not a plan
+                settle_from_measured=True)
             # The summary carries clamp warnings — an anchor/range
             # mismatch is loudest exactly when the gate PASSES, so
             # always print it, never only on failure.

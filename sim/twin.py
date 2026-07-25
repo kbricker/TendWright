@@ -70,36 +70,41 @@ _GEOM_MARGIN_M = CONTACT_MARGIN_M / 2
 INTERP_STEP_DEG = 2.0  # trajectory sampling; finer = slower, less tunneling
 CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 
-# THE FOLDED SLUMP IS NOT ADJUDICABLE, and that is measured, not assumed.
+# THE SETTLE FROM A MEASURED SLUMP IS NOT ADJUDICABLE — measured, not
+# assumed. This is scoped to a trajectory PHASE, not to a region of pose
+# space, because that is exactly where the ambiguity lives.
 #
-# In the fold the jaw sits hard against the shoulder and the geometry
-# converts joint error into penetration depth at roughly 0.7 mm per degree
-# (measured on this model). Meanwhile the arm's torque-off slump does not
-# reproduce itself: the slump captured as `rest` and the slump observed
-# 2026-07-25 differ by 2.4 deg at the wrist — about 1.7 mm of jaw travel,
-# an order of magnitude more than the clearance being judged. The model
-# owns exactly ONE rest keyframe, so "rest" is inherently ambiguous by
-# more than the thing we are trying to measure.
+# The arm's torque-off slump does not reproduce itself. The slump captured
+# as `rest` and the slump observed 2026-07-25 differ by up to 4.7 deg
+# (j5), and in the fold the geometry converts joint error into penetration
+# depth at ~0.7 mm per degree. The model owns exactly ONE rest keyframe,
+# so which slump "rest" means is ambiguous by more than the clearance
+# being judged: at cal rest the jaw clears the shoulder by 4.45 mm, and
+# the observed slump reads 0.14 mm PAST touching — while the real arm sat
+# there, untouched.
 #
-# Therefore: inside this region around the calibrated rest pose, link
-# pairs that nest structurally are NOT adjudicated. Attempts to paper
-# over it with a tolerance were tried and rejected on measurement —
-# derived from a neighbourhood it grows explosively (1.4 mm at 2 deg,
-# 5.8 at 4, 10 at 6) and by 4 deg it excuses table strikes; derived from
-# the model's own keyframe it comes out 0.000 mm and changes nothing,
-# because the disagreement is not noise around the keyframe, it IS the
-# keyframe being a different slump than today's.
+# So during the leading settle (measured pose -> rest) structurally-nested
+# link pairs are not adjudicated. The moment the arm reaches `rest` the
+# model is clean again and every later pose gates normally — which is the
+# whole routine, since sweeps move away from the fold.
 #
-# What this deliberately does NOT relax, anywhere, ever:
+# Two tolerance-based fixes were tried and REJECTED on measurement:
+#   - derived from a pose neighbourhood, it grows explosively (1.4 mm at
+#     2 deg, 5.8 at 4, 10 at 6) and by 4 deg it excuses TABLE strikes;
+#   - derived from the model's own keyframe it comes out 0.000 mm and
+#     changes nothing, because the disagreement is not noise around the
+#     keyframe — it IS the keyframe being a different slump than today's.
+#
+# What this does NOT relax, ever:
 #   - the table. The arm is not built to rest on it, so a table contact
-#     is always a finding, in the rest region or out of it.
-#   - pairs that do not nest at rest. Those fail on proximity as always.
-#   - anything outside the region. Normal gating resumes immediately.
-# The layer that actually covers the arm here is not the twin: it is
-# `check_start_pose` reading the encoders, and the in-motion guards.
-# 3.0 covers the 2.4 deg observed with margin, and is a small fraction
-# of the 300 ticks (26 deg) the pre-flight already admits as "at rest".
-REST_REGION_DEG = 3.0
+#     is a finding in the settle too. Enforced by construction: table
+#     pairs are excluded from the structural set.
+#   - pairs that do not nest at rest — they fail on proximity as always.
+#   - any pose after the settle.
+# The layer actually covering the arm during the settle is not the twin:
+# it is `check_start_pose` reading the encoders (which refuses a start
+# more than 300 ticks off rest or outside the calibrated range), and the
+# in-motion guards.
 
 # Contact pairs that are expected and never gate-failures. (The table
 # plane hangs off the worldbody; _body_of_geom reports it as "table".)
@@ -187,8 +192,9 @@ class GateReport:
         if self.nest_excused:
             lines.append(
                 f"  note: {self.nest_excused} structural nesting contact(s) "
-                f"waived inside {REST_REGION_DEG} deg of rest — the fold is "
-                f"not resolvable (table contacts are never waived)")
+                f"waived during the settle onto rest — which slump `rest` "
+                f"means is ambiguous by more than the clearance being "
+                f"judged (table contacts are never waived)")
         return "\n".join(lines)
 
 
@@ -245,11 +251,6 @@ class Twin:
             if "table" not in pair:
                 self._structural.add(pair)
 
-    def in_rest_region(self, pose: dict[int, int]) -> bool:
-        """Is this pose inside the un-adjudicable fold? (see
-        REST_REGION_DEG — EVERY joint must be within it.)"""
-        return all(span_deg(abs(t - self.cals[i].rest)) <= REST_REGION_DEG
-                   for i, t in pose.items())
 
     def _anchor_tick(self, i: int) -> int:
         cal = self.cals[i]
@@ -271,8 +272,12 @@ class Twin:
         return clamped, abs(q - clamped) * 180.0 / math.pi
 
     def contacts_at(self, pose: dict[int, int], step: int = 0,
+                    adjudicate_nesting: bool = True,
                     ) -> tuple[list[PredictedContact], dict[int, float], int]:
-        """(contacts, clamps, structural contacts excused in the fold)."""
+        """(contacts, clamps, structural contacts waived).
+
+        adjudicate_nesting=False only during the settle from a measured
+        slump — see the REST/settle note at the top of this module."""
         self.data.qpos[:] = self._rest_qpos
         clamps: dict[int, float] = {}
         for i, tick in pose.items():
@@ -281,7 +286,6 @@ class Twin:
             if clamp_deg > CLAMP_REPORT_DEG:
                 clamps[i] = clamp_deg
         mujoco.mj_forward(self.model, self.data)
-        near_rest = self.in_rest_region(pose)
         found: list[PredictedContact] = []
         excused = 0
         for n in range(self.data.ncon):
@@ -295,10 +299,10 @@ class Twin:
                 # Proximity never fails a pair built to nest.
                 if con.dist > 0:
                     continue
-                # Penetration does — except inside the fold, which the
-                # twin cannot resolve (REST_REGION_DEG). Counted, so the
-                # gate can say out loud that it looked away.
-                if near_rest:
+                # Penetration does — except during the settle from a
+                # measured slump, which the twin cannot resolve. Counted,
+                # so the gate can say out loud that it looked away.
+                if not adjudicate_nesting:
                     excused += 1
                     continue
             found.append(PredictedContact(
@@ -314,10 +318,16 @@ class Twin:
         return "table" if name == "world" else name
 
     def check_trajectory(self, waypoints: list[dict[int, int]],
-                         step_deg: float = INTERP_STEP_DEG) -> GateReport:
+                         step_deg: float = INTERP_STEP_DEG,
+                         settle_from_measured: bool = False) -> GateReport:
         """Interpolate between consecutive waypoints in tick space and
         collision-check every intermediate pose. Contacts are deduped by
-        body pair (first occurrence reported)."""
+        body pair (first occurrence reported).
+
+        settle_from_measured: waypoint 0 is the arm's MEASURED slump
+        rather than a planned pose, so structural nesting is not
+        adjudicated until the arm reaches waypoint 1 (`rest`). Pass it
+        only when that is literally true — see the module note."""
         if not waypoints:
             return GateReport(0, [], {}, 0)
         contacts: list[PredictedContact] = []
@@ -328,7 +338,10 @@ class Twin:
 
         def check(pose: dict[int, int], step: int) -> None:
             nonlocal checked, excused
-            found, cl, ex = self.contacts_at(pose, step)
+            # Step 0 is the measured pose; step 1 is the move onto rest.
+            settling = settle_from_measured and step <= 1
+            found, cl, ex = self.contacts_at(pose, step,
+                                             adjudicate_nesting=not settling)
             checked += 1
             excused += ex
             for i, d in cl.items():
@@ -406,8 +419,9 @@ def cmd_check(twin: Twin) -> int:
               f"range at rest")
     # Never let this be invisible — it is the one place the gate
     # deliberately looks away, so it gets printed every time.
-    print(f"\nstructural nesting pairs (not adjudicated within "
-          f"{REST_REGION_DEG} deg of rest):")
+    print("\nstructural nesting pairs (proximity never fails these; "
+          "penetration is\nwaived only during a settle from a measured "
+          "slump):")
     if not twin._structural:
         print("  none — no link pairs touch at the rest pose")
     for pair in sorted(twin._structural, key=sorted):
