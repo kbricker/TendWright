@@ -18,7 +18,9 @@ table. Base<->table contact is expected (mounted) and ignored; so is
 Fixed_Jaw<->Moving_Jaw (the gripper may close on itself harmlessly).
 
 Poses within CONTACT_MARGIN_M of touching count as contact: the mapping
-carries real uncertainty, so the gate refuses near-misses too.
+carries real uncertainty, so the gate refuses near-misses too. The one
+exception is link pairs that nest structurally in the folded rest pose
+(`sim.twin check` prints them and their tolerance) — see NEST_TOL_DEG.
 
 CLI (all take --cal FILE; exercise/derive-clearance take --span PCT):
     uv run python -m sim.twin check             # rest pose contact-free?
@@ -36,6 +38,7 @@ the loader an SDK-free home.
 from __future__ import annotations
 
 import argparse
+import itertools
 import math
 import sys
 from dataclasses import dataclass
@@ -59,8 +62,35 @@ MODEL_XML = (Path(__file__).parent
 # specific pairs are baselined at construction — for them only ACTUAL
 # penetration counts, while every other pair fails on proximity alone.
 CONTACT_MARGIN_M = 0.005
+# MuJoCo SUMS the two geoms' margins to get a pair's contact threshold,
+# so each geom carries half of what we want. Setting geom_margin to the
+# full value silently doubled the gate's reach to 10 mm (fixed 2026-07-25
+# after it refused the arm's own resting pose over pairs 9 mm apart).
+_GEOM_MARGIN_M = CONTACT_MARGIN_M / 2
 INTERP_STEP_DEG = 2.0  # trajectory sampling; finer = slower, less tunneling
 CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
+
+# Structural-nesting tolerance, expressed as JOINT ERROR rather than mm.
+#
+# In the folded rest pose the jaw sits hard against the shoulder, and the
+# fold converts joint error into penetration depth very fast — measured on
+# this model at roughly 0.7 mm per degree. Model and arm cannot agree to
+# better than a fraction of a degree there: the torque-off slump doesn't
+# reproduce itself exactly, and today's read 2.4 deg deeper at the wrist
+# than the slump captured as `rest`.
+#
+# So a structurally-nested pair is allowed the penetration that this much
+# joint error produces, COMPUTED FROM THE MODEL at construction — the knob
+# is an angle (physically meaningful, checkable against encoder
+# resolution: 0.5 deg is ~6 ticks) and the millimetres follow the geometry,
+# so re-vendoring the model can't silently invalidate it.
+#
+# Deriving the tolerance from a WIDER neighbourhood was tried and rejected:
+# it grows explosively (1.4 mm at 2 deg, 10 mm at 6 deg) and starts
+# excusing table strikes. The table NEVER gets this tolerance — it is the
+# hazard, not a nesting partner.
+NEST_TOL_DEG = 0.5
+_NEST_PROBE_OFFSETS = (-1.0, 0.0, 1.0)  # multiples of NEST_TOL_DEG
 
 # Contact pairs that are expected and never gate-failures. (The table
 # plane hangs off the worldbody; _body_of_geom reports it as "table".)
@@ -165,8 +195,8 @@ class Twin:
         except ValueError as exc:
             raise BenchError(f"could not load the arm model: {exc}",
                              "the vendored model may be corrupt") from exc
-        # Contact margin applies to every geom pair (see CONTACT_MARGIN_M).
-        self.model.geom_margin[:] = CONTACT_MARGIN_M
+        # Half each, because MuJoCo sums them per pair (see _GEOM_MARGIN_M).
+        self.model.geom_margin[:] = _GEOM_MARGIN_M
         self.data = mujoco.MjData(self.model)
         self.cals = load_calibration(Path(cal_path))
         missing = sorted(set(JOINT_MAPS) - set(self.cals))
@@ -175,7 +205,8 @@ class Twin:
                 f"calibration.json lacks joint(s) {missing}",
                 "the twin needs all six joints — calibrate capture first")
         self._rest_qpos = self.model.key("rest").qpos.copy()
-        self._baseline: set[frozenset] = set()
+        # pair -> penetration (m) tolerated for structurally-nested links
+        self._nest_tol: dict[frozenset, float] = {}
         self._adr: dict[int, int] = {}
         self._range: dict[int, tuple[float, float]] = {}
         for i, jm in JOINT_MAPS.items():
@@ -186,15 +217,46 @@ class Twin:
                                  "the vendored model changed — fix JOINT_MAPS")
             self._adr[i] = self.model.jnt_qposadr[jid]
             self._range[i] = tuple(self.model.jnt_range[jid])
-        # Baseline the model's own folded rest pose: pairs nesting there
-        # are structural, so proximity alone never fails them again.
+        self._derive_nest_tolerances()
+
+    def _derive_nest_tolerances(self) -> None:
+        """Find the link pairs that nest in the folded rest pose, and how
+        deep NEST_TOL_DEG of joint error drives each one.
+
+        Pairs touching at the fold are structural — they are built to sit
+        against each other there — so proximity alone must never fail
+        them, and neither must a penetration inside the model's own
+        angular resolution. Pairs involving the table are excluded
+        outright: the arm is not built to rest on the table, so a table
+        contact is always a finding.
+        """
+        structural: set[frozenset] = set()
         self.data.qpos[:] = self._rest_qpos
         mujoco.mj_forward(self.model, self.data)
         for n in range(self.data.ncon):
             con = self.data.contact[n]
-            self._baseline.add(frozenset({
-                self._body_of_geom(con.geom1),
-                self._body_of_geom(con.geom2)}))
+            pair = frozenset({self._body_of_geom(con.geom1),
+                              self._body_of_geom(con.geom2)})
+            if "table" not in pair:
+                structural.add(pair)
+
+        offsets = [o * NEST_TOL_DEG * math.pi / 180.0
+                   for o in _NEST_PROBE_OFFSETS]
+        adrs = [self._adr[i] for i in sorted(self._adr)]
+        for combo in itertools.product(offsets, repeat=len(adrs)):
+            self.data.qpos[:] = self._rest_qpos
+            for adr, off in zip(adrs, combo):
+                self.data.qpos[adr] += off
+            mujoco.mj_forward(self.model, self.data)
+            for n in range(self.data.ncon):
+                con = self.data.contact[n]
+                pair = frozenset({self._body_of_geom(con.geom1),
+                                  self._body_of_geom(con.geom2)})
+                if pair not in structural:
+                    continue
+                depth = max(0.0, -con.dist)
+                self._nest_tol[pair] = max(self._nest_tol.get(pair, 0.0),
+                                           depth)
 
     def _anchor_tick(self, i: int) -> int:
         cal = self.cals[i]
@@ -233,9 +295,12 @@ class Twin:
             pair = frozenset({body_a, body_b})
             if pair in ALLOWED_PAIRS:
                 continue
-            # Baselined pairs (nested at the folded rest pose) only fail
-            # on real penetration; everything else fails on proximity.
-            if pair in self._baseline and con.dist > 0:
+            # Structurally-nested pairs (touching in the folded rest pose)
+            # fail only on penetration deeper than the model's own angular
+            # resolution can account for; every other pair — the table
+            # included — fails on proximity alone.
+            tol = self._nest_tol.get(pair)
+            if tol is not None and max(0.0, -con.dist) <= tol:
                 continue
             found.append(PredictedContact(
                 step=step, pose=dict(pose), body_a=body_a, body_b=body_b,
@@ -338,6 +403,17 @@ def cmd_check(twin: Twin) -> int:
     for i, deg in sorted(clamps.items()):
         print(f"  note: joint {i} clamped {deg:.1f} deg to the model's "
               f"range at rest")
+    # Never let the nesting tolerances be invisible — they are the one
+    # place the gate deliberately looks away, so they get printed.
+    print(f"\nstructural nesting in the fold (tolerated penetration, from "
+          f"{NEST_TOL_DEG} deg of joint error):")
+    if not twin._nest_tol:
+        print("  none — no link pairs touch at the rest pose")
+    for pair, tol in sorted(twin._nest_tol.items(),
+                            key=lambda kv: (-kv[1], sorted(kv[0]))):
+        print(f"  {' <-> '.join(sorted(pair)):45s} {tol * 1000:6.3f} mm")
+    print("  (the table is never granted this — a table contact always "
+          "fails)")
     _print_provisional()
     return 1 if found else 0
 
