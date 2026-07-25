@@ -67,6 +67,15 @@ CONTACT_MARGIN_M = 0.005
 # full value silently doubled the gate's reach to 10 mm (fixed 2026-07-25
 # after it refused the arm's own resting pose over pairs 9 mm apart).
 _GEOM_MARGIN_M = CONTACT_MARGIN_M / 2
+# Detecting which pairs nest structurally, and judging whether a pose is
+# safe, want OPPOSITE biases: detection should be generous (miss a nesting
+# pair and the gate cries wolf forever after), judgement strict. So the
+# structural scan runs at a deliberately wider reach than the gate.
+# Sampling at exactly the gate threshold is what left Base <-> Upper_Arm
+# out — it rests 5.07 mm apart, a 0.07 mm miss, and then failed on
+# proximity the moment the arm twitched. 2x also happens to be what the
+# doubled-margin bug was accidentally getting right.
+STRUCTURAL_DETECT_M = CONTACT_MARGIN_M * 2
 INTERP_STEP_DEG = 2.0  # trajectory sampling; finer = slower, less tunneling
 CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 
@@ -238,10 +247,12 @@ class Twin:
                                  "the vendored model changed — fix JOINT_MAPS")
             self._adr[i] = self.model.jnt_qposadr[jid]
             self._range[i] = tuple(self.model.jnt_range[jid])
-        # Link pairs touching in the model's folded rest pose are
+        # Link pairs nesting in the model's folded rest pose are
         # structural — they are built to sit against each other there.
+        # Scanned at STRUCTURAL_DETECT_M, wider than the gate reach.
         # The table is excluded by construction: the arm is not built to
         # rest on it, so a table contact is always a finding.
+        self.model.geom_margin[:] = STRUCTURAL_DETECT_M / 2
         self.data.qpos[:] = self._rest_qpos
         mujoco.mj_forward(self.model, self.data)
         for n in range(self.data.ncon):
@@ -250,6 +261,7 @@ class Twin:
                               self._body_of_geom(con.geom2)})
             if "table" not in pair:
                 self._structural.add(pair)
+        self.model.geom_margin[:] = _GEOM_MARGIN_M  # back to gate reach
 
 
     def _anchor_tick(self, i: int) -> int:
