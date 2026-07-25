@@ -71,6 +71,13 @@ P = {
     "web_h": 8.0,
     "back_open_min": 10.0,  # guaranteed open gap below the top wall
     "wall_clearance": 12.0,  # min gap frame-to-wall (plate 4 + 8 free)
+    # slot cap (Kyle): flat plate on the frame's entry face + a tongue
+    # into the slot channel. Tongue thickness = the channel's exact 2.0
+    # (deliberately tight — Kyle files the first article to fit). One
+    # cap fits both variants (identical entry cross-section).
+    "cap_t": 3.0,            # plate thickness
+    "cap_tongue_len": 6.0,   # into the channel; seated board edge is 6.5
+    "cap_tongue_clear": 0.1,  # width clearance vs the 38.5 groove span
     # variants: tilt below horizontal
     "angles_deg": (45, 60),
 }
@@ -284,6 +291,31 @@ def build_variant(angle_deg, p):
     return mount, neck_len, wall_y0 - stop_in
 
 
+def build_cap(p):
+    """Slot cap, angle-independent: plate on the entry end face (kept
+    below the top wall's underside) + tongue riding the grooves at the
+    channel's exact thickness. Local frame mirrors the frame end: the
+    plate's inner face is y=0; the tongue extends to -tongue_len."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    scene.unit_settings.system = "METRIC"
+    scene.unit_settings.scale_length = 0.001
+    scene.unit_settings.length_unit = "MILLIMETERS"
+
+    groove_h = p["board_t"] + p["slot_h_slop"]
+    span = p["board_w"] + p["slot_w_slop"]
+    frame_w = 2 * (span / 2 - p["groove_d"] + p["rail_w"])
+    z0 = -p["front_lip"]
+    z1 = groove_h + p["back_cavity"] - 0.5  # top wall underside
+    cap = box("cap", frame_w, p["cap_t"], z1 - z0,
+              0, p["cap_t"] / 2, (z0 + z1) / 2)
+    cap = union(cap, box(
+        "tongue", span - p["cap_tongue_clear"], p["cap_tongue_len"] + 0.5,
+        groove_h, 0, -(p["cap_tongue_len"] - 0.5) / 2, groove_h / 2))
+    cap.name = "CameraMountCap"
+    return cap
+
+
 def add_preview_rig():
     key = bpy.data.objects.new("Key", bpy.data.lights.new("Key", "SUN"))
     key.rotation_euler = Euler((math.radians(35), 0, math.radians(25)))
@@ -337,6 +369,20 @@ def main():
             filepath=os.path.join(OUT_DIR, f"camera_mount_{angle}.blend"))
         print(f"[mounts] {angle} deg: neck_len={neck_len} "
               f"back_open={back_open:.1f} -> camera_mount_{angle}.blend/.stl")
+
+    cap = build_cap(P)
+    cam = add_preview_rig()
+    aim(cam, (85, -95, 50), (0, -2, 4))  # tongue side
+    render(os.path.join(OUT_DIR, "preview_cap.png"))
+    bpy.ops.object.select_all(action="DESELECT")
+    cap.select_set(True)
+    bpy.context.view_layer.objects.active = cap
+    bpy.ops.wm.stl_export(
+        filepath=os.path.join(OUT_DIR, "camera_mount_cap.stl"),
+        export_selected_objects=True)
+    bpy.ops.wm.save_as_mainfile(
+        filepath=os.path.join(OUT_DIR, "camera_mount_cap.blend"))
+    print("[mounts] cap -> camera_mount_cap.blend/.stl")
     print("[mounts] done")
 
 
