@@ -578,23 +578,33 @@ def _seg_dir(twin: Twin, pair: tuple[str, str]):
     return v / (v @ v) ** 0.5
 
 
-def relative_angle(twin: Twin, joint: int, tick: int) -> float:
-    """Signed angle (deg) from the parent direction to the segment this
-    joint drives, right-hand rule about +X. This is the quantity the
-    ratified frame claims to display."""
+def relative_angle(twin: Twin, joint: int, tick: int) -> tuple[float, float]:
+    """(signed angle deg, clamp deg) from the parent direction to the
+    segment this joint drives, right-hand rule about +X — the quantity
+    the ratified frame claims to display.
+
+    The clamp is returned because the MODEL's joint limits are in places
+    tighter than the arm's calibrated range (j3's elbow saturates ~5.5
+    deg before the calibrated minimum). At a clamped tick the model is
+    not showing the pose that was asked for, so it cannot verify a frame
+    there — the caller must skip rather than report a false failure.
+    """
     pose = {i: twin.cals[i].rest for i in sorted(twin.cals)}
     pose[joint] = tick
     twin.data.qpos[:] = twin._rest_qpos
+    clamped = 0.0
     for i, t in pose.items():
-        q, _ = twin.qpos_of(i, t)
+        q, clamp_deg = twin.qpos_of(i, t)
+        if i == joint:
+            clamped = clamp_deg
         twin.data.qpos[twin._adr[i]] = q
     mujoco.mj_forward(twin.model, twin.data)
     v = _seg_dir(twin, PITCH_SEGMENTS[joint])
     parent = (_seg_dir(twin, PITCH_PARENTS[joint]) if joint in PITCH_PARENTS
               else np.array([0.0, 0.0, 1.0]))
     axis = np.array(PITCH_AXIS)
-    return math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
-                                   float(parent @ v)))
+    return (math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
+                                    float(parent @ v))), clamped)
 
 
 def cmd_frames(twin: Twin) -> int:
@@ -617,7 +627,12 @@ def cmd_frames(twin: Twin) -> int:
                 print(f"      {want:+6.1f} deg -> tick {tick} outside the "
                       f"calibrated range, skipped")
                 continue
-            got = relative_angle(twin, j, tick)
+            got, clamp = relative_angle(twin, j, tick)
+            if clamp > CLAMP_REPORT_DEG:
+                print(f"      [skip] {want:+6.1f} deg at tick {tick:5d}: "
+                      f"the MODEL clamps by {clamp:.1f} deg here, so it "
+                      f"cannot verify this angle")
+                continue
             ok = abs(got - want) <= FRAME_TOL_DEG
             if not ok:
                 fails.append(f"j{j} at {want:+.0f} deg reads {got:+.1f}")
