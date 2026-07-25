@@ -12,10 +12,35 @@ e-stop). Full detail: `hardware/bench/README.md`.
 **The power switch is the only hard e-stop.** A yanked USB adapter leaves
 servos powered and HOLDING their last command.
 
-**Everything speaks degrees now** (plan #647). Positions print in each
-joint's ratified convention with raw ticks in parentheses — m2's rest is
-`-90.0°`, the gripper reads `% open`. The conventions live in
-`calibration.json`; edit a joint's `frame` there to change how it reads.
+**Everything speaks degrees** (plan #647). Positions print in each joint's
+ratified convention with raw ticks in parentheses; the gripper reads
+`% open`. The conventions live in `calibration.json` — edit a joint's
+`frame` there to change how it reads, then re-run `sim.twin frames`.
+
+**The pitch chain follows the DH/URDF convention** (2026-07-25). m2, m3
+and m4 all rotate about the same world axis, so one rule covers all
+three: a joint reads **zero when the segment it drives is in line with
+its parent**, and **positive by the right-hand rule** about that shared
+axis. m2's parent is the vertical base column, so:
+
+| | zero means | positive means |
+|---|---|---|
+| m2 | upper arm straight up | swings forward over the reach |
+| m3 | forearm in line with the upper arm | elbow closes toward the fold |
+| m4 | gripper in line with the forearm | gripper tips down |
+
+**All three at zero is the arm standing straight up** — an eyeball check
+you can run at the bench in five seconds.
+
+Sign is defined by the right-hand rule about an axis, NOT by a viewing
+position. "Viewed from the right" flips meaning when someone walks around
+the arm; that ambiguity cost a wrong answer on m5's handedness once
+already. m1 (pan, about +Z) and m5 (roll, about the tool axis) have no
+in-line reference to zero against, so they keep their own conventions and
+were bench-verified by jog instead.
+
+`uv run python -m sim.twin frames` checks every ratified frame's zero and
+sign against the model's actual geometry. Run it after editing any frame.
 
 **Motion is gated twice** (plans #648/#649): before anything moves, the
 routine is simulated against the digital twin from the arm's MEASURED
@@ -74,6 +99,7 @@ for `--no-gate` — it has already been right about two real collisions.
 | `twin derive-clearance` | Scan sweep span × elbow × wrist holds for a contact-free combination. How the shipped envelope was chosen. |
 | `twin validate` | Regression: the twin must predict both real bench collisions. Run after ANY change to the model, calibration, or mappings. |
 | `twin selftest` | Pins the gate's safety contracts: the settle waiver accepts the observed slump, does NOT leak past the settle, and never waives the table. Run alongside `validate`. |
+| `twin frames` | Verifies each pitch joint's ratified display frame — where zero sits and which way positive runs — against the model's geometry. Run after editing any `frame` in `calibration.json`. |
 | `rig spec` | Joint centerpoints + rotation axes, origin at m1's centerpoint, and the center-to-center link lengths (calipers-checkable against the real arm). |
 | `rig where [--deg a,b,c,d,e,f]` | Where every joint and the tool point land for a pose, in mm. Pose authoring without touching hardware. |
 
