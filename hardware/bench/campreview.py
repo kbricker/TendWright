@@ -27,29 +27,55 @@ from pathlib import Path
 # chatter so our clean one-line errors stay clean.
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
-# The opencv-python wheel bundles its own Qt5 built WITHOUT fontconfig,
-# so Qt finds no fonts and repeats "Note that Qt no longer ships fonts"
-# every time the window touches text — it floods the terminal the tool
-# is being read in. Qt's documented answer for a fontconfig-less build
-# is QT_QPA_FONTDIR: point it at real TTFs and the complaint goes away
-# because the cause does. (Overlay text is unaffected either way — that
-# is drawn with OpenCV's built-in Hershey fonts, not Qt.)
-if "QT_QPA_FONTDIR" not in os.environ:
-    for _fontdir in ("/usr/share/fonts/truetype/dejavu",
-                     "/usr/share/fonts/truetype/liberation",
-                     "/usr/share/fonts/truetype",
-                     "/usr/share/fonts"):
-        if os.path.isdir(_fontdir):
-            os.environ["QT_QPA_FONTDIR"] = _fontdir
-            break
-# Belt and braces: if this Qt still cannot use those fonts, silence that
-# one message category rather than let it drown the output. Scoped to
-# qt.qpa.fonts ONLY — real Qt/display errors still print.
+# Belt and braces for the font problem fixed below: if Qt still cannot
+# use the fonts we point it at, silence that ONE message category
+# rather than let it drown the terminal. Real Qt/display errors still
+# print.
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.fonts.warning=false")
+_USER_FONTDIR = os.environ.get("QT_QPA_FONTDIR")
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 from pupil_apriltags import Detector  # noqa: E402
+
+
+def _fix_qt_fonts() -> None:
+    """Point Qt at fonts that exist.
+
+    The opencv-python wheel bundles Qt5 built without fontconfig AND
+    overwrites QT_QPA_FONTDIR **at import time** to its own bundled
+    fonts directory — which ships EMPTY (0 ttf files, verified on
+    cell1). Qt therefore has no fonts at all and repeats "Note that Qt
+    no longer ships fonts" until it floods the terminal.
+
+    So this must run AFTER `import cv2` (setting it before is silently
+    clobbered), and before the first window is created — Qt reads the
+    variable when its platform plugin initialises. An explicit operator
+    setting always wins.
+    """
+    current = os.environ.get("QT_QPA_FONTDIR", "")
+    if _USER_FONTDIR:  # operator asked for a specific directory
+        os.environ["QT_QPA_FONTDIR"] = _USER_FONTDIR
+        return
+    try:
+        if current and any(Path(current).glob("*.ttf")):
+            return  # whatever it points at actually has fonts
+    except OSError:
+        pass
+    for candidate in ("/usr/share/fonts/truetype/dejavu",
+                      "/usr/share/fonts/truetype/liberation",
+                      "/usr/share/fonts/truetype/noto",
+                      "/usr/share/fonts/truetype",
+                      "/usr/share/fonts"):
+        try:
+            if any(Path(candidate).rglob("*.ttf")):
+                os.environ["QT_QPA_FONTDIR"] = candidate
+                return
+        except OSError:
+            continue
+
+
+_fix_qt_fonts()
 
 # Camera tools import from hardware.errors, NOT .bus — keeps the Feetech
 # servo SDK out of their import graph entirely (errors.py exists for this).
