@@ -50,6 +50,7 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
                 fail_hint: str = "a joint may be obstructed or too weak "
                                  "for this pose or speed; clear the "
                                  "workspace and re-run",
+                invariant: Callable[[], None] | None = None,
                 ) -> None:
     """Poll until every joint in targets has arrived at its target.
 
@@ -57,6 +58,15 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
     (exercise: settle fully before the next waypoint); without it, arrival
     within tolerance is enough (teach's approach — its original semantics,
     tolerant of a gravity-loaded joint dithering inside the tolerance).
+
+    invariant (when given) is called once per sample and may raise to
+    abort the move — this is where guarded holds are re-verified DURING
+    motion (plan #649), so a joint that sags or is bumped mid-sweep
+    stops the arm instead of riding the plan to a collision. It is
+    checked BEFORE the arrival test, so a violation can never be
+    outraced by a joint settling on the same sample, and a raising
+    invariant halts every joint before propagating (as the deadline
+    path does). Torque state after the raise is the CALLER's affair.
 
     poll_key (when given) is called between samples with a timeout; any
     non-None return raises EStop — the caller owns the halt/hold response.
@@ -75,6 +85,16 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
                 + worst_travel / max(1, speed))
     while True:
         start = time.monotonic()
+        if invariant is not None:
+            # Halt on the way out, like the deadline path: a violation
+            # means the arm must stop NOW, and the caller's handler
+            # runs after the joints have been re-goaled in place.
+            try:
+                invariant()
+            except BenchError:
+                print()
+                halt_all(bus, ids)
+                raise
         done = True
         worst = 0
         for i in ids:

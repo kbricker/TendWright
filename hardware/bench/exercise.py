@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import partial
 from pathlib import Path
 
 import serial
@@ -41,6 +42,7 @@ from hardware.units import DEG_PER_TICK, fmt_ticks
 
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .calibrate import JOINT_NAMES, JointCal, load_calibration
+from .guards import ENTRY_PHASE, MOTION_PHASE, check_holds, holds_for
 from .monitor import parse_ids
 from .motion import EStop, halt_all, wait_settle
 from .term import flush_input, read_key, require_interactive
@@ -89,12 +91,18 @@ def clamp_goal(cal: JointCal, position: int) -> int:
     return max(cal.min, min(cal.max, position))
 
 
+def fold_direction(cal: JointCal) -> int:
+    """The tick direction that OPENS this joint away from its fold: the
+    rest pose sits near one range end (the fold), so opening moves
+    toward the other. Guards use it to tell sagging-back-toward-the-fold
+    (dangerous) from opening-further (safe)."""
+    return -1 if cal.rest > (cal.min + cal.max) // 2 else 1
+
+
 def clearance_pose(cal: JointCal, deg: float = CLEARANCE_DEG) -> int:
-    """`deg` open from a folded rest: away from whichever range end the
-    rest pose sits nearest (the fold direction), clamped in-range."""
-    direction = -1 if cal.rest > (cal.min + cal.max) // 2 else 1
+    """`deg` open from a folded rest, clamped in-range."""
     return clamp_goal(cal, cal.rest
-                      + direction * round(deg / DEG_PER_TICK))
+                      + fold_direction(cal) * round(deg / DEG_PER_TICK))
 
 
 def gate_waypoints(cals: dict[int, JointCal], rest: dict[int, int],
@@ -336,23 +344,41 @@ def run() -> int:
                 print(f"\n[{n}/{len(sweep_ids)}] sweeping joint {i} "
                       f"({name}): {show(cals[i], lo)} -> {show(cals[i], hi)}"
                       f" -> rest {show(cals[i], rest[i])}")
+                # Guarded holds (#649): these joints must physically BE
+                # open for this sweep to be safe — verified from the
+                # encoders on entry, and re-verified every sample while
+                # the sweep runs. A commanded hold is not a held joint.
+                guard_holds = holds_for(cals, clearance,
+                                        {j: fold_direction(cals[j])
+                                         for j in clearance})
+                guard_why = (f"joint {i} ({name}) sweeps only while these "
+                             f"stay clear of the fold")
+                invariant = partial(check_holds, bus, guard_holds,
+                                    MOTION_PHASE, guard_why)
+
                 if clearance:
                     for j, pose in clearance.items():
                         print(f"  opening joint {j} ({cals[j].name}) to "
-                              f"{show(cals[j], pose)} (~{CLEARANCE_DEG} deg "
+                              f"{show(cals[j], pose)} ({CLEARANCE_DEG} deg "
                               f"clear of the fold) so joint {i} can't "
                               f"press it into the table")
                         bus.move_to(j, pose, speed=speed,
                                     acceleration=ACCELERATION)
                     wait_settle(bus, hold, speed, "clearance",
                                 poll_key=read_key)
+                    # ENTRY GUARD: the sweep is unreachable until the
+                    # encoders confirm the clearance actually happened.
+                    check_holds(bus, guard_holds, ENTRY_PHASE, guard_why)
+                    print("  guard: "
+                          + ", ".join(h.describe() for h in guard_holds)
+                          + " — verified from the encoders")
                 for label, target in (("low", lo), ("high", hi),
                                       ("rest", rest[i])):
                     bus.move_to(i, clamp_goal(cals[i], target),
                                 speed=speed, acceleration=ACCELERATION)
                     goals = {**hold, i: clamp_goal(cals[i], target)}
                     wait_settle(bus, goals, speed, f"{name} {label}",
-                                poll_key=read_key)
+                                poll_key=read_key, invariant=invariant)
                 if clearance:
                     for j in clearance:
                         print(f"  refolding joint {j} ({cals[j].name}) "
