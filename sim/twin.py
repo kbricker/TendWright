@@ -29,6 +29,8 @@ CLI (all take --cal FILE; exercise/derive-clearance take --span PCT):
                                                 # holds for a clear m2 sweep
     uv run python -m sim.twin validate          # must predict the two
                                                 # known bench collisions
+    uv run python -m sim.twin selftest          # pin the gate's safety
+                                                # contracts (no hardware)
 
 Imports note: pulls hardware.bench.calibrate (and thus the servo SDK)
 for the calibration loader — fine anywhere the project runs; #637 gives
@@ -538,12 +540,69 @@ def cmd_validate(twin: Twin, span: int) -> int:
     return 0 if ok else 1
 
 
+# The slump deviation actually observed on 2026-07-25, in ticks from the
+# calibrated rest pose. Applied as a DELTA so the fixture tracks a
+# re-capture instead of pinning stale absolute ticks. This is the pose
+# the gate refused while the arm was sitting in it, untouched.
+OBSERVED_SLUMP_DELTA = {1: +84, 2: +2, 3: +8, 4: +27, 5: -53, 6: -4}
+
+
+def cmd_selftest(twin: Twin) -> int:
+    """Pin the gate's safety contracts. No hardware, no motion.
+
+    Acceptance alone proves nothing — a gate that accepts everything
+    would pass it — so every acceptance here is paired with a refusal.
+    """
+    rest = {i: twin.cals[i].rest for i in sorted(twin.cals)}
+    slump = {i: clamp_ok(twin, i, rest[i] + d)
+             for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
+    lift = {**rest, 2: rest[2] + round(25 / span_deg(1))}
+    fails: list[str] = []
+
+    def want(label: str, got_clean: bool, expected: bool) -> None:
+        if got_clean != expected:
+            fails.append(label)
+        print(f"  [{'ok ' if got_clean == expected else 'FAIL'}] {label}")
+
+    def traj(label, wps, expected, settle):
+        r = twin.check_trajectory(wps, settle_from_measured=settle)
+        want(label, r.clean, expected)
+
+    def pose(label, p, expected, adjudicate=True):
+        found, _, _ = twin.contacts_at(p, adjudicate_nesting=adjudicate)
+        want(label, not found, expected)
+
+    if any("table" in p for p in twin._structural):
+        fails.append("TABLE LEAKED INTO THE STRUCTURAL SET")
+        print("  [FAIL] table must never be a structural nesting pair")
+    else:
+        print("  [ok ] table is excluded from the structural set")
+
+    traj("settle from the observed slump onto rest is accepted",
+         [slump, rest], True, True)
+    traj("...and is REFUSED without the settle waiver (the waiver is "
+         "what accepts it, not luck)", [slump, rest], False, False)
+    traj("the waiver does not leak past the settle",
+         [rest, rest, slump], False, True)
+    traj("a table strike during the settle is still refused",
+         [slump, lift], False, True)
+    pose("the run-1 bench collision is still predicted", lift, False)
+    pose("rest is clean", rest, True)
+    print("twin selftest " + ("OK" if not fails else f"FAILED: {fails}"))
+    return 1 if fails else 0
+
+
+def clamp_ok(twin: Twin, i: int, tick: int) -> int:
+    """Keep a fixture pose inside the joint's calibrated range."""
+    return max(twin.cals[i].min, min(twin.cals[i].max, tick))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, prog="python -m sim.twin",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=(
-        "check", "exercise", "derive-clearance", "validate"))
+        "check", "exercise", "derive-clearance", "validate", "selftest"))
     parser.add_argument("--cal", default="calibration.json")
     parser.add_argument("--span", type=int, default=70,
                         help="sweep span %% (exercise's default)")
@@ -556,6 +615,8 @@ def main() -> int:
             return cmd_exercise(twin, args.span)
         if args.command == "derive-clearance":
             return cmd_derive_clearance(twin, args.span)
+        if args.command == "selftest":
+            return cmd_selftest(twin)
         return cmd_validate(twin, args.span)
     except BenchError as exc:
         print(f"error: {exc}", file=sys.stderr)
