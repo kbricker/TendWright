@@ -10,9 +10,8 @@ Tick -> radian mapping: per joint, qpos = anchor_qpos + direction *
 RAD_PER_TICK * (tick - anchor_tick). Anchors tie the CAPTURED physical
 rest/closed pose to the model's `rest` keyframe (the Menagerie model
 ships one that matches the arm's folded slump). Directions were resolved
-by FK probes on the model (see JOINT_MAPS comments); two are provisional
-pending the one-time bench verification: j1 pan (assumes the arm was
-posed straight ahead at rest capture) and j5 roll (head-on handedness).
+by FK probes on the model and all six are now bench-verified — j1 pan
+and j5 roll were confirmed at the bench 2026-07-25 (see JOINT_MAPS).
 
 Table: the arm is bolted to the bench, so the world plane z=0 IS the
 table. Base<->table contact is expected (mounted) and ignored; so is
@@ -93,12 +92,24 @@ class JointMap:
 # +Elbow = fold; +Wrist_Pitch = gripper tips up; +Wrist_Roll = CCW
 # about the jaw's local +Y; +Jaw = open. Physical directions from the
 # captured calibration signs (calibrate.py JOINT_POSITIVE).
+# j1 and j5 were bench-verified 2026-07-25 (Kyle jogged each and reported
+# the sense; `jog`'s +/- keys step TICKS, independent of the display
+# frame). Both answers cross-check against the direction captured months
+# earlier by `calibrate capture`, from a different vantage point:
+#   j1: capture recorded sign -1 against "CCW viewed from above", so
+#       increasing ticks = CW from above. Model +Rotation is CCW from
+#       above => direction -1. Already correct; confirmed, not changed.
+#   j5: capture recorded sign -1 against "CCW head-on", so increasing
+#       ticks = CW head-on. Kyle observed CW with the gripper pointing
+#       at him. FK probe: direction +1 reproduces that (analytically via
+#       omega . point_direction, and empirically from jaw displacement);
+#       -1 gives the mirror image. FLIPPED from -1.
 JOINT_MAPS: dict[int, JointMap] = {
-    1: JointMap("Rotation", "rest", -1, False),   # pan: rest assumed straight ahead
+    1: JointMap("Rotation", "rest", -1, True),
     2: JointMap("Pitch", "rest", +1, True),
     3: JointMap("Elbow", "rest", +1, True),
     4: JointMap("Wrist_Pitch", "rest", +1, True),
-    5: JointMap("Wrist_Roll", "rest", -1, False),  # roll handedness provisional
+    5: JointMap("Wrist_Roll", "rest", +1, True),
     6: JointMap("Jaw", "min", +1, True),           # physical closed = model closed
 }
 

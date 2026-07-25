@@ -35,7 +35,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from hardware.units import Frame, frame_from_dict, frame_to_dict
+from hardware.units import DegFrame, Frame, frame_from_dict, frame_to_dict
 
 from .bus import POSITION_RANGE, BenchError, FeetechBus, confirm, run_tool
 from .monitor import parse_ids
@@ -90,6 +90,65 @@ class JointCal:
     max: int
     sign: int
     frame: Frame | None = None
+
+
+# A joint "folds" when its rest pose sits near one END of its calibrated
+# range: m2 rests at its minimum, m3 and m4 near their maximum. Rotational
+# joints (m1 pan, m5 roll) rest mid-range and have no fold, so the
+# frame/fold agreement check below does not apply to them. 0.25 leaves
+# wide margin on both sides — the folding joints sit 0-14% from an end,
+# the rotational ones 46-58%.
+FOLD_EDGE_FRACTION = 0.25
+
+
+def fold_direction(cal: JointCal) -> int:
+    """The tick direction that OPENS this joint away from its fold: the
+    rest pose sits near one range end (the fold), so opening moves
+    toward the other. Guards use it to tell sagging-back-toward-the-fold
+    (dangerous) from opening-further (safe).
+
+    Lives here, not in exercise.py, because it is a property of a
+    calibration — and because the frame check below needs it without
+    dragging in the motion tool.
+    """
+    return -1 if cal.rest > (cal.min + cal.max) // 2 else 1
+
+
+def folds(cal: JointCal) -> bool:
+    """Does this joint rest folded against one end of its travel?"""
+    span = cal.max - cal.min
+    if span <= 0:
+        return False
+    return min(cal.rest - cal.min, cal.max - cal.rest) <= \
+        FOLD_EDGE_FRACTION * span
+
+
+def frame_fold_conflict(cal: JointCal) -> str | None:
+    """Does a joint's ratified display frame contradict its geometry?
+
+    Every folding joint's label promises that POSITIVE degrees means
+    opening/rising ("+ = elbow opens", "+ = gripper tips up"). That is
+    mechanically checkable: the frame's `positive` must equal the tick
+    direction that opens the joint.
+
+    m4 shipped inverted (caught 2026-07-25). Its display read
+    "rest +75.8°, + = gripper tips up" while the gripper was in fact
+    pointing 48 deg DOWN at the table. Motion was unaffected — clearance
+    holds go through fold_direction, not the frame — but the operator
+    was being told the opposite of the truth about the one joint whose
+    job is table clearance. Returns a message, or None when consistent.
+    """
+    if not isinstance(cal.frame, DegFrame) or not folds(cal):
+        return None
+    opens = fold_direction(cal)
+    if cal.frame.positive == opens:
+        return None
+    return (f"joint {cal.id} ({cal.name}): frame positive "
+            f"{cal.frame.positive:+d} disagrees with the geometry — ticks "
+            f"move {'UP' if opens > 0 else 'DOWN'} to open this joint away "
+            f"from its fold, so positive degrees currently display as "
+            f"CLOSING. Either flip `positive` to {opens:+d} or reword the "
+            f"label to match.")
 
 
 def _valid_tick(value: object) -> bool:
@@ -194,8 +253,9 @@ def print_table(cals: dict[int, JointCal]) -> None:
         else:
             lo, rest, hi = "-", "-", "-"
             label = "no frame — ratify one in calibration.json"
+        flag = "  <-- SEE WARNING" if frame_fold_conflict(c) else ""
         print(f"{c.id:>3}  {c.name:<13}  {lo:>10}  {rest:>10}  {hi:>10}  "
-              f"{ticks:>14}  {c.sign:>+4}")
+              f"{ticks:>14}  {c.sign:>+4}{flag}")
         print(f"{'':>5}  {label}")
 
 
@@ -423,6 +483,21 @@ def show(args: argparse.Namespace) -> int:
     if missing:
         print(f"not yet captured: joint(s) {missing} — "
               f"calibrate capture --ids {','.join(str(i) for i in missing)}")
+    # A frame that reads backwards is a display bug, not a motion bug, so
+    # this warns and sets a nonzero exit instead of refusing to load —
+    # bricking every bench tool over a label would be disproportionate.
+    # The exit code is what makes it catchable by a check script.
+    conflicts = [m for m in (frame_fold_conflict(cals[i])
+                             for i in sorted(cals)) if m]
+    if conflicts:
+        print("\nWARNING — ratified frame disagrees with joint geometry:")
+        for msg in conflicts:
+            print(f"  {msg}")
+        print("  Motion is unaffected (clearance holds derive their "
+              "direction\n  from the calibrated range, not the display "
+              "frame) — but every\n  printed angle for these joints reads "
+              "backwards.")
+        return 1
     return 0
 
 

@@ -53,7 +53,7 @@
       "frame": {
         "unit": "deg",
         "zero_tick": 2090,
-        "positive": 1,
+        "positive": -1,
         "label": "0 = mid-travel; + = gripper tips up"
       }
     },

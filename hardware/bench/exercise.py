@@ -41,7 +41,8 @@ import serial
 from hardware.units import DEG_PER_TICK, fmt_ticks
 
 from .bus import BenchError, FeetechBus, confirm, run_tool
-from .calibrate import JOINT_NAMES, JointCal, load_calibration
+from .calibrate import (JOINT_NAMES, JointCal, fold_direction,
+                        load_calibration)
 from .guards import ENTRY_PHASE, MOTION_PHASE, check_holds, holds_for
 from .monitor import parse_ids
 from .motion import EStop, halt_all, wait_settle
@@ -89,14 +90,6 @@ def clamp_goal(cal: JointCal, position: int) -> int:
     even the rest pose and wake holds (the loader tolerates a rest up to
     25 ticks outside [min,max]; commands must not)."""
     return max(cal.min, min(cal.max, position))
-
-
-def fold_direction(cal: JointCal) -> int:
-    """The tick direction that OPENS this joint away from its fold: the
-    rest pose sits near one range end (the fold), so opening moves
-    toward the other. Guards use it to tell sagging-back-toward-the-fold
-    (dangerous) from opening-further (safe)."""
-    return -1 if cal.rest > (cal.min + cal.max) // 2 else 1
 
 
 def clearance_pose(cal: JointCal, deg: float = CLEARANCE_DEG) -> int:
