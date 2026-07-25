@@ -20,7 +20,7 @@ Fixed_Jaw<->Moving_Jaw (the gripper may close on itself harmlessly).
 Poses within CONTACT_MARGIN_M of touching count as contact: the mapping
 carries real uncertainty, so the gate refuses near-misses too. The one
 exception is link pairs that nest structurally in the folded rest pose
-(`sim.twin check` prints them and their tolerance) — see NEST_TOL_DEG.
+(`sim.twin check` prints them) — see the settle note below.
 
 CLI (all take --cal FILE; exercise/derive-clearance take --span PCT):
     uv run python -m sim.twin check             # rest pose contact-free?
@@ -31,6 +31,8 @@ CLI (all take --cal FILE; exercise/derive-clearance take --span PCT):
                                                 # known bench collisions
     uv run python -m sim.twin selftest          # pin the gate's safety
                                                 # contracts (no hardware)
+    uv run python -m sim.twin frames            # ratified display frames
+                                                # vs the model's geometry
 
 Imports note: pulls hardware.bench.calibrate (and thus the servo SDK)
 for the calibration loader — fine anywhere the project runs; #637 gives
@@ -47,10 +49,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import mujoco
+import numpy as np
 
 from hardware.bench.calibrate import JointCal, load_calibration
 from hardware.errors import BenchError
-from hardware.units import RAD_PER_TICK, fmt_ticks, span_deg
+from hardware.units import DegFrame, RAD_PER_TICK, fmt_ticks, span_deg
 
 MODEL_XML = (Path(__file__).parent
              / "assets/menagerie/trs_so_arm100/so_arm100.xml")
@@ -540,6 +543,91 @@ def cmd_validate(twin: Twin, span: int) -> int:
     return 0 if ok else 1
 
 
+# ---------------------------------------------------------- frame check
+# The pitch chain (j2/j3/j4) all rotate about the SAME world axis, +X at
+# pan zero — that is what lets one sign rule cover all three, and it is
+# asserted below rather than assumed. Their ratified convention is the
+# DH/URDF one: a joint reads ZERO when the segment it drives is collinear
+# with its parent, and POSITIVE by the right-hand rule about +X.
+# j2's parent is the vertical base column, so its zero is "upper arm
+# straight up" — and all three at zero is the arm standing straight up,
+# which is eyeball-checkable at the bench.
+#
+# j1 (pan, about +Z) and j5 (roll, about the tool axis) have no collinear
+# reference — nothing to be in line with — so they are not covered here.
+# Both were bench-verified by jog on 2026-07-25 instead.
+PITCH_SEGMENTS = {
+    2: ("Upper_Arm", "Lower_Arm"),
+    3: ("Lower_Arm", "Wrist_Pitch_Roll"),
+    4: ("Wrist_Pitch_Roll", "Fixed_Jaw"),
+}
+PITCH_PARENTS = {
+    3: ("Upper_Arm", "Lower_Arm"),
+    4: ("Lower_Arm", "Wrist_Pitch_Roll"),
+}
+PITCH_AXIS = (1.0, 0.0, 0.0)  # world +X at pan zero
+FRAME_TOL_DEG = 1.5  # a tick is 0.088 deg; this is slop for mesh origins
+
+
+def _seg_dir(twin: Twin, pair: tuple[str, str]):
+    a = twin.data.xpos[mujoco.mj_name2id(
+        twin.model, mujoco.mjtObj.mjOBJ_BODY, pair[0])]
+    b = twin.data.xpos[mujoco.mj_name2id(
+        twin.model, mujoco.mjtObj.mjOBJ_BODY, pair[1])]
+    v = b - a
+    return v / (v @ v) ** 0.5
+
+
+def relative_angle(twin: Twin, joint: int, tick: int) -> float:
+    """Signed angle (deg) from the parent direction to the segment this
+    joint drives, right-hand rule about +X. This is the quantity the
+    ratified frame claims to display."""
+    pose = {i: twin.cals[i].rest for i in sorted(twin.cals)}
+    pose[joint] = tick
+    twin.data.qpos[:] = twin._rest_qpos
+    for i, t in pose.items():
+        q, _ = twin.qpos_of(i, t)
+        twin.data.qpos[twin._adr[i]] = q
+    mujoco.mj_forward(twin.model, twin.data)
+    v = _seg_dir(twin, PITCH_SEGMENTS[joint])
+    parent = (_seg_dir(twin, PITCH_PARENTS[joint]) if joint in PITCH_PARENTS
+              else np.array([0.0, 0.0, 1.0]))
+    axis = np.array(PITCH_AXIS)
+    return math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
+                                   float(parent @ v)))
+
+
+def cmd_frames(twin: Twin) -> int:
+    """Verify each pitch joint's ratified frame against the MODEL.
+
+    Checks the two things a frame can get wrong, at three probe angles:
+    where zero sits, and which way positive runs. A frame that passes is
+    correct by construction rather than by anyone eyeballing a printout —
+    which is how j4 shipped reading exactly backwards for two days.
+    """
+    fails: list[str] = []
+    for j in sorted(PITCH_SEGMENTS):
+        cal = twin.cals.get(j)
+        if cal is None or not isinstance(cal.frame, DegFrame):
+            continue
+        print(f"  j{j} ({cal.name}) — {cal.frame.label or 'no label'}")
+        for want in (0.0, 30.0, -30.0):
+            tick = cal.frame.tick(want)
+            if not (cal.min <= tick <= cal.max):
+                print(f"      {want:+6.1f} deg -> tick {tick} outside the "
+                      f"calibrated range, skipped")
+                continue
+            got = relative_angle(twin, j, tick)
+            ok = abs(got - want) <= FRAME_TOL_DEG
+            if not ok:
+                fails.append(f"j{j} at {want:+.0f} deg reads {got:+.1f}")
+            print(f"      [{'ok ' if ok else 'FAIL'}] frame says "
+                  f"{want:+6.1f} deg at tick {tick:5d}; model measures "
+                  f"{got:+6.1f} deg")
+    print("frame check " + ("OK" if not fails else f"FAILED: {fails}"))
+    return 1 if fails else 0
+
+
 # The slump deviation actually observed on 2026-07-25, in ticks from the
 # calibrated rest pose. Applied as a DELTA so the fixture tracks a
 # re-capture instead of pinning stale absolute ticks. This is the pose
@@ -601,7 +689,8 @@ def main() -> int:
         description=__doc__, prog="python -m sim.twin",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=(
-        "check", "exercise", "derive-clearance", "validate", "selftest"))
+        "check", "exercise", "derive-clearance", "validate", "selftest",
+        "frames"))
     parser.add_argument("--cal", default="calibration.json")
     parser.add_argument("--span", type=int, default=70,
                         help="sweep span %% (exercise's default)")
@@ -616,6 +705,8 @@ def main() -> int:
             return cmd_derive_clearance(twin, args.span)
         if args.command == "selftest":
             return cmd_selftest(twin)
+        if args.command == "frames":
+            return cmd_frames(twin)
         return cmd_validate(twin, args.span)
     except BenchError as exc:
         print(f"error: {exc}", file=sys.stderr)

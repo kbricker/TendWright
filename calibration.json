@@ -24,9 +24,9 @@
       "sign": 1,
       "frame": {
         "unit": "deg",
-        "zero_tick": 1823,
+        "zero_tick": 1780,
         "positive": 1,
-        "label": "-90 = folded at rest; + = arm rises"
+        "label": "0 = upper arm vertical; + swings forward over the reach, - leans back to the fold"
       }
     },
     {
@@ -38,9 +38,9 @@
       "sign": 1,
       "frame": {
         "unit": "deg",
-        "zero_tick": 3135,
-        "positive": -1,
-        "label": "0 = fully folded (rest); + = elbow opens"
+        "zero_tick": 1292,
+        "positive": 1,
+        "label": "0 = forearm in line with the upper arm; + closes the elbow toward the fold"
       }
     },
     {
@@ -52,9 +52,9 @@
       "sign": 1,
       "frame": {
         "unit": "deg",
-        "zero_tick": 2090,
-        "positive": -1,
-        "label": "0 = mid-travel; + = gripper tips up"
+        "zero_tick": 2158,
+        "positive": 1,
+        "label": "0 = gripper in line with the forearm; + tips the gripper down"
       }
     },
     {
