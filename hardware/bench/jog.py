@@ -17,6 +17,13 @@ positions print in its ratified units, ticks in parens. --step-deg jogs
 by degrees instead of ticks. Uncalibrated joints keep the raw-tick
 behavior — jog works before any calibration exists.
 
+The status line refreshes ~10x/s from the ENCODER, showing the commanded
+target, the actual position, the offset in ticks, and what the joint is
+really doing (moving / settling / holding / torque off). Target and
+actual do not become equal: a servo settles into a deadband a few ticks
+off its goal, so "holding" means inside the shared settle tolerance, not
+identical numbers.
+
 Exit codes: 0 quit, 2 error, 3 operator e-stop, 130 Ctrl+C.
 Torque always starts OFF and is cut again on every exit path.
 
@@ -33,11 +40,33 @@ from pathlib import Path
 from hardware.units import DEG_PER_TICK, PctFrame, fmt_ticks
 
 from .bus import POSITION_RANGE, BenchError, FeetechBus, run_tool
+from .motion import SETTLE_TOL_TICKS, STILL_TICKS
 from .term import read_key
 
 CENTER = 2048
 JOG_SPEED = 300
 JOG_ACCELERATION = 30
+# Refresh cadence for the live position line. The same read_key timeout
+# that idles the loop drives the poll, so this is also the key latency.
+POLL_S = 0.1
+
+
+def joint_state(pos: int, prev: int, target: int, torque_on: bool) -> str:
+    """What the joint is ACTUALLY doing — read from the plant, never
+    assumed from the command that was just sent.
+
+    'arrived' uses the shared SETTLE_TOL_TICKS: a servo settles into a
+    deadband and does NOT land on the exact goal tick, so demanding
+    equality would mean never reporting arrival (which is precisely what
+    the old hardcoded '(moving)' string did).
+    """
+    if not torque_on:
+        return "torque off"
+    if abs(pos - target) > SETTLE_TOL_TICKS:
+        return "moving"
+    if abs(pos - prev) > STILL_TICKS:
+        return "settling"
+    return "holding"
 
 
 def run() -> int:
@@ -119,11 +148,30 @@ def run() -> int:
         print("torque is OFF; press 't' to enable before jogging. "
               "+/- jog, [ ] step size, c zero pose, q quit, "
               "any other key = E-STOP")
+        print(f"live from the encoder; 'holding' = within "
+              f"{SETTLE_TOL_TICKS} ticks of target (servos settle into a "
+              f"deadband, they do not land exactly on it)")
+
+        prev_pos = target
+
+        def refresh() -> int:
+            """Re-read the plant and repaint the status line."""
+            nonlocal prev_pos
+            pos = bus.read_position(args.servo_id)
+            state = joint_state(pos, prev_pos, target, torque_on)
+            prev_pos = pos
+            print(f"\rtarget {show(target):>16}  now {show(pos):>16}  "
+                  f"{pos - target:+5d}t  {state:<10}", end="", flush=True)
+            return pos
 
         try:
             while True:
-                key = read_key(timeout=0.5)
+                key = read_key(timeout=POLL_S)
+                # Idle tick: this is what makes the readout live. Without
+                # it the line froze at whatever was true microseconds
+                # after the goal was written, so it never converged.
                 if key is None:
+                    refresh()
                     continue
                 if key in ("+", "="):
                     delta = step
@@ -174,9 +222,7 @@ def run() -> int:
                 target = clamped
                 bus.move_to(args.servo_id, target,
                             speed=JOG_SPEED, acceleration=JOG_ACCELERATION)
-                pos = bus.read_position(args.servo_id)
-                print(f"\rtarget {show(target):>16}  now {show(pos):>16} "
-                      f"(moving)   ", end="", flush=True)
+                refresh()  # keeps the line live while a key is held down
         finally:
             bus.safe_torque_off([args.servo_id])
 
