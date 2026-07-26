@@ -32,9 +32,14 @@
       "type": "seam",
       "y": 61.5,
       "notes": "Where the return's two tops meet, 61.5 from the back wall (27.5 + 34). A 2x4 LEG lands here - it is below the table top (-z) so it cannot be reached by the arm, but it is recorded now so it is not forgotten. Details pending from Kyle."
+    },
+    {
+      "name": "return_ceiling_ducts",
+      "type": "overhead",
+      "notes": "Ceiling-mounted ducts above the RETURN. Not measured, so not modelled - their only recorded effect is the side wall's usable_height of 34. When measured they become a fixture with kind 'duct' (geom group 3, toggleable in the viewer)."
     }
   ],
-  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. outward is the direction the wall MATERIAL sits from its face. Both heights MEASURED 2026-07-26, replacing the earlier 'about 3 feet' rough.",
+  "_walls_note": "`height` is the wall's real height above the TABLE TOP. `usable_height`, when present, is how far up is actually reachable - the return side is limited to 34 by ceiling ducts even though the wall runs to 48-7/8. Keep them separate: collapsing them would move the wall face the moment someone measures the duct properly. yaw_deg is the direction the wall RUNS (0 = along +x, 90 = along +y); outward is which way the wall MATERIAL sits from its face.",
   "walls": [
     {
       "name": "back",
@@ -51,10 +56,11 @@
       "x": 82.0,
       "y": 0.0,
       "width": 133.5,
-      "height": 34.0,
+      "height": 48.875,
       "yaw_deg": 90.0,
       "outward": "+x",
-      "notes": "RETURN's wall - Kyle calls this a backwall too. Usable height 34 above the table, MEASURED 2026-07-26 (the main table's back wall is taller at 48-7/8). Runs the full length of the return, 133.5, on your LEFT as you face the back wall (high x in datum coords)."
+      "notes": "RETURN's wall. PHYSICALLY the same height as the main back wall (48-7/8 above the table) - Kyle clarified 2026-07-26. The 34 is USABLE space, cut short by CEILING-MOUNT DUCTS above the return. Modelled as the true wall plus a usable_height limit rather than as a short wall, because those are different things: the duct is an overhead obstacle, not a lower wall face.",
+      "usable_height": 34.0
     }
   ],
   "corner_gap": {
@@ -70,17 +76,17 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -59.062,
-    "elevation": -27.875,
-    "distance": 2.27154,
+    "azimuth": -57.187,
+    "elevation": -12.5,
+    "distance": 4.67737,
     "lookat": [
-      1.19091,
-      1.0692,
-      0.40855
+      1.46703,
+      1.22679,
+      0.40976
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
-  "shelves": [
+  "fixtures": [
     {
       "name": "main_backwall_shelf",
       "_comment": "Protrudes from the MAIN TABLE back wall. Width 50.75 is exact; depth 8 is Kyle's estimate; z (underside height above the table) is NOT YET MEASURED so this is not rendered or gated - see missing().",
@@ -92,7 +98,8 @@
       "thickness": 0.75,
       "notes": "Inset ~5 from the x=0 end of the main table (the end AWAY from the return), so it spans x 5..55.75. ASSUMPTION: 'the edge of the table' read as that free end rather than the return corner - confirm. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge, with two side pieces cut at 45 degrees. The frame is NOT modelled yet - the 45-degree brackets hang below the shelf and are what the arm would actually strike first.",
       "depth_measured": false,
-      "width_measured": true
+      "width_measured": true,
+      "kind": "shelf"
     }
   ]
 }

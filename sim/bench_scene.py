@@ -104,12 +104,26 @@ class Wall:
     height: float
     yaw_deg: float = 0.0
     outward: str = "-y"
+    usable_height: float | None = None
     notes: str = ""
+
+    @property
+    def clear_height(self) -> float:
+        """How far up the wall is actually reachable.
+
+        The wall's own height and the space in FRONT of it are different
+        numbers: ceiling ducts over the return cut its usable space to 34
+        even though the wall itself runs to 48-7/8. Modelling that as a
+        shorter wall would be a lie that happens to be conservative -
+        and it would quietly move the wall face if anyone later measured
+        the real thing. Keep both, and say which is which."""
+        return self.height if self.usable_height is None else min(
+            self.height, self.usable_height)
 
 
 @dataclass(frozen=True)
-class Shelf:
-    """A slab held off a wall, above the table top.
+class Fixture:
+    """Anything solid held ABOVE the table top - shelf, duct, ceiling.
 
     `z` is the height of its UNDERSIDE above the table surface, because
     that is the number that decides whether the arm can pass beneath it.
@@ -124,6 +138,7 @@ class Shelf:
     depth: float
     z: float | None = None
     thickness: float = 0.75
+    kind: str = "shelf"
     notes: str = ""
 
 
@@ -132,7 +147,7 @@ class Scene:
     units: str
     surfaces: list[Surface]
     walls: list[Wall] = field(default_factory=list)
-    shelves: list[Shelf] = field(default_factory=list)
+    fixtures: list[Fixture] = field(default_factory=list)
     thickness: float | None = None
     height_to_floor: float | None = None
     arm_x: float | None = None
@@ -201,10 +216,10 @@ class Scene:
             gaps.append("table height, floor to top surface")
         if not self.walls:
             gaps.append("walls - none measured, so none are modelled")
-        for sh in self.shelves:
+        for sh in self.fixtures:
             if sh.z is None:
                 gaps.append(
-                    f"shelf '{sh.name}': height of its UNDERSIDE above the "
+                    f"{sh.kind} '{sh.name}': height of its UNDERSIDE above the "
                     f"table top - NOT MODELLED without it, because that is "
                     f"the number deciding whether the arm passes beneath")
         return gaps
@@ -231,8 +246,11 @@ class Scene:
                 lines.append("    WARNING: that point is not over any "
                              "measured table surface")
         for w in self.walls:
+            extra = ("" if w.usable_height is None
+                     else f", usable {w.usable_height:g} (overhead blocks "
+                          f"the rest)")
             lines.append(f"  wall {w.name}: at x {w.x:g}, y {w.y:g}, "
-                         f"{w.width:g} wide, {w.height:g} high")
+                         f"{w.width:g} wide, {w.height:g} high{extra}")
         return "\n".join(lines)
 
     def sketch(self, cols: int = 62) -> str:
@@ -359,26 +377,28 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             y=_num(entry, "y", where), width=wid, height=h,
             yaw_deg=_num(entry, "yaw_deg", where, required=False) or 0.0,
             outward=_outward(entry, where),
+            usable_height=_num(entry, "usable_height", where, required=False),
             notes=entry.get("notes", "")))
 
-    shelves: list[Shelf] = []
-    for entry in doc.get("shelves") or []:
+    fixtures: list[Fixture] = []
+    for entry in (doc.get("fixtures") or doc.get("shelves") or []):
         where = f"{path} shelf {entry.get('name')!r}"
         wid = _num(entry, "width", where)
         dep = _num(entry, "depth", where)
         if wid <= 0 or dep <= 0:
             raise BenchError(f"{where}: width and depth must be positive", "")
-        shelves.append(Shelf(
+        fixtures.append(Fixture(
             name=entry.get("name", "shelf"), x=_num(entry, "x", where),
             y=_num(entry, "y", where), width=wid, depth=dep,
             z=_num(entry, "z", where, required=False),
             thickness=_num(entry, "thickness", where, required=False) or 0.75,
+            kind=entry.get("kind", "shelf"),
             notes=entry.get("notes", "")))
 
     arm = doc.get("arm") or {}
     where = f"{path} arm"
     return Scene(
-        units=units, surfaces=surfaces, walls=walls, shelves=shelves,
+        units=units, surfaces=surfaces, walls=walls, fixtures=fixtures,
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
         arm_x=_num(arm, "x", where, required=False),
@@ -387,6 +407,15 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
 
 
 WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
+
+# MuJoCo geom groups. The interactive viewer toggles these with the
+# number keys, so category = group lets the room be built up in detail
+# without the ductwork and ceiling burying the bench.
+GROUP_TABLE, GROUP_WALL, GROUP_FIXTURE, GROUP_OVERHEAD = 0, 1, 2, 3
+GROUP_NAMES = {GROUP_TABLE: "table", GROUP_WALL: "walls",
+               GROUP_FIXTURE: "fixtures/shelves",
+               GROUP_OVERHEAD: "ducts/ceiling"}
+FIXTURE_GROUP = {"duct": GROUP_OVERHEAD, "ceiling": GROUP_OVERHEAD}
 
 
 def build_spec(scene: Scene):
@@ -414,7 +443,7 @@ def build_spec(scene: Scene):
             name=f"table_{s.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[(x1 - x0) * m / 2, (y1 - y0) * m / 2, t / 2],
             pos=[(x0 + x1) / 2 * m, (y0 + y1) / 2 * m, -t / 2],
-            rgba=[0.72, 0.60, 0.44, 1.0])
+            rgba=[0.72, 0.60, 0.44, 1.0], group=GROUP_TABLE)
     for w in scene.walls:
         along_x = w.yaw_deg % 180 == 0
         ox, oy = OUTWARD[w.outward]
@@ -430,8 +459,9 @@ def build_spec(scene: Scene):
                    w.height * m / 2]
         spec.worldbody.add_geom(
             name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0])
-    for sh in scene.shelves:
+            size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0],
+            group=GROUP_WALL)
+    for sh in scene.fixtures:
         if sh.z is None:
             continue  # unmeasured height: not modelled, by policy
         spec.worldbody.add_geom(
@@ -439,7 +469,8 @@ def build_spec(scene: Scene):
             size=[sh.width * m / 2, sh.depth * m / 2, sh.thickness * m / 2],
             pos=[(sh.x + sh.width / 2) * m, (sh.y + sh.depth / 2) * m,
                  (sh.z + sh.thickness / 2) * m],
-            rgba=[0.66, 0.55, 0.40, 1.0])
+            rgba=[0.66, 0.55, 0.40, 1.0],
+            group=FIXTURE_GROUP.get(sh.kind, GROUP_FIXTURE))
 
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
@@ -532,6 +563,8 @@ def view(scene: Scene, save_view: bool = True,
     print("opening the MuJoCo viewer - close the window to exit")
     print("  left-drag = orbit, right-drag = pan, scroll = zoom")
     print("  [ / ] cycles cameras (there is a fixed 'bench' one)")
+    print("  number keys 0-5 toggle geom groups: "
+          + ", ".join(f"{g}={n}" for g, n in sorted(GROUP_NAMES.items())))
     if save_view:
         print(f"  the view you leave it at is saved to {path}")
     if scene.missing():
