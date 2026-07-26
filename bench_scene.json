@@ -59,7 +59,7 @@
     "measured": true,
     "from_side_wall": 8.25
   },
-  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: differing heights ARE the slope, and the floor plane is solved from them rather than stored - so leg POSITIONS matter as much as heights. x/y are the leg station's CENTRE. `height` is TRUSS HEIGHT: floor to the UNDERSIDE of the table top, excluding the 3/4 top. It is NOT the cut length of a single 2x4 (Kyle, 2026-07-26) - the truss is legs plus rails and no one piece is that long. Do not hand these numbers to a saw. The distinction does not affect the floor: floor-to-underside is exactly what the plane needs. Nominal lumber is not actual lumber: a 2x4 is 1.5 x 3.5.",
+  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: differing heights ARE the slope, and the floor plane is solved from them rather than stored - so leg POSITIONS matter as much as heights. x/y are the leg station's CENTRE. `height` is TRUSS HEIGHT: floor to the UNDERSIDE of the table top, excluding the 3/4 top. It is NOT the cut length of a single 2x4 (Kyle, 2026-07-26) - the truss is legs plus rails and no one piece is that long. Do not hand these numbers to a saw. The distinction does not affect the floor: floor-to-underside is exactly what the plane needs. Nominal lumber is not actual lumber: a 2x4 is 1.5 x 3.5. `measured: false` legs have their height INFERRED from the solved floor plane and are EXCLUDED from solving it - otherwise the plane would be fitted to its own output, which is harmless arithmetic today but would silently dilute a real re-measure later.",
   "legs": [
     {
       "name": "main_outside_corner",
@@ -68,7 +68,8 @@
       "height": 38.25,
       "section": "2x4",
       "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset of 1.0 is an ESTIMATE from the photo, not a measurement. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED truss height.",
-      "truss": "main_far_end"
+      "truss": "main_far_end",
+      "measured": true
     },
     {
       "name": "main_near_back_wall",
@@ -77,7 +78,8 @@
       "height": 39.125,
       "section": "2x4",
       "notes": "Far end of the main table, the leg by the back wall. It stands RIGHT IN FRONT OF the footing, not inside it - its back face is on the footing's front face at x=7, so its centre is x 7.75. Part of a 4-piece 2x4 truss with main_outside_corner. MEASURED truss height.",
-      "truss": "main_far_end"
+      "truss": "main_far_end",
+      "measured": true
     },
     {
       "name": "return_seam",
@@ -85,7 +87,26 @@
       "y": 17.5,
       "height": 35.4,
       "section": "2x4",
-      "notes": "At the return's seam, 61.5 from the back wall. MEASURED truss height. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong."
+      "notes": "At the return's seam, 61.5 from the back wall. MEASURED truss height. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong.",
+      "measured": true
+    },
+    {
+      "name": "return_end_outside",
+      "x": 130.75,
+      "y": 18.5,
+      "along": "x",
+      "truss": "return_far_end",
+      "measured": false,
+      "notes": "Return's far-end truss, outside corner. Position inset 1.0 from the return end (x 133.5) and from its outer edge (y 20.25), same construction as the main table's end truss. HEIGHT IS INFERRED from the solved floor plane, not measured - it does not feed back into the floor solve."
+    },
+    {
+      "name": "return_end_wallside",
+      "x": 130.75,
+      "y": 5.75,
+      "along": "x",
+      "truss": "return_far_end",
+      "measured": false,
+      "notes": "Return's far-end truss, the leg by the side wall. Stands in FRONT of the return footing, whose battered face reaches y=5 at the floor - so its back face is on that, centre y 5.75. HEIGHT INFERRED from the floor plane."
     }
   ],
   "foundations": [
@@ -158,9 +179,9 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -80.061,
-    "elevation": -11.562,
-    "distance": 8.14814,
+    "azimuth": -125.624,
+    "elevation": -9.687,
+    "distance": 9.96758,
     "lookat": [
       2.67841,
       -1.41742,
@@ -173,6 +194,9 @@
     "main_far_end": {
       "top_rail_to_wall": "back",
       "_comment": "Rails-first frame at the main table's far end. The rails run the FULL length and the posts attach to them (Kyle) - so the posts span BETWEEN the rails rather than floor-to-top. Rails lie FLAT: 1.5 thick vertically, 3.5 across. The TOP rail carries on to the back wall, where it meets the ledger in a half-lap - a 1/2-thickness cutout in the ledger. The lap is joinery, not extent, so the boxes simply overlap."
+    },
+    "return_far_end": {
+      "_comment": "Same 4-piece construction as main_far_end: rails full length running FLAT, posts attached between them. No top_rail_to_wall - it is at the open end of the return, not against a wall."
     }
   },
   "ledgers": [
@@ -196,5 +220,24 @@
   "render": {
     "shadows": false,
     "_comment": "Shadows OFF by default (Kyle, 2026-07-26) until the lighting is right - hard shadows over a half-built room read as geometry errors that are not there. Flip to true to experiment."
-  }
+  },
+  "beams": [
+    {
+      "name": "main_front",
+      "x0": 27.5,
+      "y0": 0.0,
+      "x1": 27.5,
+      "y1": 82.0,
+      "notes": "Support along the FRONT edge of the main table, running its full length all the way to the return wall (y=0). Stood on edge, top flush under the table top."
+    },
+    {
+      "name": "return_front",
+      "x0": 27.5,
+      "y0": 20.25,
+      "x1": 133.5,
+      "y1": 20.25,
+      "notes": "Support along the FRONT edge of the return, from the main front beam out to the return's extreme end."
+    }
+  ],
+  "_beams_note": "Edge supports, as opposed to the wall ledgers. ORIENTATION ASSUMPTION: stood on edge (3.5 tall, 1.5 thick) like a joist - the structural default for an edge support. The wall ledgers are the other way up because Kyle said their wide face lies flat on the wall. Say if these are flat too."
 }

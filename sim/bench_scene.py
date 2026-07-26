@@ -167,10 +167,11 @@ class Leg:
     name: str
     x: float
     y: float
-    height: float
+    height: float | None = None   # None = infer from the solved floor
     section: str = "2x4"
     along: str = "y"          # which axis the wide (3.5) face spans
     truss: str | None = None  # legs sharing a name are one braced frame
+    measured: bool = True     # False = placed ON the floor, not defining it
     notes: str = ""
 
 
@@ -224,6 +225,26 @@ class Ledger:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class Beam:
+    """A support running along a table EDGE rather than a wall.
+
+    Axis-aligned, top flush under the table top - the top rests on it,
+    same as a ledger. ORIENTATION ASSUMPTION: stood on edge (3.5 tall,
+    1.5 thick) like a joist, which is the structural default for an
+    edge support; the wall ledgers are the other way up because Kyle
+    said their wide face lies on the wall.
+    """
+
+    name: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    section: str = "2x4"
+    notes: str = ""
+
+
 @dataclass
 class Scene:
     units: str
@@ -233,6 +254,7 @@ class Scene:
     legs: list[Leg] = field(default_factory=list)
     foundations: list[Foundation] = field(default_factory=list)
     ledgers: list[Ledger] = field(default_factory=list)
+    beams: list[Beam] = field(default_factory=list)
     trusses: dict = field(default_factory=dict)
     shadows: bool = False
     thickness: float | None = None
@@ -296,11 +318,16 @@ class Scene:
         more are least-squared, so a fourth measurement improves it
         rather than conflicting with it. Returns None below three.
         """
-        if len(self.legs) < 3 or self.thickness is None:
+        # ONLY measured legs define the floor. Inferred ones are placed
+        # ON the solved plane, so feeding them back would be fitting the
+        # plane to its own output - harmless arithmetic today, but it
+        # would silently dilute a real re-measure later.
+        known = [l for l in self.legs if l.measured and l.height is not None]
+        if len(known) < 3 or self.thickness is None:
             return None
         under = -self.thickness
-        rows = [(leg.x, leg.y, 1.0) for leg in self.legs]
-        zs = [under - leg.height for leg in self.legs]
+        rows = [(leg.x, leg.y, 1.0) for leg in known]
+        zs = [under - leg.height for leg in known]
         # Normal equations, so this works for 3 legs or 30 without numpy
         # semantics changing under us.
         n = len(rows)
@@ -329,6 +356,16 @@ class Scene:
                     ) / det
         a, b, z0 = solve_col(0), solve_col(1), solve_col(2)
         return z0, a, b
+
+    def leg_height(self, leg: Leg) -> float | None:
+        """A leg's height: measured if given, otherwise INFERRED from the
+        solved floor. Inference is why the floor had to be right first."""
+        if leg.height is not None:
+            return leg.height
+        fz = self.floor_z(leg.x, leg.y)
+        if fz is None:
+            return None
+        return -(self.thickness or 0.75) - fz
 
     def floor_z(self, x: float, y: float) -> float | None:
         plane = self.floor_plane()
@@ -428,13 +465,17 @@ class Scene:
         if plane is not None:
             z0, a, b = plane
             tilt = math.degrees(math.atan(math.hypot(a, b)))
+            n_meas = sum(1 for l in self.legs
+                         if l.measured and l.height is not None)
             lines.append(f"  floor: z = {z0:.3f} + {a:.5f}x + {b:.5f}y  "
-                         f"({tilt:.2f} deg tilt, solved from "
-                         f"{len(self.legs)} legs)")
+                         f"({tilt:.2f} deg tilt, solved from {n_meas} "
+                         f"MEASURED legs of {len(self.legs)})")
             for leg in self.legs:
+                h_ = self.leg_height(leg)
+                tag = "" if leg.measured else "  (INFERRED from the floor)"
                 lines.append(f"    truss {leg.name:<20} x {leg.x:g}, "
-                             f"y {leg.y:g}, {leg.height:g} tall -> floor "
-                             f"{self.floor_z(leg.x, leg.y):.2f}")
+                             f"y {leg.y:g}, {h_:.2f} tall -> floor "
+                             f"{self.floor_z(leg.x, leg.y):.2f}{tag}")
         for f in self.foundations:
             lines.append(f"  foundation {f.name}: under wall '{f.wall}', "
                          f"{f.front:g} in front + {f.back:g} behind, "
@@ -593,8 +634,8 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
     legs: list[Leg] = []
     for entry in doc.get("legs") or []:
         where = f"{path} leg {entry.get('name')!r}"
-        h = _num(entry, "height", where)
-        if h <= 0:
+        h = _num(entry, "height", where, required=False)
+        if h is not None and h <= 0:
             raise BenchError(f"{where}: height must be positive", "")
         section = entry.get("section", "2x4")
         if section not in LUMBER:
@@ -604,6 +645,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             name=entry.get("name", "leg"), x=_num(entry, "x", where),
             y=_num(entry, "y", where), height=h, section=section,
             along=entry.get("along", "y"), truss=entry.get("truss"),
+            measured=bool(entry.get("measured", h is not None)),
             notes=entry.get("notes", "")))
 
     foundations: list[Foundation] = []
@@ -626,6 +668,16 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
                         if entry.get("height_ref") else None),
             notes=entry.get("notes", "")))
 
+    beams: list[Beam] = []
+    for entry in doc.get("beams") or []:
+        where = f"{path} beam {entry.get('name')!r}"
+        beams.append(Beam(
+            name=entry.get("name", "beam"),
+            x0=_num(entry, "x0", where), y0=_num(entry, "y0", where),
+            x1=_num(entry, "x1", where), y1=_num(entry, "y1", where),
+            section=entry.get("section", "2x4"),
+            notes=entry.get("notes", "")))
+
     ledgers: list[Ledger] = []
     for entry in doc.get("ledgers") or []:
         where = f"{path} ledger {entry.get('name')!r}"
@@ -644,7 +696,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
     where = f"{path} arm"
     return Scene(
         units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
-        ledgers=ledgers, trusses=doc.get('trusses') or {},
+        ledgers=ledgers, beams=beams, trusses=doc.get('trusses') or {},
         shadows=bool((doc.get('render') or {}).get('shadows', False)),
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
@@ -880,6 +932,24 @@ def build_spec(scene: Scene):
                 size=half, pos=pos, rgba=[0.78, 0.65, 0.44, 1.0],
                 group=GROUP_STRUCTURE)
 
+    # Beams: supports along table edges. On edge (3.5 tall, 1.5 thick),
+    # top flush under the table top.
+    for bm in scene.beams:
+        bt, bw = LUMBER[bm.section]     # 1.5 thick, 3.5 tall
+        top_under = -(scene.thickness or 0.75)
+        run_x = abs(bm.x1 - bm.x0) >= abs(bm.y1 - bm.y0)
+        length = abs(bm.x1 - bm.x0) if run_x else abs(bm.y1 - bm.y0)
+        if run_x:
+            half = [length * m / 2, bt * m / 2, bw * m / 2]
+        else:
+            half = [bt * m / 2, length * m / 2, bw * m / 2]
+        spec.worldbody.add_geom(
+            name=f"beam_{bm.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=half,
+            pos=[(bm.x0 + bm.x1) / 2 * m, (bm.y0 + bm.y1) / 2 * m,
+                 (top_under - bw / 2) * m],
+            rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
+
     # Ledgers: wide face flat on the wall, top flush with the table
     # underside, running the wall's length.
     for led in scene.ledgers:
@@ -910,8 +980,9 @@ def build_spec(scene: Scene):
         w_, d_ = LUMBER[leg.section]
         hx, hy = (d_, w_) if leg.along == "x" else (w_, d_)
         top_under = -(scene.thickness or 0.75)
+        h_ = scene.leg_height(leg)
         lo_z, hi_z = truss_posts.get(
-            leg.truss or "", (top_under - leg.height, top_under))
+            leg.truss or "", (top_under - (h_ or 0.0), top_under))
         spec.worldbody.add_geom(
             name=f"leg_{leg.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[hx * m / 2, hy * m / 2, (hi_z - lo_z) * m / 2],
