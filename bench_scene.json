@@ -206,13 +206,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -147.186,
-    "elevation": -23.561,
-    "distance": 4.77784,
+    "azimuth": -99.561,
+    "elevation": -7.248,
+    "distance": 4.37415,
     "lookat": [
-      2.49827,
-      1.38125,
-      0.1089
+      1.82953,
+      2.41837,
+      0.31946
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
@@ -304,5 +304,30 @@
     }
   ],
   "_beams_note": "Edge supports, as opposed to the wall ledgers. Laid FLAT: the wide (3.5) face fastens to the underside of the table top, so each is 3.5 across and 1.5 deep vertically. Kyle corrected these - they were stood on edge, 90 degrees out. A beam may carry an explicit `z` (its TOP surface) - the shelf cleats use it; without one a beam sits under the table top.",
-  "_inset_note": "ALL inset distances are 0.5 in (Kyle, 2026-07-26) - legs, trusses and edge beams alike. This is MEASURED and replaces an earlier 1.0 estimate, which moved every leg and therefore re-solved the floor plane."
+  "_inset_note": "ALL inset distances are 0.5 in (Kyle, 2026-07-26) - legs, trusses and edge beams alike. This is MEASURED and replaces an earlier 1.0 estimate, which moved every leg and therefore re-solved the floor plane.",
+  "braces": [
+    {
+      "name": "shelf_knee_left",
+      "section": "2x4_half",
+      "x0": 0.0,
+      "y0": 28.75,
+      "z0": 27.0,
+      "x1": 8.0,
+      "y1": 28.75,
+      "z1": 35.0,
+      "notes": "45-degree knee brace under the shelf's LEFT side support, same half-cut 2x4 as the rest of the frame. Meets the side support 8 from the wall (centre), so at 45 degrees it lands on the wall 8 lower."
+    },
+    {
+      "name": "shelf_knee_right",
+      "section": "2x4_half",
+      "x0": 0.0,
+      "y0": 77.75,
+      "z0": 27.0,
+      "x1": 8.0,
+      "y1": 77.75,
+      "z1": 35.0,
+      "notes": "45-degree knee brace under the shelf's RIGHT side support."
+    }
+  ],
+  "_braces_note": "Diagonal members. Beams are axis-aligned, so a 45-degree knee brace needs its own type with explicit 3-D endpoints rather than a beam bent to fit."
 }

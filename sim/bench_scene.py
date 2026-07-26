@@ -246,6 +246,25 @@ class Beam:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class Brace:
+    """A DIAGONAL member, between two explicit 3-D points.
+
+    Beams are axis-aligned; a 45-degree knee brace is not, so it needs
+    its own type rather than a beam with a fudged angle.
+    """
+
+    name: str
+    x0: float
+    y0: float
+    z0: float
+    x1: float
+    y1: float
+    z1: float
+    section: str = "2x4_half"
+    notes: str = ""
+
+
 @dataclass
 class Scene:
     units: str
@@ -256,6 +275,7 @@ class Scene:
     foundations: list[Foundation] = field(default_factory=list)
     ledgers: list[Ledger] = field(default_factory=list)
     beams: list[Beam] = field(default_factory=list)
+    braces: list[Brace] = field(default_factory=list)
     trusses: dict = field(default_factory=dict)
     shadows: bool = False
     thickness: float | None = None
@@ -680,6 +700,17 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             z=_num(entry, "z", where, required=False),
             notes=entry.get("notes", "")))
 
+    braces: list[Brace] = []
+    for entry in doc.get("braces") or []:
+        where = f"{path} brace {entry.get('name')!r}"
+        braces.append(Brace(
+            name=entry.get("name", "brace"),
+            x0=_num(entry, "x0", where), y0=_num(entry, "y0", where),
+            z0=_num(entry, "z0", where), x1=_num(entry, "x1", where),
+            y1=_num(entry, "y1", where), z1=_num(entry, "z1", where),
+            section=entry.get("section", "2x4_half"),
+            notes=entry.get("notes", "")))
+
     ledgers: list[Ledger] = []
     for entry in doc.get("ledgers") or []:
         where = f"{path} ledger {entry.get('name')!r}"
@@ -698,7 +729,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
     where = f"{path} arm"
     return Scene(
         units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
-        ledgers=ledgers, beams=beams, trusses=doc.get('trusses') or {},
+        ledgers=ledgers, beams=beams, braces=braces, trusses=doc.get('trusses') or {},
         shadows=bool((doc.get('render') or {}).get('shadows', False)),
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
@@ -965,6 +996,31 @@ def build_spec(scene: Scene):
             size=half,
             pos=[(bm.x0 + bm.x1) / 2 * m, (bm.y0 + bm.y1) / 2 * m,
                  (top_under - thin / 2) * m],
+            rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
+
+    # Braces: diagonal members. Oriented with xyaxes rather than zaxis
+    # alone - zaxis leaves the roll about the brace free, so the section
+    # could land at any angle; xyaxes pins it so the wide face lies in
+    # the expected plane.
+    for br in scene.braces:
+        thin, wide = LUMBER[br.section]
+        dx, dy, dz = br.x1 - br.x0, br.y1 - br.y0, br.z1 - br.z0
+        length = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if length <= 0:
+            continue
+        ux, uy, uz = dx / length, dy / length, dz / length
+        # local x = global +y; local z = the brace; local y = z cross x
+        ax, ay, az = 0.0, 1.0, 0.0
+        yx = uy * az - uz * ay
+        yy = uz * ax - ux * az
+        yz = ux * ay - uy * ax
+        yn = math.sqrt(yx * yx + yy * yy + yz * yz) or 1.0
+        spec.worldbody.add_geom(
+            name=f"brace_{br.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[wide * m / 2, thin * m / 2, length * m / 2],
+            pos=[(br.x0 + br.x1) / 2 * m, (br.y0 + br.y1) / 2 * m,
+                 (br.z0 + br.z1) / 2 * m],
+            xyaxes=[ax, ay, az, yx / yn, yy / yn, yz / yn],
             rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
 
     # Ledgers: wide face flat on the wall, top flush with the table
