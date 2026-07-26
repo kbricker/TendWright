@@ -1,0 +1,26 @@
+{
+  "_scope": "THIS PROJECT's use of a bench: which bench, what stands on it and where. Separate from the bench file on purpose - see bench.json's _scope.",
+  "bench": "bench.json",
+  "arm": {
+    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = along +x, positive counter-clockwise viewed from above. SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
+    "x": null,
+    "y": null,
+    "yaw_deg": null
+  },
+  "cameras": [],
+  "render": {
+    "shadows": false,
+    "_comment": "Shadows OFF by default (Kyle, 2026-07-26) until the lighting is right - hard shadows over a half-built room read as geometry errors that are not there. Flip to true to experiment."
+  },
+  "view": {
+    "azimuth": -99.561,
+    "elevation": -7.248,
+    "distance": 2.02086,
+    "lookat": [
+      1.82953,
+      2.41837,
+      0.31946
+    ]
+  },
+  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."
+}

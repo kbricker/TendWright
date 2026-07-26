@@ -198,24 +198,6 @@
       "notes": "A drain is visible in the floor photo, consistent with the 2.45 deg slab tilt the leg lengths imply. Not modelled; noted because it explains the slope."
     }
   ],
-  "arm": {
-    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = along +x, positive counter-clockwise viewed from above. SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
-    "x": null,
-    "y": null,
-    "yaw_deg": null
-  },
-  "cameras": [],
-  "view": {
-    "azimuth": -99.561,
-    "elevation": -7.248,
-    "distance": 2.02086,
-    "lookat": [
-      1.82953,
-      2.41837,
-      0.31946
-    ]
-  },
-  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
   "_truss_note": "Legs sharing a `truss` name are one braced frame - Kyle's photo shows the far end of the main table as a 4-piece 2x4 truss: two legs, a top rail under the table top, and a bottom rail at the floor. The rails are DERIVED from the leg pair rather than listed, so moving a leg cannot leave its rails behind. ESTIMATE: the bottom rail is placed with its underside on the floor; measure its real height if it matters.",
   "trusses": {
     "main_far_end": {
@@ -251,10 +233,6 @@
       "notes": "Carries the RETURN off the side wall, same construction and orientation, running the return's full 133.5."
     }
   ],
-  "render": {
-    "shadows": false,
-    "_comment": "Shadows OFF by default (Kyle, 2026-07-26) until the lighting is right - hard shadows over a half-built room read as geometry errors that are not there. Flip to true to experiment."
-  },
   "beams": [
     {
       "name": "main_front",
@@ -333,5 +311,6 @@
       "cut1": "z"
     }
   ],
-  "_braces_note": "Diagonal members. Beams are axis-aligned, so a 45-degree knee brace needs its own type with explicit 3-D endpoints rather than a beam bent to fit."
+  "_braces_note": "Diagonal members. Beams are axis-aligned, so a 45-degree knee brace needs its own type with explicit 3-D endpoints rather than a beam bent to fit.",
+  "_scope": "THE PLACE ONLY. Table, walls, floor, footings and framing - measured once and reusable as the base for many bench configurations. What STANDS on the bench (arm, cameras) lives in cell.json, deliberately: placement changes constantly and belongs to a project, the room does not."
 }

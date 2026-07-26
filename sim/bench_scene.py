@@ -42,7 +42,20 @@ reported as absent — a guessed wall is worse than no wall, because the
 gate would report CLEAR against a fiction. `missing()` lists exactly what
 is absent so a clean gate is never mistaken for a safe workspace.
 
+TWO FILES, ON PURPOSE (Kyle, 2026-07-26):
+
+    bench.json   the PLACE - table, walls, floor, footings, framing.
+                 Measured once, project-agnostic, and the base for many
+                 bench configurations.
+    cell.json    THIS PROJECT's use of that place - which bench, where
+                 the arm stands, where the cameras are, view prefs.
+
+The bench must not know what is standing on it. Arm and camera
+placement change constantly and belong to the project; the room does
+not, and belongs to the room.
+
     uv run python -m sim.bench_scene              # summary + ASCII plan
+    uv run python -m sim.bench_scene --bench-only # the place, no project
     uv run python -m sim.bench_scene --view       # interactive viewer (desk)
     uv run python -m sim.bench_scene --render DIR # png views
     uv run python -m sim.bench_scene --save-xml F # MJCF you can open anywhere
@@ -58,7 +71,8 @@ from pathlib import Path
 
 from hardware.errors import BenchError
 
-SCENE_JSON = Path("bench_scene.json")
+BENCH_JSON = Path("bench.json")   # the PLACE: reusable, project-agnostic
+CELL_JSON = Path("cell.json")     # this project's use OF that place
 # Tape measures speak inches here; the model speaks metres.
 UNIT_TO_M = {"in": 0.0254, "mm": 0.001, "cm": 0.01, "m": 1.0}
 
@@ -279,26 +293,12 @@ class Scene:
     beams: list[Beam] = field(default_factory=list)
     braces: list[Brace] = field(default_factory=list)
     trusses: dict = field(default_factory=dict)
-    shadows: bool = False
     thickness: float | None = None
     height_to_floor: float | None = None
-    arm_x: float | None = None
-    arm_y: float | None = None
-    arm_yaw_deg: float | None = None
 
     @property
     def to_m(self) -> float:
         return UNIT_TO_M[self.units]
-
-    @property
-    def arm_placed(self) -> bool:
-        """Can anything be expressed in the ARM's frame yet?
-
-        All three are required together: without yaw the table's extent
-        cannot be rotated into the arm's frame at all, and a half-placed
-        table is exactly the failure this module exists to prevent.
-        """
-        return None not in (self.arm_x, self.arm_y, self.arm_yaw_deg)
 
     def footprint(self) -> tuple[float, float, float, float]:
         """Bounding box over all table surfaces, datum units."""
@@ -310,49 +310,26 @@ class Scene:
         """Is this datum point over any table surface?"""
         return any(s.contains(x, y) for s in self.surfaces)
 
-    def to_arm_frame(self, x: float, y: float) -> tuple[float, float]:
-        """Datum point -> the arm's frame, in METRES.
-
-        The arm's frame is the twin's world: origin at the base, arm
-        reaching toward -Y at pan zero. arm_yaw_deg says which datum
-        direction that reach points along (0 = toward the front of the
-        desk, i.e. +y datum), positive counter-clockwise seen from above.
-        """
-        if not self.arm_placed:
-            raise BenchError(
-                "the arm's position on the table is not measured yet",
-                "fill in arm.x / arm.y / arm.yaw_deg in bench_scene.json")
-        dx = (x - self.arm_x) * self.to_m
-        dy = (y - self.arm_y) * self.to_m
-        a = math.radians(self.arm_yaw_deg)
-        rx = dx * math.cos(a) + dy * math.sin(a)
-        ry = -dx * math.sin(a) + dy * math.cos(a)
-        # +y datum is forward toward the operator, which is the direction
-        # the arm reaches — and the twin reaches toward -Y. Hence the flip.
-        return rx, -ry
-
     def floor_plane(self) -> tuple[float, float, float] | None:
-        """(z0, a, b) for  z = z0 + a*x + b*y  - the floor, in datum units.
+        """(z0, a, b) for  z = z0 + a*x + b*y  - the floor, datum units.
 
         THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the
-        only measurement of the floor: each leg's length is the distance
-        from the floor to the underside of the top at that point, and
-        differing lengths ARE the slope. Three legs define the plane;
-        more are least-squared, so a fourth measurement improves it
-        rather than conflicting with it. Returns None below three.
+        only measurement of the floor: each leg's height is floor to the
+        underside of the top at that point, and differing heights ARE
+        the slope. Three legs define the plane; more are least-squared,
+        so a fourth measurement improves it rather than conflicting.
+
+        ONLY measured legs count. Inferred ones are placed ON the solved
+        plane, so feeding them back would be fitting the plane to its
+        own output - harmless arithmetic today, but it would silently
+        dilute a real re-measure later.
         """
-        # ONLY measured legs define the floor. Inferred ones are placed
-        # ON the solved plane, so feeding them back would be fitting the
-        # plane to its own output - harmless arithmetic today, but it
-        # would silently dilute a real re-measure later.
         known = [l for l in self.legs if l.measured and l.height is not None]
         if len(known) < 3 or self.thickness is None:
             return None
         under = -self.thickness
         rows = [(leg.x, leg.y, 1.0) for leg in known]
         zs = [under - leg.height for leg in known]
-        # Normal equations, so this works for 3 legs or 30 without numpy
-        # semantics changing under us.
         n = len(rows)
         sxx = sum(r[0] * r[0] for r in rows)
         sxy = sum(r[0] * r[1] for r in rows)
@@ -362,33 +339,25 @@ class Scene:
         sxz = sum(r[0] * z for r, z in zip(rows, zs))
         syz = sum(r[1] * z for r, z in zip(rows, zs))
         sz = sum(zs)
-        m = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, float(n)]]
-        v = [sxz, syz, sz]
-        det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-               - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-               + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        mm = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, float(n)]]
+        vv = [sxz, syz, sz]
+
+        def det3(q):
+            return (q[0][0] * (q[1][1] * q[2][2] - q[1][2] * q[2][1])
+                    - q[0][1] * (q[1][0] * q[2][2] - q[1][2] * q[2][0])
+                    + q[0][2] * (q[1][0] * q[2][1] - q[1][1] * q[2][0]))
+
+        det = det3(mm)
         if abs(det) < 1e-9:
             return None  # collinear legs cannot define a plane
-        def solve_col(col: int) -> float:
-            mm = [row[:] for row in m]
+        out = []
+        for col in range(3):
+            q = [row[:] for row in mm]
             for r in range(3):
-                mm[r][col] = v[r]
-            return (mm[0][0] * (mm[1][1] * mm[2][2] - mm[1][2] * mm[2][1])
-                    - mm[0][1] * (mm[1][0] * mm[2][2] - mm[1][2] * mm[2][0])
-                    + mm[0][2] * (mm[1][0] * mm[2][1] - mm[1][1] * mm[2][0])
-                    ) / det
-        a, b, z0 = solve_col(0), solve_col(1), solve_col(2)
+                q[r][col] = vv[r]
+            out.append(det3(q) / det)
+        a, b, z0 = out
         return z0, a, b
-
-    def leg_height(self, leg: Leg) -> float | None:
-        """A leg's height: measured if given, otherwise INFERRED from the
-        solved floor. Inference is why the floor had to be right first."""
-        if leg.height is not None:
-            return leg.height
-        fz = self.floor_z(leg.x, leg.y)
-        if fz is None:
-            return None
-        return -(self.thickness or 0.75) - fz
 
     def floor_z(self, x: float, y: float) -> float | None:
         plane = self.floor_plane()
@@ -397,28 +366,30 @@ class Scene:
         z0, a, b = plane
         return z0 + a * x + b * y
 
+    def leg_height(self, leg: Leg) -> float | None:
+        """Measured if given, otherwise INFERRED from the solved floor.
+        Inference is why the floor had to be right first."""
+        if leg.height is not None:
+            return leg.height
+        fz = self.floor_z(leg.x, leg.y)
+        return None if fz is None else -(self.thickness or 0.75) - fz
+
     def foundation_top_z(self, f: "Foundation", x: float,
                          y: float) -> float | None:
         """Top of a footing AT A POINT, in datum z.
 
-        Both footings sit a CONSTANT height off the floor end to end
-        (Kyle), so their tops follow the floor's slope rather than being
-        level. That makes the top a function of position, not a single
-        number - and the wooden wall above runs parallel to it.
-
-        ONE definition, used by the footing geometry AND by any wall
-        that comes down to meet it. They computed it separately once and
-        disagreed, leaving a wall hanging 3.2 in below its own footing.
+        ONE definition, used by the footing's own geometry AND by any
+        wall coming down to meet it. They computed it separately once
+        and disagreed, leaving a wall hanging 3.2 in below its footing.
         """
         if self.floor_plane() is None:
             return None
         if not f.level_top:
             return self.floor_z(x, y) + f.height
         # A LEVEL top: `height` is the clearance at ONE measured point,
-        # not everywhere. Over a sloping floor the block is therefore
-        # taller than `height` wherever the floor drops away - which is
-        # the whole reason the measuring point has to be recorded with
-        # the number.
+        # not everywhere. Over a sloping floor the block is taller than
+        # `height` wherever the floor drops away - which is why the
+        # measuring point is stored with the number.
         if f.height_ref is not None:
             rx, ry = f.height_ref
         else:
@@ -433,14 +404,6 @@ class Scene:
     def missing(self) -> list[str]:
         """Everything unmeasured, in the order it blocks work."""
         gaps: list[str] = []
-        if not self.arm_placed:
-            which = [n for n, v in (("x", self.arm_x), ("y", self.arm_y),
-                                    ("yaw_deg", self.arm_yaw_deg))
-                     if v is None]
-            gaps.append(
-                f"arm placement on the table ({', '.join(which)}) - until "
-                f"this is known the twin CANNOT use the real tabletop and "
-                f"keeps its infinite ground plane")
         if self.thickness is None:
             gaps.append("table top thickness")
         if self.floor_plane() is None:
@@ -472,12 +435,6 @@ class Scene:
         if self.height_to_floor is not None:
             lines.append(f"  height to floor: {self.height_to_floor:g} "
                          f"{self.units}")
-        if self.arm_placed:
-            lines.append(f"  arm at x {self.arm_x:g}, y {self.arm_y:g}, "
-                         f"facing {self.arm_yaw_deg:g} deg")
-            if not self.on_table(self.arm_x, self.arm_y):
-                lines.append("    WARNING: that point is not over any "
-                             "measured table surface")
         for w in self.walls:
             extra = ("" if w.usable_height is None
                      else f", usable {w.usable_height:g} (overhead blocks "
@@ -510,7 +467,8 @@ class Scene:
                          f", y {sh.y:g}..{sh.y + sh.depth:g}, {at}")
         return "\n".join(lines)
 
-    def sketch(self, cols: int = 62) -> str:
+    def sketch(self, cols: int = 62,
+               arm: tuple[float, float] | None = None) -> str:
         """Rough top-down ASCII plan — a cheap way to catch a number typed
         into the wrong field, which a table of figures hides well."""
         x0, y0, x1, y1 = self.footprint()
@@ -537,16 +495,16 @@ class Scene:
                 r = int((wy - y0) / d * (rows - 1))
                 if 0 <= r < rows and 0 <= c < cols:
                     grid[r][c] = "#"
-        if self.arm_placed:
-            c = int((self.arm_x - x0) / w * (cols - 1))
-            r = int((self.arm_y - y0) / d * (rows - 1))
+        if arm is not None:
+            c = int((arm[0] - x0) / w * (cols - 1))
+            r = int((arm[1] - y0) / d * (rows - 1))
             if 0 <= r < rows and 0 <= c < cols:
                 grid[r][c] = "A"
         body = "\n".join("  " + "".join(row).rstrip() for row in grid)
         return (f"  top-down (back of the desk at the top, "
                 f"{w:g} x {d:g} {self.units})\n"
                 f"  # wall   + table edge   . table top"
-                f"{'   A arm' if self.arm_placed else ''}\n{body}")
+                f"{'   A arm' if arm else ''}\n{body}")
 
 
 def _num(doc: dict, key: str, where: str, required: bool = True
@@ -573,8 +531,9 @@ def _outward(entry: dict, where: str) -> str:
     return v
 
 
-def load_scene(path: Path = SCENE_JSON) -> Scene:
-    """Load + strictly validate the measured bench geometry."""
+def load_bench(path: Path = BENCH_JSON) -> Scene:
+    """Load + strictly validate a BENCH: the physical place, with no
+    reference to what is standing on it. Reusable across projects."""
     try:
         doc = json.loads(path.read_text())
     except FileNotFoundError as exc:
@@ -728,17 +687,13 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             end=_num(entry, "end", where, required=False),
             notes=entry.get("notes", "")))
 
-    arm = doc.get("arm") or {}
-    where = f"{path} arm"
     return Scene(
         units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
-        ledgers=ledgers, beams=beams, braces=braces, trusses=doc.get('trusses') or {},
-        shadows=bool((doc.get('render') or {}).get('shadows', False)),
-        thickness=_num(table, "thickness", where, required=False),
-        height_to_floor=_num(table, "height_to_floor", where, required=False),
-        arm_x=_num(arm, "x", where, required=False),
-        arm_y=_num(arm, "y", where, required=False),
-        arm_yaw_deg=_num(arm, "yaw_deg", where, required=False))
+        ledgers=ledgers, beams=beams, braces=braces,
+        trusses=doc.get('trusses') or {},
+        thickness=_num(table, "thickness", f"{path} table", required=False),
+        height_to_floor=_num(table, "height_to_floor", f"{path} table",
+                             required=False))
 
 
 WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
@@ -808,7 +763,7 @@ def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
         rgba=rgba, group=group)
 
 
-def build_spec(scene: Scene):
+def build_spec(scene: Scene, shadows: bool = False):
     """MuJoCo spec of the measured bench, in the DATUM frame.
 
     Metres, table top at z=0, +z up. Geometry only - no arm: this exists
@@ -1141,7 +1096,7 @@ def build_spec(scene: Scene):
         pos=[cx0 - 0.9, cy0 + 1.1, 2.4], dir=[0.35, -0.42, -0.84],
         type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.62, 0.61, 0.58], specular=[0.12, 0.12, 0.12])
-    key.castshadow = scene.shadows
+    key.castshadow = shadows
     for pos, direction, level in (
             ([cx0 + 1.4, cy0 + 1.4, 1.7], [-0.5, -0.5, -0.7], 0.26),
             ([cx0, cy0 - 1.2, 1.9], [0.0, 0.62, -0.78], 0.20)):
@@ -1185,12 +1140,12 @@ def build_spec(scene: Scene):
     return spec
 
 
-def build_model(scene: Scene):
-    return build_spec(scene).compile()
+def build_model(scene: Scene, shadows: bool = False):
+    return build_spec(scene, shadows).compile()
 
 
-def view(scene: Scene, save_view: bool = True,
-         path: Path = SCENE_JSON) -> int:
+def view(cell: 'Cell', save_view: bool = True,
+         path: Path = CELL_JSON) -> int:
     """Open the bench in MuJoCo's interactive viewer.
 
     Needs a display, so this is a DESK command - cell1 is headless.
@@ -1206,7 +1161,7 @@ def view(scene: Scene, save_view: bool = True,
     import mujoco
     import mujoco.viewer
 
-    model = build_model(scene)
+    model = build_model(cell.bench, cell.shadows)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     print("opening the MuJoCo viewer - close the window to exit")
@@ -1216,7 +1171,7 @@ def view(scene: Scene, save_view: bool = True,
           + ", ".join(f"{g}={n}" for g, n in sorted(GROUP_NAMES.items())))
     if save_view:
         print(f"  the view you leave it at is saved to {path}")
-    if scene.missing():
+    if cell.missing():
         print("  NOTE: only what has been measured is here; run without "
               "--view to see what is absent")
 
@@ -1273,17 +1228,17 @@ def view(scene: Scene, save_view: bool = True,
         for attempt in range(20):
             time.sleep(0.15)
             try:
-                scene = load_scene(path)
+                cell = load_cell(path)
                 break
             except BenchError as exc:
                 if attempt == 19:
                     print(f"reload failed: {exc}", file=sys.stderr)
                     return 2
-        model = build_model(scene)
+        model = build_model(cell.bench, cell.shadows)
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         print("scene changed - reloaded")
-        for gap in scene.missing():
+        for gap in cell.missing():
             print(f"  still missing: {gap}")
 
 
@@ -1294,7 +1249,7 @@ def _mtime(path: Path) -> float:
         return 0.0
 
 
-def load_view(path: Path = SCENE_JSON) -> dict | None:
+def load_view(path: Path = CELL_JSON) -> dict | None:
     """The saved free-camera pose, if the scene file carries one."""
     try:
         doc = json.loads(path.read_text())
@@ -1419,6 +1374,108 @@ def _write_png(path: Path, rgb) -> None:
         + chunk(b"IEND", b""))
 
 
+@dataclass
+class Cell:
+    """A PROJECT's use of a bench: what stands on it and where.
+
+    Deliberately separate from the Bench, in data and in code. The bench
+    is a place - measured once, and the base for many configurations.
+    Where the arm and cameras sit is this project's business and changes
+    freely, so it must not live inside the file describing the room.
+    """
+
+    bench: Scene
+    bench_path: Path
+    arm_x: float | None = None
+    arm_y: float | None = None
+    arm_yaw_deg: float | None = None
+    cameras: list = field(default_factory=list)
+    shadows: bool = False
+
+    @property
+    def arm_placed(self) -> bool:
+        """All three are required together: without yaw the bench cannot
+        be rotated into the arm's frame at all, and a half-placed arm is
+        exactly the failure this refuses to ship."""
+        return None not in (self.arm_x, self.arm_y, self.arm_yaw_deg)
+
+    def to_arm_frame(self, x: float, y: float) -> tuple[float, float]:
+        """Bench datum point -> the arm's frame, in METRES.
+
+        The arm's frame is the twin's world: origin at the base, arm
+        reaching toward -Y at pan zero. arm_yaw_deg says which bench
+        direction that reach points along (0 = +x), positive
+        counter-clockwise seen from above.
+        """
+        if not self.arm_placed:
+            raise BenchError(
+                "the arm's position on the bench is not measured yet",
+                f"fill in arm.x / arm.y / arm.yaw_deg in {CELL_JSON}")
+        mm = self.bench.to_m
+        dx = (x - self.arm_x) * mm
+        dy = (y - self.arm_y) * mm
+        a = math.radians(self.arm_yaw_deg)
+        rx = dx * math.cos(a) + dy * math.sin(a)
+        ry = -dx * math.sin(a) + dy * math.cos(a)
+        return rx, -ry
+
+    def missing(self) -> list[str]:
+        gaps = list(self.bench.missing())
+        if not self.arm_placed:
+            which = [n for n, v in (("x", self.arm_x), ("y", self.arm_y),
+                                    ("yaw_deg", self.arm_yaw_deg))
+                     if v is None]
+            gaps.append(
+                f"arm placement on the bench ({', '.join(which)}) - until "
+                f"this is known the twin CANNOT use the real tabletop and "
+                f"keeps its infinite ground plane")
+        if not self.cameras:
+            gaps.append("cameras - none placed")
+        return gaps
+
+    def describe(self) -> str:
+        lines = [self.bench.describe(),
+                 f"  (bench loaded from {self.bench_path})"]
+        if self.arm_placed:
+            lines.append(f"  ARM at x {self.arm_x:g}, y {self.arm_y:g}, "
+                         f"facing {self.arm_yaw_deg:g} deg")
+            if not self.bench.on_table(self.arm_x, self.arm_y):
+                lines.append("    WARNING: that point is not over any "
+                             "measured bench surface")
+        for cam in self.cameras:
+            lines.append(f"  camera {cam.get('name', '?')}")
+        return "\n".join(lines)
+
+    def sketch(self, cols: int = 62) -> str:
+        arm = ((self.arm_x, self.arm_y) if self.arm_placed else None)
+        return self.bench.sketch(cols, arm=arm)
+
+
+def load_cell(path: Path = CELL_JSON) -> Cell:
+    """Load the project's cell config, and the bench it points at."""
+    try:
+        doc = json.loads(path.read_text())
+    except FileNotFoundError as exc:
+        raise BenchError(
+            f"no cell config at {path}",
+            f"it names the bench to use and where the arm and cameras "
+            f"sit on it") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BenchError(f"could not read {path}: {exc}",
+                         "fix or delete the file") from exc
+    bench_path = Path(doc.get("bench") or BENCH_JSON)
+    bench = load_bench(bench_path)
+    arm = doc.get("arm") or {}
+    where = f"{path} arm"
+    return Cell(
+        bench=bench, bench_path=bench_path,
+        arm_x=_num(arm, "x", where, required=False),
+        arm_y=_num(arm, "y", where, required=False),
+        arm_yaw_deg=_num(arm, "yaw_deg", where, required=False),
+        cameras=doc.get("cameras") or [],
+        shadows=bool((doc.get("render") or {}).get("shadows", False)))
+
+
 def main() -> int:
     render_to = None
     if "--render" in sys.argv:
@@ -1430,29 +1487,41 @@ def main() -> int:
         i = sys.argv.index("--save-xml")
         save_xml = Path(sys.argv[i + 1] if len(sys.argv) > i + 1
                         else "bench_scene.xml")
+    bench_only = "--bench-only" in sys.argv
     try:
-        scene = load_scene()
+        if bench_only:
+            cell = Cell(bench=load_bench(), bench_path=BENCH_JSON)
+        else:
+            cell = load_cell()
     except BenchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         if exc.hint:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
     if save_xml is not None:
-        save_xml.write_text(build_spec(scene).to_xml())
+        save_xml.write_text(build_spec(cell.bench, cell.shadows).to_xml())
         print(f"wrote {save_xml}")
         print(f"  open it standalone with: uv run python -m mujoco.viewer "
               f"--mjcf={save_xml}")
         return 0
     if "--view" in sys.argv:
-        return view(scene)
+        return view(cell)
     if render_to is not None:
-        for p in render(scene, render_to):
+        for p in render(cell.bench, render_to):
             print(f"wrote {p}")
         return 0
-    print(scene.describe())
-    print()
-    print(scene.sketch())
-    gaps = scene.missing()
+    if bench_only:
+        # The PLACE on its own: the project's gaps (arm, cameras) are
+        # not the bench's problem and would read as defects in it.
+        print(cell.bench.describe())
+        print()
+        print(cell.bench.sketch())
+        gaps = cell.bench.missing()
+    else:
+        print(cell.describe())
+        print()
+        print(cell.sketch())
+        gaps = cell.missing()
     if gaps:
         print("\nNOT MODELLED (measure these - do not guess them):")
         for g in gaps:
@@ -1461,7 +1530,8 @@ def main() -> int:
               "does NOT\nmean the workspace is safe - only that the arm "
               "will not hit itself.")
     else:
-        print("\nthe cell is fully measured")
+        print("\nthe bench is fully measured" if bench_only
+              else "\nthe cell is fully measured")
     return 0
 
 
