@@ -4,7 +4,6 @@
   "_datum": "Origin = the back corner of the MAIN table top on the side AWAY FROM THE RETURN. +x runs along the main table TOWARD the return, +y runs out from the back wall toward where you stand, +z is up off the table top (below the bench is -z). Everything on the bench is positive in all three.",
   "_handedness": "The return is a LEFT-HAND return: standing at the main table facing the back wall, it is on your left. Facing -y with +z up gives right = -x, so your left is +x - which is why the return sits at HIGH x and the origin corner is the one on your RIGHT. This was modelled mirrored on 2026-07-26 and only the 3D render caught it; the ASCII plan hid it completely.",
   "_measured": "2026-07-26, Kyle: main run, return, 3/4 in ply top. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
-
   "table": {
     "thickness": 0.75,
     "height_to_floor": null,
@@ -22,47 +21,63 @@
         "x": 61.75,
         "y": 27.5,
         "width": 20.25,
-        "depth": 48.5,
-        "notes": "LEFT-hand return (high x), forward of the main run; 27.5 + 48.5 = 76 total depth from the back edge"
+        "depth": 106.0,
+        "notes": "LEFT-hand return (high x), forward of the main run. Kyle CORRECTED 2026-07-26: from the back wall it runs 27.5 (main table depth) + 34 = 61.5 to a seam, then 72 more to the end. Total depth from the back edge is 133.5, so this surface spans y 27.5..133.5 = 106 deep. The earlier 76 was wrong."
       }
     ]
   },
-
+  "features": [
+    {
+      "name": "return_seam",
+      "type": "seam",
+      "y": 61.5,
+      "notes": "Where the return's two tops meet, 61.5 from the back wall (27.5 + 34). A 2x4 LEG lands here - it is below the table top (-z) so it cannot be reached by the arm, but it is recorded now so it is not forgotten. Details pending from Kyle."
+    }
+  ],
   "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. outward is the direction the wall MATERIAL sits from its face. ROUGHED IN 2026-07-26 at Kyle's direction, pending real measurement: both heights are 'about 3 usable feet' and the corner gap is a placeholder.",
   "walls": [
     {
       "name": "back",
       "x": 0.0,
       "y": 0.0,
-      "width": 76.0,
+      "width": 73.75,
       "height": 36.0,
       "yaw_deg": 0.0,
       "outward": "-y",
-      "notes": "ROUGH: runs along the back edge of the main table, stopping 6 in short of the side wall to leave the unmeasured corner gap."
+      "notes": "Runs along the back edge of the main table, stopping 8.25 short of the side wall (82 - 8.25 = 73.75) to leave the corner gap. Height still ROUGH at 'about 3 usable feet'."
     },
     {
       "name": "side",
       "x": 82.0,
       "y": 0.0,
-      "width": 76.0,
+      "width": 133.5,
       "height": 36.0,
       "yaw_deg": 90.0,
       "outward": "+x",
-      "notes": "ROUGH: runs the full length of the return, end to end, on the LEFT as you face the back wall (high x in datum coords)."
+      "notes": "Runs the full length of the return, end to end, on the LEFT as you face the back wall (high x in datum coords). Length follows the corrected return: 133.5 from the back wall. Height still ROUGH."
     }
   ],
   "corner_gap": {
-    "_comment": "PLACEHOLDER, needs measuring. Kyle 2026-07-26: 'there is one gap I need to measure, but lets rough in 6 inches from the sidewall in the corner'. Modelled as the back wall stopping 6 in short of the side wall, so the gap spans x 76..82. Confirm this is what the gap actually is before anything depends on it.",
-    "measured": false,
-    "from_side_wall": 6.0
+    "_comment": "Gap in the corner between the back wall and the side wall. Kyle measured it 2026-07-26 at 8.25, replacing the 6 placeholder. Modelled as the back wall stopping 8.25 short of the side wall, so the gap spans x 73.75..82.",
+    "measured": true,
+    "from_side_wall": 8.25
   },
-
   "arm": {
     "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = toward the front of the desk (+y), positive counter-clockwise viewed from above (so +90 points along -x). SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
     "x": null,
     "y": null,
     "yaw_deg": null
   },
-
-  "cameras": []
+  "cameras": [],
+  "view": {
+    "azimuth": -59.062,
+    "elevation": -27.875,
+    "distance": 2.27154,
+    "lookat": [
+      1.19091,
+      1.0692,
+      0.40855
+    ]
+  },
+  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."
 }
