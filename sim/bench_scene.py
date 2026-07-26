@@ -701,14 +701,20 @@ WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 # MuJoCo geom groups. The interactive viewer toggles these with the
 # number keys, so category = group lets the room be built up in detail
 # without the ductwork and ceiling burying the bench.
+ARM_GROUP = 2          # the arm rides with the fixtures group
 GROUP_TABLE, GROUP_WALL, GROUP_FIXTURE = 0, 1, 2
 GROUP_OVERHEAD, GROUP_STRUCTURE, GROUP_FLOOR = 3, 4, 5
 GROUP_NAMES = {GROUP_TABLE: "table", GROUP_WALL: "walls",
-               GROUP_FIXTURE: "fixtures/shelves",
-               GROUP_OVERHEAD: "ducts/ceiling",
+               GROUP_FIXTURE: "fixtures/shelves/ducts/arm",
+               GROUP_OVERHEAD: "arm collision hulls (off by default)",
                GROUP_STRUCTURE: "legs/frame/foundation",
                GROUP_FLOOR: "floor"}
-FIXTURE_GROUP = {"duct": GROUP_OVERHEAD, "ceiling": GROUP_OVERHEAD}
+# Ducts and ceiling moved in with the fixtures: group 3 now belongs to the
+# arm's COLLISION primitives, which the vendored Menagerie model ships
+# there. Rendering those on top of the arm's visual meshes makes it look
+# doubled, so group 3 is off by default - press 3 in the viewer to see
+# what the collision gate actually reasons about.
+FIXTURE_GROUP: dict[str, int] = {}
 
 # Nominal lumber is not actual lumber: a "2x4" is 1.5 x 3.5 inches.
 LUMBER = {"2x4": (1.5, 3.5), "2x6": (1.5, 5.5), "2x4_half": (1.5, 1.75),
@@ -764,7 +770,8 @@ def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
 
 
 def build_spec(scene: Scene, shadows: bool = False,
-               cameras: 'tuple[Camera, ...]' = ()):
+               cameras: 'tuple[Camera, ...]' = (),
+               arm: 'tuple[float, float, float] | None' = None):
     """MuJoCo spec of the measured bench, in the DATUM frame.
 
     Metres, table top at z=0, +z up. Geometry only - no arm: this exists
@@ -1109,6 +1116,27 @@ def build_spec(scene: Scene, shadows: bool = False,
             zaxis=[dx, dy, dz],
             rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_FIXTURE)
 
+    # The ARM itself, attached from the vendored Menagerie model the twin
+    # already uses - one source for the arm's geometry, so the picture and
+    # the collision gate can never disagree about its shape.
+    if arm is not None:
+        ax_, ay_, ayaw = arm
+        from sim.twin import MODEL_XML
+        try:
+            child = mujoco.MjSpec.from_file(str(MODEL_XML))
+        except (ValueError, OSError):
+            child = None
+        if child is not None:
+            # The model reaches along its own -Y at pan zero, and yaw says
+            # which BENCH direction that must point along. Working the
+            # axes through gives a pure z-rotation of yaw + 90: at yaw
+            # -90 (reaching along -y) the arm frame coincides with the
+            # bench frame, which is the case to sanity-check against.
+            frame = spec.worldbody.add_frame(
+                pos=[ax_ * m, ay_ * m, 0.0],
+                euler=[0.0, 0.0, ayaw + 90.0])
+            spec.attach(child, prefix="arm_", frame=frame)
+
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
 
@@ -1174,8 +1202,9 @@ def build_spec(scene: Scene, shadows: bool = False,
 
 
 def build_model(scene: Scene, shadows: bool = False,
-                cameras: 'tuple[Camera, ...]' = ()):
-    return build_spec(scene, shadows, cameras).compile()
+                cameras: 'tuple[Camera, ...]' = (),
+                arm: 'tuple[float, float, float] | None' = None):
+    return build_spec(scene, shadows, cameras, arm).compile()
 
 
 def view(cell: 'Cell', save_view: bool = True,
@@ -1195,7 +1224,7 @@ def view(cell: 'Cell', save_view: bool = True,
     import mujoco
     import mujoco.viewer
 
-    model = build_model(cell.bench, cell.shadows, cell.cameras)
+    model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     print("opening the MuJoCo viewer - close the window to exit")
@@ -1223,7 +1252,8 @@ def view(cell: 'Cell', save_view: bool = True,
         reload_wanted = False
 
         with mujoco.viewer.launch_passive(model, data) as v:
-            v.opt.geomgroup[:] = 1  # show every group; number keys toggle
+            v.opt.geomgroup[:] = 1   # number keys toggle these
+            v.opt.geomgroup[GROUP_OVERHEAD] = 0  # arm collision hulls
             if saved:
                 v.cam.azimuth = saved["azimuth"]
                 v.cam.elevation = saved["elevation"]
@@ -1268,7 +1298,7 @@ def view(cell: 'Cell', save_view: bool = True,
                 if attempt == 19:
                     print(f"reload failed: {exc}", file=sys.stderr)
                     return 2
-        model = build_model(cell.bench, cell.shadows, cell.cameras)
+        model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         print("scene changed - reloaded")
@@ -1318,12 +1348,14 @@ def store_view(path: Path, view_pose: dict) -> None:
 
 def render(scene: Scene, out_dir: Path, width: int = 1280,
            height: int = 860,
-           cameras: 'tuple[Camera, ...]' = ()) -> list[Path]:
+           cameras: 'tuple[Camera, ...]' = (),
+           arm: 'tuple[float, float, float] | None' = None
+           ) -> list[Path]:
     """Render the bench from a few angles. Returns the files written."""
     import mujoco
     import numpy as np
 
-    model = build_model(scene, cameras=cameras)
+    model = build_model(scene, cameras=cameras, arm=arm)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
 
@@ -1369,6 +1401,7 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
     opt = mujoco.MjvOption()
     mujoco.mjv_defaultOption(opt)
     opt.geomgroup[:] = 1
+    opt.geomgroup[GROUP_OVERHEAD] = 0
 
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
@@ -1447,6 +1480,14 @@ class Cell:
     shadows: bool = False
 
     @property
+    def arm_pose(self) -> tuple[float, float, float] | None:
+        """(x, y, yaw) if fully placed, else None - so callers cannot
+        half-place it."""
+        if not self.arm_placed:
+            return None
+        return (self.arm_x, self.arm_y, self.arm_yaw_deg)
+
+    @property
     def arm_placed(self) -> bool:
         """All three are required together: without yaw the bench cannot
         be rotated into the arm's frame at all, and a half-placed arm is
@@ -1469,9 +1510,17 @@ class Cell:
         dx = (x - self.arm_x) * mm
         dy = (y - self.arm_y) * mm
         a = math.radians(self.arm_yaw_deg)
-        rx = dx * math.cos(a) + dy * math.sin(a)
-        ry = -dx * math.sin(a) + dy * math.cos(a)
-        return rx, -ry
+        # DERIVED, not fiddled: the arm reaches along its own -Y, and that
+        # must land on the bench direction u = (cos a, sin a). So the arm's
+        # +Y axis is -u and its +X is u rotated 90 deg:
+        #     arm +X = (-sin a,  cos a)
+        #     arm +Y = (-cos a, -sin a)
+        # and a bench displacement projects onto them. The previous form
+        # was 90 deg out from this docstring - yaw 0 reached along +y, not
+        # +x - which would have rotated the entire cell about the arm.
+        arm_x = -dx * math.sin(a) + dy * math.cos(a)
+        arm_y = -dx * math.cos(a) - dy * math.sin(a)
+        return arm_x, arm_y
 
     def missing(self) -> list[str]:
         gaps = list(self.bench.missing())
@@ -1505,6 +1554,26 @@ class Cell:
     def sketch(self, cols: int = 62) -> str:
         arm = ((self.arm_x, self.arm_y) if self.arm_placed else None)
         return self.bench.sketch(cols, arm=arm)
+
+
+def _selftest_arm_frame() -> None:
+    """Pin the yaw convention. It is 90-degree-symmetric enough to look
+    right while being wrong, and getting it wrong rotates the whole cell
+    about the arm - the same class of error as the mirrored bench."""
+    bench = Scene(units="in", surfaces=[Surface("t", 0, 0, 10, 10)])
+    for yaw, reach in ((0.0, (1.0, 0.0)), (90.0, (0.0, 1.0)),
+                       (-90.0, (0.0, -1.0)), (180.0, (-1.0, 0.0))):
+        cell = Cell(bench=bench, bench_path=Path("-"), arm_x=0.0, arm_y=0.0,
+                    arm_yaw_deg=yaw)
+        ax, ay = cell.to_arm_frame(*reach)
+        # a point straight out the reach lands on the arm's -Y axis
+        assert abs(ax) < 1e-9, (yaw, ax)
+        assert ay < 0, (yaw, ay)
+        # and 90 deg to its left lands on +X
+        left = (-reach[1], reach[0])
+        lx, ly = cell.to_arm_frame(*left)
+        assert lx > 0 and abs(ly) < 1e-9, (yaw, lx, ly)
+    print("arm-frame convention OK")
 
 
 def load_cell(path: Path = CELL_JSON) -> Cell:
@@ -1562,7 +1631,7 @@ def main() -> int:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
     if save_xml is not None:
-        save_xml.write_text(build_spec(cell.bench, cell.shadows, cell.cameras).to_xml())
+        save_xml.write_text(build_spec(cell.bench, cell.shadows, cell.cameras, cell.arm_pose).to_xml())
         print(f"wrote {save_xml}")
         print(f"  open it standalone with: uv run python -m mujoco.viewer "
               f"--mjcf={save_xml}")
@@ -1570,7 +1639,8 @@ def main() -> int:
     if "--view" in sys.argv:
         return view(cell)
     if render_to is not None:
-        for p in render(cell.bench, render_to, cameras=cell.cameras):
+        for p in render(cell.bench, render_to, cameras=cell.cameras,
+                        arm=cell.arm_pose):
             print(f"wrote {p}")
         return 0
     if bench_only:
