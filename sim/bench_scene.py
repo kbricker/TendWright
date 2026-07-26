@@ -262,6 +262,8 @@ class Brace:
     y1: float
     z1: float
     section: str = "2x4_half"
+    cut0: str | None = None   # axis normal of the plane the P0 end is cut to
+    cut1: str | None = None   # same for the P1 end; None = square cut
     notes: str = ""
 
 
@@ -709,6 +711,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             z0=_num(entry, "z0", where), x1=_num(entry, "x1", where),
             y1=_num(entry, "y1", where), z1=_num(entry, "z1", where),
             section=entry.get("section", "2x4_half"),
+            cut0=entry.get("cut0"), cut1=entry.get("cut1"),
             notes=entry.get("notes", "")))
 
     ledgers: list[Ledger] = []
@@ -998,30 +1001,43 @@ def build_spec(scene: Scene):
                  (top_under - thin / 2) * m],
             rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
 
-    # Braces: diagonal members. Oriented with xyaxes rather than zaxis
-    # alone - zaxis leaves the roll about the brace free, so the section
-    # could land at any angle; xyaxes pins it so the wide face lies in
-    # the expected plane.
+    # Braces: diagonal members. A knee brace is MITRED - its ends are
+    # cut so they sit flush against the wall and against the frame,
+    # rather than square-cut and overhanging both. That makes the shape
+    # a parallelogram, not a box, so it goes through the prism builder.
     for br in scene.braces:
         thin, wide = LUMBER[br.section]
-        dx, dy, dz = br.x1 - br.x0, br.y1 - br.y0, br.z1 - br.z0
-        length = math.sqrt(dx * dx + dy * dy + dz * dz)
-        if length <= 0:
-            continue
-        ux, uy, uz = dx / length, dy / length, dz / length
-        # local x = global +y; local z = the brace; local y = z cross x
-        ax, ay, az = 0.0, 1.0, 0.0
-        yx = uy * az - uz * ay
-        yy = uz * ax - ux * az
-        yz = ux * ay - uy * ax
-        yn = math.sqrt(yx * yx + yy * yy + yz * yz) or 1.0
-        spec.worldbody.add_geom(
-            name=f"brace_{br.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=[wide * m / 2, thin * m / 2, length * m / 2],
-            pos=[(br.x0 + br.x1) / 2 * m, (br.y0 + br.y1) / 2 * m,
-                 (br.z0 + br.z1) / 2 * m],
-            xyaxes=[ax, ay, az, yx / yn, yy / yn, yz / yn],
-            rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
+        dx, dz = br.x1 - br.x0, br.z1 - br.z0
+        length = math.hypot(dx, dz)
+        if length <= 0 or abs(br.y1 - br.y0) > 1e-9:
+            continue  # only in-plane braces for now
+        ux, uz = dx / length, dz / length
+        nx, nz = -uz, ux                      # unit normal, in-plane
+        h = thin / 2
+
+        def end_point(px, pz, sign, cut, other_x, other_z):
+            """Corner of one long face at one end, mitred to `cut`."""
+            ax, az = px + sign * h * nx, pz + sign * h * nz
+            if cut == "x":                     # flush to a vertical plane
+                t = (other_x - ax) / ux if ux else 0.0
+            elif cut == "z":                   # flush to a horizontal one
+                t = (other_z - az) / uz if uz else 0.0
+            else:
+                t = 0.0                        # square cut
+            return ax + t * ux, az + t * uz
+
+        prof = [
+            end_point(br.x0, br.z0, +1, br.cut0, br.x0, br.z0),
+            end_point(br.x1, br.z1, +1, br.cut1, br.x1, br.z1),
+            end_point(br.x1, br.z1, -1, br.cut1, br.x1, br.z1),
+            end_point(br.x0, br.z0, -1, br.cut0, br.x0, br.z0),
+        ]
+        pts = []
+        for yy in (br.y0 - wide / 2, br.y0 + wide / 2):
+            for cx, cz in prof:
+                pts.append([cx * m, yy * m, cz * m])
+        _add_prism(spec, mujoco, f"brace_{br.name}", pts,
+                   [0.76, 0.63, 0.42, 1.0], GROUP_STRUCTURE)
 
     # Ledgers: wide face flat on the wall, top flush with the table
     # underside, running the wall's length.

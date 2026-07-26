@@ -208,7 +208,7 @@
   "view": {
     "azimuth": -99.561,
     "elevation": -7.248,
-    "distance": 4.37415,
+    "distance": 2.02086,
     "lookat": [
       1.82953,
       2.41837,
@@ -315,7 +315,9 @@
       "x1": 8.0,
       "y1": 28.75,
       "z1": 35.0,
-      "notes": "45-degree knee brace under the shelf's LEFT side support, same half-cut 2x4 as the rest of the frame. Meets the side support 8 from the wall (centre), so at 45 degrees it lands on the wall 8 lower."
+      "notes": "45-degree knee brace under the shelf's LEFT side support, same half-cut 2x4 as the rest of the frame. Meets the side support 8 from the wall (centre), so at 45 degrees it lands on the wall 8 lower. Ends are MITRED at 45 so they sit flush - square against the wall face at x=0 and flat under the frame at z=35 - rather than square-cut and overhanging both.",
+      "cut0": "x",
+      "cut1": "z"
     },
     {
       "name": "shelf_knee_right",
@@ -326,7 +328,9 @@
       "x1": 8.0,
       "y1": 77.75,
       "z1": 35.0,
-      "notes": "45-degree knee brace under the shelf's RIGHT side support."
+      "notes": "45-degree knee brace under the shelf's RIGHT side support. Ends are MITRED at 45 so they sit flush - square against the wall face at x=0 and flat under the frame at z=35 - rather than square-cut and overhanging both.",
+      "cut0": "x",
+      "cut1": "z"
     }
   ],
   "_braces_note": "Diagonal members. Beams are axis-aligned, so a 45-degree knee brace needs its own type with explicit 3-D endpoints rather than a beam bent to fit."
