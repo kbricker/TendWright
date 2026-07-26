@@ -905,13 +905,27 @@ def build_spec(scene: Scene):
             hi = max(a.y, b.y) + half_post
             cross = (a.x + b.x) / 2
         floor_lo = min(scene.floor_z(a.x, a.y), scene.floor_z(b.x, b.y))
-        # The posts live BETWEEN the rails, since they attach to them.
-        truss_posts[tname] = (floor_lo + rail_t, top_under - rail_t)
+
+        # A bottom rail can be RAISED to double as a shelf bearer, in
+        # which case it is not on the floor and the posts must carry on
+        # down past it. Referenced to the fixture it carries, so moving
+        # the shelf moves the rail rather than leaving it behind.
+        carries = cfg.get("bottom_rail_carries")
+        bottom_top = None
+        if carries:
+            fx = next((f for f in scene.fixtures if f.name == carries), None)
+            if fx is not None and fx.z is not None:
+                bottom_top = fx.z          # shelf underside rests on it
+        # Posts sit BETWEEN the rails when the bottom rail is on the
+        # floor; when it is raised they run all the way to the floor.
+        truss_posts[tname] = (None if bottom_top is not None
+                              else floor_lo + rail_t, top_under - rail_t)
 
         wall_name = cfg.get("top_rail_to_wall")
         for label, zc, ends in (
                 ("top", top_under - rail_t / 2, "wall"),
-                ("bottom", floor_lo + rail_t / 2, None)):
+                ("bottom", (bottom_top - rail_t / 2) if bottom_top is not None
+                 else floor_lo + rail_t / 2, None)):
             r_lo, r_hi = lo, hi
             if ends == "wall" and wall_name:
                 w = next((wl for wl in scene.walls if wl.name == wall_name),
@@ -984,6 +998,8 @@ def build_spec(scene: Scene):
         h_ = scene.leg_height(leg)
         lo_z, hi_z = truss_posts.get(
             leg.truss or "", (top_under - (h_ or 0.0), top_under))
+        if lo_z is None:                      # raised bottom rail
+            lo_z = scene.floor_z(leg.x, leg.y)
         spec.worldbody.add_geom(
             name=f"leg_{leg.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[hx * m / 2, hy * m / 2, (hi_z - lo_z) * m / 2],

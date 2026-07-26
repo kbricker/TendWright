@@ -117,6 +117,14 @@
       "truss": "return_seam",
       "measured": false,
       "notes": "Back leg of the SEAM truss, by the side wall. Rotated 90 degrees from leg 3 - it is oriented like the legs in the other trusses, which leg 3 is not (Kyle). Stands in front of the return footing, whose battered face reaches y=5 at the floor. HEIGHT INFERRED from the solved floor plane."
+    },
+    {
+      "name": "return_mid",
+      "x": 97.5,
+      "y": 18.0,
+      "along": "y",
+      "measured": false,
+      "notes": "Extra support leg at the horizontal MIDPOINT between leg 3 (x 61.5) and the return's extent (x 133.5). Oriented like leg 3, not like the trusses' back legs. Standalone - no rails of its own. HEIGHT INFERRED from the solved floor plane. It stands at the under-shelf's mid-span and passes through that level; the real shelf is presumably notched around it."
     }
   ],
   "foundations": [
@@ -200,13 +208,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -152.999,
-    "elevation": -5.374,
-    "distance": 5.75523,
+    "azimuth": -125.999,
+    "elevation": -16.249,
+    "distance": 3.76789,
     "lookat": [
-      1.07804,
-      0.78755,
-      -0.54126
+      2.20245,
+      1.46444,
+      -0.68643
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
@@ -217,10 +225,14 @@
       "_comment": "Rails-first frame at the main table's far end. The rails run the FULL length and the posts attach to them (Kyle) - so the posts span BETWEEN the rails rather than floor-to-top. Rails lie FLAT: 1.5 thick vertically, 3.5 across. The TOP rail carries on to the back wall, where it meets the ledger in a half-lap - a 1/2-thickness cutout in the ledger. The lap is joinery, not extent, so the boxes simply overlap."
     },
     "return_far_end": {
-      "_comment": "Same 4-piece construction as main_far_end: rails full length running FLAT, posts attached between them. No top_rail_to_wall - it is at the open end of the return, not against a wall."
+      "_comment": "Same 4-piece construction as main_far_end: rails full length running FLAT, posts attached between them. No top_rail_to_wall - it is at the open end of the return, not against a wall.",
+      "bottom_rail_carries": "return_undershelf",
+      "_bottom_rail": "The bottom rail is NOT at floor level here - it doubles as the bearer for the under-shelf, so its top sits at the shelf's underside and the posts carry on down past it to the floor. Referenced to the fixture by name, so moving the shelf moves the rail with it."
     },
     "return_seam": {
-      "_comment": "Truss at the return's seam. Leg 3 is measured; its wall-side partner is inferred. Note the two posts are rotated 90 degrees from each other - that is how it is actually built, not an error."
+      "_comment": "Truss at the return's seam. Leg 3 is measured; its wall-side partner is inferred. Note the two posts are rotated 90 degrees from each other - that is how it is actually built, not an error.",
+      "bottom_rail_carries": "return_undershelf",
+      "_bottom_rail": "The bottom rail is NOT at floor level here - it doubles as the bearer for the under-shelf, so its top sits at the shelf's underside and the posts carry on down past it to the floor. Referenced to the fixture by name, so moving the shelf moves the rail with it."
     }
   },
   "ledgers": [
