@@ -1,8 +1,9 @@
 {
   "version": 1,
   "units": "in",
-  "_datum": "BACK-LEFT corner of the main table top, standing at the bench facing it. +x runs right along the main table, +y runs FORWARD toward where you stand. z is not used here - table surfaces are the top face, and height_to_floor_in carries the vertical.",
-  "_measured": "2026-07-26, Kyle: main run and return. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
+  "_datum": "Origin = the back corner of the MAIN table top on the side AWAY FROM THE RETURN. +x runs along the main table TOWARD the return, +y runs out from the back wall toward where you stand, +z is up off the table top (below the bench is -z). Everything on the bench is positive in all three.",
+  "_handedness": "The return is a LEFT-HAND return: standing at the main table facing the back wall, it is on your left. Facing -y with +z up gives right = -x, so your left is +x - which is why the return sits at HIGH x and the origin corner is the one on your RIGHT. This was modelled mirrored on 2026-07-26 and only the 3D render caught it; the ASCII plan hid it completely.",
+  "_measured": "2026-07-26, Kyle: main run, return, 3/4 in ply top. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
 
   "table": {
     "thickness": 0.75,
@@ -18,47 +19,49 @@
       },
       {
         "name": "return",
-        "x": 0.0,
+        "x": 61.75,
         "y": 27.5,
         "width": 20.25,
         "depth": 48.5,
-        "notes": "left-side return, forward of the main run; 27.5 + 48.5 = 76 total depth from the back edge"
+        "notes": "LEFT-hand return (high x), forward of the main run; 27.5 + 48.5 = 76 total depth from the back edge"
       }
     ]
   },
 
-  "arm": {
-    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = toward the front of the desk (+y), positive counter-clockwise viewed from above (so +90 points along -x, to the left). SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
-    "x": null,
-    "y": null,
-    "yaw_deg": null
-  },
-
-  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. ROUGHED IN 2026-07-26 at Kyle's direction, pending real measurement: both heights are 'about 3 usable feet' and the corner gap is a placeholder.",
+  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. outward is the direction the wall MATERIAL sits from its face. ROUGHED IN 2026-07-26 at Kyle's direction, pending real measurement: both heights are 'about 3 usable feet' and the corner gap is a placeholder.",
   "walls": [
     {
       "name": "back",
-      "x": 6.0,
-      "y": 0.0,
-      "width": 76.0,
-      "height": 36.0,
-      "yaw_deg": 0.0,
-      "notes": "ROUGH: runs along the back edge of the main table. Starts 6 in from the side wall to leave the unmeasured corner gap - that 6 is a placeholder, not a measurement."
-    },
-    {
-      "name": "side",
       "x": 0.0,
       "y": 0.0,
       "width": 76.0,
       "height": 36.0,
+      "yaw_deg": 0.0,
+      "outward": "-y",
+      "notes": "ROUGH: runs along the back edge of the main table, stopping 6 in short of the side wall to leave the unmeasured corner gap."
+    },
+    {
+      "name": "side",
+      "x": 82.0,
+      "y": 0.0,
+      "width": 76.0,
+      "height": 36.0,
       "yaw_deg": 90.0,
-      "notes": "ROUGH: runs the full length of the return, end to end, on the left."
+      "outward": "+x",
+      "notes": "ROUGH: runs the full length of the return, end to end, on the LEFT as you face the back wall (high x in datum coords)."
     }
   ],
   "corner_gap": {
-    "_comment": "PLACEHOLDER, needs measuring. Kyle 2026-07-26: 'there is one gap I need to measure, but lets rough in 6 inches from the sidewall in the corner'. Modelled as the back wall starting 6 in out from the side wall. Confirm this is what the gap actually is before anything depends on it.",
+    "_comment": "PLACEHOLDER, needs measuring. Kyle 2026-07-26: 'there is one gap I need to measure, but lets rough in 6 inches from the sidewall in the corner'. Modelled as the back wall stopping 6 in short of the side wall, so the gap spans x 76..82. Confirm this is what the gap actually is before anything depends on it.",
     "measured": false,
     "from_side_wall": 6.0
+  },
+
+  "arm": {
+    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = toward the front of the desk (+y), positive counter-clockwise viewed from above (so +90 points along -x). SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
+    "x": null,
+    "y": null,
+    "yaw_deg": null
   },
 
   "cameras": []

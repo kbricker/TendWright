@@ -14,13 +14,20 @@ Measurements live in `bench_scene.json` as data, in whatever units they
 were taken in (inches off a tape measure, by default) — a re-measure is
 an edit to that file, never a code change.
 
-DATUM (Kyle, 2026-07-26): origin is the back-left corner of the main
-table TOP SURFACE, standing at the bench facing it. Everything on the
-bench is POSITIVE in all three axes from there:
+DATUM (Kyle, 2026-07-26): origin is the back corner of the main table
+TOP SURFACE on the side AWAY FROM THE RETURN. Everything on the bench is
+POSITIVE in all three axes from there:
 
-    +x  right, along the main run
-    +y  forward, toward where you stand
+    +x  along the main run, TOWARD the return
+    +y  out from the back wall, toward where you stand
     +z  up, off the table top
+
+Handedness, since getting it wrong silently mirrors the whole cell (it
+did once, 2026-07-26, and only the 3D render caught it): standing at the
+main table facing the back wall, your facing is -y and up is +z, so
+right = f x u = -x. Your LEFT is +x. The return is a LEFT-HAND return
+from that position, so it lives at HIGH x, and the origin corner is the
+one on your RIGHT.
 
 and anything BELOW the bench — legs, floor, under-table storage — is
 negative z. So the floor sits at z = -(height_to_floor), and a wall's
@@ -76,9 +83,19 @@ class Surface:
         return x0 <= x <= x1 and y0 <= y <= y1
 
 
+OUTWARD = {"+x": (1, 0), "-x": (-1, 0), "+y": (0, 1), "-y": (0, -1)}
+
+
 @dataclass(frozen=True)
 class Wall:
-    """A vertical face rising from the table, datum coords."""
+    """A vertical face rising from the table, datum coords.
+
+    `outward` is which way the wall's MATERIAL sits from its face - the
+    face is on the table edge, the body is on the far side. It has to be
+    stated rather than inferred: a wall on the x=82 edge and a wall on
+    the x=0 edge both run along y, and guessing from position breaks the
+    moment the table is re-zeroed.
+    """
 
     name: str
     x: float
@@ -86,6 +103,7 @@ class Wall:
     width: float
     height: float
     yaw_deg: float = 0.0
+    outward: str = "-y"
     notes: str = ""
 
 
@@ -165,8 +183,8 @@ class Scene:
         return gaps
 
     def describe(self) -> str:
-        lines = [f"bench scene ({self.units}; datum = back-left corner of "
-                 f"the main table)"]
+        lines = [f"bench scene ({self.units}; datum = back corner of the "
+                 f"main table, opposite the return)"]
         x0, y0, x1, y1 = self.footprint()
         lines.append(f"  table: {len(self.surfaces)} surface(s), footprint "
                      f"{x1 - x0:g} x {y1 - y0:g} {self.units}")
@@ -243,6 +261,16 @@ def _num(doc: dict, key: str, where: str, required: bool = True
     return float(v)
 
 
+def _outward(entry: dict, where: str) -> str:
+    v = entry.get("outward", "-y")
+    if v not in OUTWARD:
+        raise BenchError(f"{where}: outward must be one of "
+                         f"{sorted(OUTWARD)}, got {v!r}",
+                         "it is the direction the wall material sits from "
+                         "its face")
+    return v
+
+
 def load_scene(path: Path = SCENE_JSON) -> Scene:
     """Load + strictly validate the measured bench geometry."""
     try:
@@ -303,6 +331,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             name=entry.get("name", "wall"), x=_num(entry, "x", where),
             y=_num(entry, "y", where), width=wid, height=h,
             yaw_deg=_num(entry, "yaw_deg", where, required=False) or 0.0,
+            outward=_outward(entry, where),
             notes=entry.get("notes", "")))
 
     arm = doc.get("arm") or {}
@@ -347,15 +376,16 @@ def build_spec(scene: Scene):
             rgba=[0.72, 0.60, 0.44, 1.0])
     for w in scene.walls:
         along_x = w.yaw_deg % 180 == 0
-        # The wall FACE sits on the table edge; its body extends outward
-        # (behind/left), which is where the real wall is.
+        ox, oy = OUTWARD[w.outward]
+        # The wall FACE sits on the table edge; its body extends outward,
+        # which is where the real wall is.
         if along_x:
             half = [w.width * m / 2, WALL_T * m / 2, w.height * m / 2]
-            pos = [(w.x + w.width / 2) * m, (w.y - WALL_T / 2) * m,
+            pos = [(w.x + w.width / 2) * m, (w.y + oy * WALL_T / 2) * m,
                    w.height * m / 2]
         else:
             half = [WALL_T * m / 2, w.width * m / 2, w.height * m / 2]
-            pos = [(w.x - WALL_T / 2) * m, (w.y + w.width / 2) * m,
+            pos = [(w.x + ox * WALL_T / 2) * m, (w.y + w.width / 2) * m,
                    w.height * m / 2]
         spec.worldbody.add_geom(
             name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
@@ -418,18 +448,26 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
     # span across MuJoCo's default 45-degree fovy needs span/(2*tan(22.5))
     # = 1.21 spans; anything less puts the camera INSIDE the walls, which
     # is what the first attempt did.
-    # MuJoCo's azimuth is the VIEW DIRECTION, not the camera's position:
-    # az 35 puts the camera at -x,-y, i.e. outside both walls looking at
-    # their backs. The walls live on the x=0 and y=0 edges, so the open
-    # side - where the operator stands - needs the camera at +x,+y, which
-    # is a view direction of about 225.
+    # MuJoCo's azimuth is the VIEW DIRECTION, not the camera's position,
+    # so a camera standing at the open side needs an azimuth pointing INTO
+    # the scene. DERIVE it from the walls instead of hardcoding: each
+    # wall's outward vector points away from the room, so their sum points
+    # at the open corner, and the view direction is the reverse. Hardcoded
+    # angles silently rendered the BACKS of the walls the moment the return
+    # changed sides (2026-07-26).
+    ox = sum(OUTWARD[w.outward][0] for w in scene.walls)
+    oy = sum(OUTWARD[w.outward][1] for w in scene.walls)
+    # Calibrated against the known-good case: walls outward (-1,-1) wanted
+    # azimuth 225, and atan2(-1,-1) = 225. So it is atan2(oy, ox) directly
+    # - negating it points the camera at the backs of the walls.
+    base = (math.degrees(math.atan2(oy, ox)) % 360) if (ox or oy) else 225
     views = {  # (azimuth, elevation, distance factor)
-        # az 270 renders the plan MIRRORED in x (the left-side return
-        # appears on the right), which would hide exactly the kind of
-        # left/right error this view exists to catch. 90 reads true.
+        # az 270 renders the plan MIRRORED in x, which would hide exactly
+        # the kind of left/right error this view exists to catch. 90 reads
+        # true: +x to the right, back wall at the bottom.
         "top": (90, -89, 1.75),
-        "iso": (225, -40, 1.85),
-        "operator": (255, -28, 1.8),
+        "iso": (base, -40, 1.85),
+        "operator": (base + 30, -28, 1.8),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
