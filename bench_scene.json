@@ -156,14 +156,12 @@
       "name": "main_backwall_shelf",
       "kind": "shelf",
       "x": 0.0,
-      "y": 26.25,
-      "width": 8.0,
+      "y": 27.875,
+      "width": 12.0,
       "depth": 50.75,
-      "z": null,
-      "thickness": 0.75,
-      "notes": "Protrudes from the MAIN TABLE back wall. 50.75 long (exact) along +y, 8 deep (Kyle's estimate) out along +x. Inset ~5 from the main table's far end (y=82), so it spans y 26.25..77 - ASSUMPTION about which edge 'inset 5 from the edge of the table' meant. Its UNDERSIDE HEIGHT above the table is NOT MEASURED, so it is not rendered or gated. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge with two sides cut at 45 degrees; those brackets hang BELOW the shelf and are what the arm would strike first, so the slab alone would be optimistic.",
-      "depth_measured": false,
-      "width_measured": true
+      "z": 36.5,
+      "thickness": 0.5,
+      "notes": "Shelf on the MAIN back wall, all MEASURED (Kyle, 2026-07-26): 1/2 thick, 12 deep, and 36.5 from the table top to the shelf BOTTOM - so z here, the underside, is +36.5. 50.75 long, starting 3-3/8 inset from the table/wall outside extent (y=82), so it spans y 27.875..78.625. Frame is three half-cut 2x4s: a wall-mounted board along the BACK edge and one under each of the LEFT and RIGHT edges - NO front support, so the front edge is unsupported and the underside is open. Modelled as separate beams below."
     },
     {
       "name": "return_undershelf",
@@ -208,13 +206,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -125.999,
-    "elevation": -16.249,
-    "distance": 3.76789,
+    "azimuth": -147.186,
+    "elevation": -23.561,
+    "distance": 4.77784,
     "lookat": [
-      2.20245,
-      1.46444,
-      -0.68643
+      2.49827,
+      1.38125,
+      0.1089
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
@@ -273,8 +271,38 @@
       "x1": 61.5,
       "y1": 18.0,
       "notes": "Support along the FRONT edge of the return, from the main table's front beam (x 27.5) only as far as LEG 3 at the seam (x 61.5) - not to the return's end. Inset 0.5 from the table edge; the coordinates here are the beam's centre line."
+    },
+    {
+      "name": "shelf_back_cleat",
+      "section": "2x4_half",
+      "z": 36.5,
+      "x0": 0.875,
+      "y0": 27.875,
+      "x1": 0.875,
+      "y1": 78.625,
+      "notes": "Wall-mounted board along the shelf's BACK edge, half-cut 2x4 (1.5 x 1.75). Top carries the shelf underside at 36.5."
+    },
+    {
+      "name": "shelf_side_left",
+      "section": "2x4_half",
+      "z": 36.5,
+      "x0": 0.0,
+      "y0": 28.75,
+      "x1": 12.0,
+      "y1": 28.75,
+      "notes": "Support under the shelf's LEFT edge, running the full 12 depth."
+    },
+    {
+      "name": "shelf_side_right",
+      "section": "2x4_half",
+      "z": 36.5,
+      "x0": 0.0,
+      "y0": 77.75,
+      "x1": 12.0,
+      "y1": 77.75,
+      "notes": "Support under the shelf's RIGHT edge. There is deliberately NO front member - the frame is a U, open at the front."
     }
   ],
-  "_beams_note": "Edge supports, as opposed to the wall ledgers. Laid FLAT: the wide (3.5) face fastens to the underside of the table top, so each is 3.5 across and 1.5 deep vertically. Kyle corrected these - they were stood on edge, 90 degrees out.",
+  "_beams_note": "Edge supports, as opposed to the wall ledgers. Laid FLAT: the wide (3.5) face fastens to the underside of the table top, so each is 3.5 across and 1.5 deep vertically. Kyle corrected these - they were stood on edge, 90 degrees out. A beam may carry an explicit `z` (its TOP surface) - the shelf cleats use it; without one a beam sits under the table top.",
   "_inset_note": "ALL inset distances are 0.5 in (Kyle, 2026-07-26) - legs, trusses and edge beams alike. This is MEASURED and replaces an earlier 1.0 estimate, which moved every leg and therefore re-solved the floor plane."
 }

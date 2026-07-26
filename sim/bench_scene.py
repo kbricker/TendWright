@@ -242,6 +242,7 @@ class Beam:
     x1: float
     y1: float
     section: str = "2x4"
+    z: float | None = None    # TOP of the beam; None = under the table top
     notes: str = ""
 
 
@@ -676,6 +677,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             x0=_num(entry, "x0", where), y0=_num(entry, "y0", where),
             x1=_num(entry, "x1", where), y1=_num(entry, "y1", where),
             section=entry.get("section", "2x4"),
+            z=_num(entry, "z", where, required=False),
             notes=entry.get("notes", "")))
 
     ledgers: list[Ledger] = []
@@ -951,7 +953,7 @@ def build_spec(scene: Scene):
     # and only 1.5 deep vertically (Kyle; they were on edge, 90 out).
     for bm in scene.beams:
         thin, wide = LUMBER[bm.section]      # 1.5 vertical, 3.5 across
-        top_under = -(scene.thickness or 0.75)
+        top_under = bm.z if bm.z is not None else -(scene.thickness or 0.75)
         run_x = abs(bm.x1 - bm.x0) >= abs(bm.y1 - bm.y0)
         length = abs(bm.x1 - bm.x0) if run_x else abs(bm.y1 - bm.y0)
         if run_x:
