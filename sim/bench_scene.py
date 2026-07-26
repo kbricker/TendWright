@@ -14,20 +14,20 @@ Measurements live in `bench_scene.json` as data, in whatever units they
 were taken in (inches off a tape measure, by default) — a re-measure is
 an edit to that file, never a code change.
 
-DATUM (Kyle, 2026-07-26): origin is the back corner of the main table
-TOP SURFACE on the side AWAY FROM THE RETURN. Everything on the bench is
-POSITIVE in all three axes from there:
+DATUM (Kyle, 2026-07-26): origin is the INSIDE CORNER of the bench top -
+where the main table meets the return and both walls meet. Everything is
+positive from there:
 
-    +x  along the main run, TOWARD the return
-    +y  out from the back wall, toward where you stand
+    +x  along the RETURN, away from the back wall, toward where you stand
+    +y  along the MAIN TABLE, away from the return corner
     +z  up, off the table top
 
-Handedness, since getting it wrong silently mirrors the whole cell (it
-did once, 2026-07-26, and only the 3D render caught it): standing at the
-main table facing the back wall, your facing is -y and up is +z, so
-right = f x u = -x. Your LEFT is +x. The return is a LEFT-HAND return
-from that position, so it lives at HIGH x, and the origin corner is the
-one on your RIGHT.
+Which axis goes where is forced by HANDEDNESS, not taste. Putting +x
+along the main table and +y along the return gives x cross y = -z: a
+left-handed frame, which silently mirrors the entire cell. That exact
+mistake was made once here and only the 3D render caught it - the ASCII
+plan drew the mirrored layout perfectly happily. So +x is the return and
++y is the main table, and it is asserted in code rather than trusted.
 
 and anything BELOW the bench — legs, floor, under-table storage — is
 negative z. So the floor sits at z = -(height_to_floor), and a wall's
@@ -142,12 +142,46 @@ class Fixture:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class Leg:
+    """A table leg. `height` EXCLUDES the table top thickness - it is the
+    leg itself, floor to the underside of the top, which is how Kyle
+    measured them. Legs are the floor's only measurement: the top is
+    level and the floor is not, so differing leg lengths ARE the slope."""
+
+    name: str
+    x: float
+    y: float
+    height: float
+    section: str = "2x4"
+    along: str = "y"          # which axis the wide (3.5) face spans
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class Foundation:
+    """A concrete footing running along a wall, below the table."""
+
+    name: str
+    x: float
+    y: float
+    width: float
+    depth: float              # how far it protrudes from the wall face
+    height: float             # how tall, from the floor
+    yaw_deg: float = 0.0      # direction it RUNS: 0 = along +x
+    outward: str = "+y"       # which way it protrudes from the wall face
+    level: bool = True        # a level top over a sloping floor
+    notes: str = ""
+
+
 @dataclass
 class Scene:
     units: str
     surfaces: list[Surface]
     walls: list[Wall] = field(default_factory=list)
     fixtures: list[Fixture] = field(default_factory=list)
+    legs: list[Leg] = field(default_factory=list)
+    foundations: list[Foundation] = field(default_factory=list)
     thickness: float | None = None
     height_to_floor: float | None = None
     arm_x: float | None = None
@@ -199,6 +233,57 @@ class Scene:
         # the arm reaches — and the twin reaches toward -Y. Hence the flip.
         return rx, -ry
 
+    def floor_plane(self) -> tuple[float, float, float] | None:
+        """(z0, a, b) for  z = z0 + a*x + b*y  - the floor, in datum units.
+
+        THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the
+        only measurement of the floor: each leg's length is the distance
+        from the floor to the underside of the top at that point, and
+        differing lengths ARE the slope. Three legs define the plane;
+        more are least-squared, so a fourth measurement improves it
+        rather than conflicting with it. Returns None below three.
+        """
+        if len(self.legs) < 3 or self.thickness is None:
+            return None
+        under = -self.thickness
+        rows = [(leg.x, leg.y, 1.0) for leg in self.legs]
+        zs = [under - leg.height for leg in self.legs]
+        # Normal equations, so this works for 3 legs or 30 without numpy
+        # semantics changing under us.
+        n = len(rows)
+        sxx = sum(r[0] * r[0] for r in rows)
+        sxy = sum(r[0] * r[1] for r in rows)
+        syy = sum(r[1] * r[1] for r in rows)
+        sx = sum(r[0] for r in rows)
+        sy = sum(r[1] for r in rows)
+        sxz = sum(r[0] * z for r, z in zip(rows, zs))
+        syz = sum(r[1] * z for r, z in zip(rows, zs))
+        sz = sum(zs)
+        m = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, float(n)]]
+        v = [sxz, syz, sz]
+        det = (m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+               - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+               + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]))
+        if abs(det) < 1e-9:
+            return None  # collinear legs cannot define a plane
+        def solve_col(col: int) -> float:
+            mm = [row[:] for row in m]
+            for r in range(3):
+                mm[r][col] = v[r]
+            return (mm[0][0] * (mm[1][1] * mm[2][2] - mm[1][2] * mm[2][1])
+                    - mm[0][1] * (mm[1][0] * mm[2][2] - mm[1][2] * mm[2][0])
+                    + mm[0][2] * (mm[1][0] * mm[2][1] - mm[1][1] * mm[2][0])
+                    ) / det
+        a, b, z0 = solve_col(0), solve_col(1), solve_col(2)
+        return z0, a, b
+
+    def floor_z(self, x: float, y: float) -> float | None:
+        plane = self.floor_plane()
+        if plane is None:
+            return None
+        z0, a, b = plane
+        return z0 + a * x + b * y
+
     def missing(self) -> list[str]:
         """Everything unmeasured, in the order it blocks work."""
         gaps: list[str] = []
@@ -212,8 +297,10 @@ class Scene:
                 f"keeps its infinite ground plane")
         if self.thickness is None:
             gaps.append("table top thickness")
-        if self.height_to_floor is None:
-            gaps.append("table height, floor to top surface")
+        if self.floor_plane() is None:
+            gaps.append(f"the floor - it is DERIVED from leg lengths and "
+                        f"needs at least 3 non-collinear legs (have "
+                        f"{len(self.legs)})")
         if not self.walls:
             gaps.append("walls - none measured, so none are modelled")
         for sh in self.fixtures:
@@ -225,8 +312,8 @@ class Scene:
         return gaps
 
     def describe(self) -> str:
-        lines = [f"bench scene ({self.units}; datum = back corner of the "
-                 f"main table, opposite the return)"]
+        lines = [f"bench scene ({self.units}; datum = the inside corner "
+                 f"where the main table, the return and both walls meet)"]
         x0, y0, x1, y1 = self.footprint()
         lines.append(f"  table: {len(self.surfaces)} surface(s), footprint "
                      f"{x1 - x0:g} x {y1 - y0:g} {self.units}")
@@ -251,6 +338,25 @@ class Scene:
                           f"the rest)")
             lines.append(f"  wall {w.name}: at x {w.x:g}, y {w.y:g}, "
                          f"{w.width:g} wide, {w.height:g} high{extra}")
+        plane = self.floor_plane()
+        if plane is not None:
+            z0, a, b = plane
+            tilt = math.degrees(math.atan(math.hypot(a, b)))
+            lines.append(f"  floor: z = {z0:.3f} + {a:.5f}x + {b:.5f}y  "
+                         f"({tilt:.2f} deg tilt, solved from "
+                         f"{len(self.legs)} legs)")
+            for leg in self.legs:
+                lines.append(f"    leg {leg.name:<20} x {leg.x:g}, "
+                             f"y {leg.y:g}, {leg.height:g} long -> floor "
+                             f"{self.floor_z(leg.x, leg.y):.2f}")
+        for f in self.foundations:
+            lines.append(f"  foundation {f.name}: {f.width:g} long, "
+                         f"{f.depth:g} out, {f.height:g} tall")
+        for sh in self.fixtures:
+            at = (f"underside {sh.z:g} above the top" if sh.z is not None
+                  else "HEIGHT UNKNOWN - not modelled")
+            lines.append(f"  {sh.kind} {sh.name}: x {sh.x:g}..{sh.x + sh.width:g}"
+                         f", y {sh.y:g}..{sh.y + sh.depth:g}, {at}")
         return "\n".join(lines)
 
     def sketch(self, cols: int = 62) -> str:
@@ -395,10 +501,39 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             kind=entry.get("kind", "shelf"),
             notes=entry.get("notes", "")))
 
+    legs: list[Leg] = []
+    for entry in doc.get("legs") or []:
+        where = f"{path} leg {entry.get('name')!r}"
+        h = _num(entry, "height", where)
+        if h <= 0:
+            raise BenchError(f"{where}: height must be positive", "")
+        section = entry.get("section", "2x4")
+        if section not in LUMBER:
+            raise BenchError(f"{where}: unknown section {section!r}",
+                             f"known: {sorted(LUMBER)}")
+        legs.append(Leg(
+            name=entry.get("name", "leg"), x=_num(entry, "x", where),
+            y=_num(entry, "y", where), height=h, section=section,
+            along=entry.get("along", "y"), notes=entry.get("notes", "")))
+
+    foundations: list[Foundation] = []
+    for entry in doc.get("foundations") or []:
+        where = f"{path} foundation {entry.get('name')!r}"
+        foundations.append(Foundation(
+            name=entry.get("name", "foundation"),
+            x=_num(entry, "x", where), y=_num(entry, "y", where),
+            width=_num(entry, "width", where),
+            depth=_num(entry, "depth", where),
+            height=_num(entry, "height", where),
+            yaw_deg=_num(entry, "yaw_deg", where, required=False) or 0.0,
+            outward=_outward(entry, where) if "outward" in entry else "+y",
+            level=bool(entry.get("level", True)),
+            notes=entry.get("notes", "")))
+
     arm = doc.get("arm") or {}
     where = f"{path} arm"
     return Scene(
-        units=units, surfaces=surfaces, walls=walls, fixtures=fixtures,
+        units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
         arm_x=_num(arm, "x", where, required=False),
@@ -411,11 +546,18 @@ WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 # MuJoCo geom groups. The interactive viewer toggles these with the
 # number keys, so category = group lets the room be built up in detail
 # without the ductwork and ceiling burying the bench.
-GROUP_TABLE, GROUP_WALL, GROUP_FIXTURE, GROUP_OVERHEAD = 0, 1, 2, 3
+GROUP_TABLE, GROUP_WALL, GROUP_FIXTURE = 0, 1, 2
+GROUP_OVERHEAD, GROUP_STRUCTURE, GROUP_FLOOR = 3, 4, 5
 GROUP_NAMES = {GROUP_TABLE: "table", GROUP_WALL: "walls",
                GROUP_FIXTURE: "fixtures/shelves",
-               GROUP_OVERHEAD: "ducts/ceiling"}
+               GROUP_OVERHEAD: "ducts/ceiling",
+               GROUP_STRUCTURE: "legs/frame/foundation",
+               GROUP_FLOOR: "floor"}
 FIXTURE_GROUP = {"duct": GROUP_OVERHEAD, "ceiling": GROUP_OVERHEAD}
+
+# Nominal lumber is not actual lumber: a "2x4" is 1.5 x 3.5 inches.
+LUMBER = {"2x4": (1.5, 3.5), "2x6": (1.5, 5.5), "2x4_half": (1.5, 1.75),
+          "4x4": (3.5, 3.5)}
 
 
 def build_spec(scene: Scene):
@@ -471,6 +613,54 @@ def build_spec(scene: Scene):
                  (sh.z + sh.thickness / 2) * m],
             rgba=[0.66, 0.55, 0.40, 1.0],
             group=FIXTURE_GROUP.get(sh.kind, GROUP_FIXTURE))
+
+    # --- floor, legs, foundations (all below the table) ---
+    plane = scene.floor_plane()
+    fx0, fy0, fx1, fy1 = scene.footprint()
+    if plane is not None:
+        z0, pa, pb = plane
+        # A tilted slab. zaxis takes the plane normal directly, which
+        # beats deriving euler angles for a compound tilt.
+        pad = 24.0
+        cx, cy = (fx0 + fx1) / 2, (fy0 + fy1) / 2
+        nz = 1.0 / math.sqrt(pa * pa + pb * pb + 1.0)
+        spec.worldbody.add_geom(
+            name="floor", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[(fx1 - fx0 + 2 * pad) * m / 2,
+                  (fy1 - fy0 + 2 * pad) * m / 2, 0.5 * m],
+            pos=[cx * m, cy * m, (scene.floor_z(cx, cy) - 0.5) * m],
+            zaxis=[-pa * nz, -pb * nz, nz],
+            rgba=[0.55, 0.54, 0.52, 1.0], group=GROUP_FLOOR)
+
+    for leg in scene.legs:
+        w_, d_ = LUMBER[leg.section]
+        hx, hy = (d_, w_) if leg.along == "x" else (w_, d_)
+        top_under = -(scene.thickness or 0.75)
+        base = top_under - leg.height
+        spec.worldbody.add_geom(
+            name=f"leg_{leg.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[hx * m / 2, hy * m / 2, leg.height * m / 2],
+            pos=[leg.x * m, leg.y * m, (base + leg.height / 2) * m],
+            rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
+
+    for f in scene.foundations:
+        along_x = f.yaw_deg % 180 == 0
+        ofx, ofy = OUTWARD[f.outward]
+        base = scene.floor_z(f.x, f.y)
+        if base is None:
+            continue  # no floor solved yet: nothing to stand it on
+        if along_x:
+            half = [f.width * m / 2, f.depth * m / 2, f.height * m / 2]
+            pos = [(f.x + f.width / 2) * m, (f.y + ofy * f.depth / 2) * m,
+                   (base + f.height / 2) * m]
+        else:
+            half = [f.depth * m / 2, f.width * m / 2, f.height * m / 2]
+            pos = [(f.x + ofx * f.depth / 2) * m, (f.y + f.width / 2) * m,
+                   (base + f.height / 2) * m]
+        spec.worldbody.add_geom(
+            name=f"foundation_{f.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=half, pos=pos, rgba=[0.80, 0.79, 0.76, 1.0],
+            group=GROUP_STRUCTURE)
 
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
@@ -585,6 +775,7 @@ def view(scene: Scene, save_view: bool = True,
         reload_wanted = False
 
         with mujoco.viewer.launch_passive(model, data) as v:
+            v.opt.geomgroup[:] = 1  # show every group; number keys toggle
             if saved:
                 v.cam.azimuth = saved["azimuth"]
                 v.cam.elevation = saved["elevation"]
@@ -723,6 +914,13 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
     if saved:
         views["saved"] = (saved["azimuth"], saved["elevation"], None)
 
+    # MuJoCo enables only geom groups 0-2 by default, so the floor
+    # (group 5) and legs/foundation (group 4) render invisible unless
+    # every group is switched on explicitly.
+    opt = mujoco.MjvOption()
+    mujoco.mjv_defaultOption(opt)
+    opt.geomgroup[:] = 1
+
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     with mujoco.Renderer(model, height=height, width=width) as r:
@@ -736,7 +934,7 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
                 cam.lookat[:] = np.array(centre)
                 cam.distance = span * dist
             cam.azimuth, cam.elevation = az, el
-            r.update_scene(data, camera=cam)
+            r.update_scene(data, camera=cam, scene_option=opt)
             path = out_dir / f"bench_{name}.png"
             _write_png(path, r.render())
             written.append(path)

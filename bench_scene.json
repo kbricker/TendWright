@@ -1,9 +1,9 @@
 {
   "version": 1,
   "units": "in",
-  "_datum": "Origin = the back corner of the MAIN table top on the side AWAY FROM THE RETURN. +x runs along the main table TOWARD the return, +y runs out from the back wall toward where you stand, +z is up off the table top (below the bench is -z). Everything on the bench is positive in all three.",
-  "_handedness": "The return is a LEFT-HAND return: standing at the main table facing the back wall, it is on your left. Facing -y with +z up gives right = -x, so your left is +x - which is why the return sits at HIGH x and the origin corner is the one on your RIGHT. This was modelled mirrored on 2026-07-26 and only the 3D render caught it; the ASCII plan hid it completely.",
-  "_measured": "2026-07-26, Kyle: main run, return, 3/4 in ply top. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
+  "_datum": "Origin = the INSIDE CORNER of the bench top, where the main table and the return meet and where both walls meet. Everything is positive from there. +x runs along the RETURN, away from the back wall, toward where you stand (0..133.5). +y runs along the MAIN TABLE, away from the return corner (0..82). +z is up off the table top; below the bench is -z.",
+  "_why_x_is_the_return": "Handedness, not preference. From the corner the main table goes one way and the return the other. Putting +x along the MAIN table and +y along the return gives x cross y = -z, a LEFT-handed frame, which silently mirrors the whole cell - that exact mistake was made once already on 2026-07-26 and only the 3D render caught it. Assigning +x to the return and +y to the main table gives x cross y = +z. Verified in code, not assumed.",
+  "_measured": "2026-07-26, Kyle. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
   "table": {
     "thickness": 0.75,
     "height_to_floor": null,
@@ -12,94 +12,144 @@
         "name": "main",
         "x": 0.0,
         "y": 0.0,
-        "width": 82.0,
-        "depth": 27.5,
-        "notes": "the long run across the back"
+        "width": 27.5,
+        "depth": 82.0,
+        "notes": "The main run. 27.5 deep from the back wall (+x), 82 long from the return corner (+y)."
       },
       {
         "name": "return",
-        "x": 61.75,
-        "y": 27.5,
-        "width": 20.25,
-        "depth": 106.0,
-        "notes": "LEFT-hand return (high x), forward of the main run. Kyle CORRECTED 2026-07-26: from the back wall it runs 27.5 (main table depth) + 34 = 61.5 to a seam, then 72 more to the end. Total depth from the back edge is 133.5, so this surface spans y 27.5..133.5 = 106 deep. The earlier 76 was wrong."
+        "x": 27.5,
+        "y": 0.0,
+        "width": 106.0,
+        "depth": 20.25,
+        "notes": "The return, 20.25 wide, running out along +x. From the back wall it is 27.5 (the main depth) + 34 = 61.5 to the seam, then 72 more, so 133.5 total - this surface covers x 27.5..133.5."
       }
     ]
   },
+  "_walls_note": "`height` is the wall's real height above the TABLE TOP. `usable_height`, when present, is how far up is actually reachable - the return side is limited to 34 by ceiling ducts even though the wall itself runs to 48-7/8. Keep them separate: collapsing them would move the wall face the moment someone measures the duct properly. yaw_deg is the direction the wall RUNS (0 = along +x, 90 = along +y); outward is which way the wall MATERIAL sits from its face.",
+  "walls": [
+    {
+      "name": "back",
+      "x": 0.0,
+      "y": 8.25,
+      "width": 73.75,
+      "height": 48.875,
+      "yaw_deg": 90.0,
+      "outward": "-x",
+      "notes": "The MAIN TABLE's back wall, running along +y at x=0. 48-7/8 above the table, MEASURED. Starts 8.25 out from the side wall, leaving the corner gap at y 0..8.25. Carries the shelf."
+    },
+    {
+      "name": "side",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 133.5,
+      "height": 48.875,
+      "yaw_deg": 0.0,
+      "outward": "-y",
+      "usable_height": 34.0,
+      "notes": "The RETURN's wall, running along +x at y=0. PHYSICALLY the same 48-7/8 as the main back wall; the 34 is USABLE space, cut short by ceiling-mount ducts above the return. Modelled as the true wall plus a usable_height limit rather than as a short wall, because a duct is an overhead obstacle, not a lower wall face."
+    }
+  ],
+  "corner_gap": {
+    "_comment": "Gap where the back wall meets the side wall. MEASURED 2026-07-26 at 8.25, so the back wall spans y 8.25..82 and the gap is y 0..8.25.",
+    "measured": true,
+    "from_side_wall": 8.25
+  },
+  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: `height` is the leg itself, floor to the UNDERSIDE of the top, excluding the 3/4 top. Differing leg lengths ARE the slope, and the floor plane is solved from them rather than stored. Nominal lumber is not actual lumber - a 2x4 is 1.5 x 3.5.",
+  "legs": [
+    {
+      "name": "main_outside_corner",
+      "x": 27.5,
+      "y": 82.0,
+      "height": 38.25,
+      "section": "2x4",
+      "notes": "Outside (front) corner of the main table, at its far end from the return. MEASURED."
+    },
+    {
+      "name": "main_near_back_wall",
+      "x": 0.0,
+      "y": 82.0,
+      "height": 39.125,
+      "section": "2x4",
+      "notes": "Same far end of the main table, the leg close to the back wall. MEASURED. Longer than its partner because the floor drops away from the return."
+    },
+    {
+      "name": "return_seam",
+      "x": 61.5,
+      "y": 20.25,
+      "height": 35.4,
+      "section": "2x4",
+      "notes": "At the return's seam, 61.5 from the back wall, where the 2x4 leg lands. MEASURED length. ASSUMPTION: placed at the return's outer edge (y=20.25); if it is against the wall or centred instead, say so - it tilts the solved floor plane."
+    }
+  ],
+  "foundations": [
+    {
+      "name": "main_wall",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 82.0,
+      "depth": 7.0,
+      "height": 9.0,
+      "yaw_deg": 90.0,
+      "outward": "+x",
+      "level": true,
+      "notes": "Concrete footing along the MAIN TABLE wall: 9 tall, protruding 7 from the wall face. Kyle: it is LEVEL while the floor is not, so its height above the floor varies along the run. Modelled standing on the floor at the corner; re-measure at both ends if that matters."
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "main_backwall_shelf",
+      "kind": "shelf",
+      "x": 0.0,
+      "y": 26.25,
+      "width": 8.0,
+      "depth": 50.75,
+      "z": null,
+      "thickness": 0.75,
+      "notes": "Protrudes from the MAIN TABLE back wall. 50.75 long (exact) along +y, 8 deep (Kyle's estimate) out along +x. Inset ~5 from the main table's far end (y=82), so it spans y 26.25..77 - ASSUMPTION about which edge 'inset 5 from the edge of the table' meant. Its UNDERSIDE HEIGHT above the table is NOT MEASURED, so it is not rendered or gated. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge with two sides cut at 45 degrees; those brackets hang BELOW the shelf and are what the arm would strike first, so the slab alone would be optimistic.",
+      "depth_measured": false,
+      "width_measured": true
+    }
+  ],
   "features": [
     {
       "name": "return_seam",
       "type": "seam",
-      "y": 61.5,
-      "notes": "Where the return's two tops meet, 61.5 from the back wall (27.5 + 34). A 2x4 LEG lands here - it is below the table top (-z) so it cannot be reached by the arm, but it is recorded now so it is not forgotten. Details pending from Kyle."
+      "x": 61.5,
+      "notes": "Where the return's two tops meet, 61.5 from the back wall (27.5 + 34). The return_seam leg lands here."
     },
     {
       "name": "return_ceiling_ducts",
       "type": "overhead",
       "notes": "Ceiling-mounted ducts above the RETURN. Not measured, so not modelled - their only recorded effect is the side wall's usable_height of 34. When measured they become a fixture with kind 'duct' (geom group 3, toggleable in the viewer)."
-    }
-  ],
-  "_walls_note": "`height` is the wall's real height above the TABLE TOP. `usable_height`, when present, is how far up is actually reachable - the return side is limited to 34 by ceiling ducts even though the wall runs to 48-7/8. Keep them separate: collapsing them would move the wall face the moment someone measures the duct properly. yaw_deg is the direction the wall RUNS (0 = along +x, 90 = along +y); outward is which way the wall MATERIAL sits from its face.",
-  "walls": [
-    {
-      "name": "back",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 73.75,
-      "height": 48.875,
-      "yaw_deg": 0.0,
-      "outward": "-y",
-      "notes": "MAIN TABLE back wall. Height 48-7/8 above the table surface, MEASURED 2026-07-26. Stops 8.25 short of the side wall (82 - 8.25 = 73.75), leaving the corner gap. Carries the shelf."
     },
     {
-      "name": "side",
-      "x": 82.0,
-      "y": 0.0,
-      "width": 133.5,
-      "height": 48.875,
-      "yaw_deg": 90.0,
-      "outward": "+x",
-      "notes": "RETURN's wall. PHYSICALLY the same height as the main back wall (48-7/8 above the table) - Kyle clarified 2026-07-26. The 34 is USABLE space, cut short by CEILING-MOUNT DUCTS above the return. Modelled as the true wall plus a usable_height limit rather than as a short wall, because those are different things: the duct is an overhead obstacle, not a lower wall face.",
-      "usable_height": 34.0
+      "name": "return_wall_foundation",
+      "type": "foundation",
+      "notes": "A HIGH concrete foundation runs along the return wall, taller than the main wall's. Not measured yet - Kyle said to estimate it later. Deliberately absent rather than guessed."
+    },
+    {
+      "name": "floor_drain",
+      "type": "floor",
+      "notes": "A drain is visible in the floor photo, consistent with the 2.45 deg slab tilt the leg lengths imply. Not modelled; noted because it explains the slope."
     }
   ],
-  "corner_gap": {
-    "_comment": "Gap in the corner between the back wall and the side wall. Kyle measured it 2026-07-26 at 8.25, replacing the 6 placeholder. Modelled as the back wall stopping 8.25 short of the side wall, so the gap spans x 73.75..82.",
-    "measured": true,
-    "from_side_wall": 8.25
-  },
   "arm": {
-    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = toward the front of the desk (+y), positive counter-clockwise viewed from above (so +90 points along -x). SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
+    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = along +x, positive counter-clockwise viewed from above. SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
     "x": null,
     "y": null,
     "yaw_deg": null
   },
   "cameras": [],
   "view": {
-    "azimuth": -57.187,
-    "elevation": -12.5,
-    "distance": 4.67737,
+    "azimuth": -47.249,
+    "elevation": -22.625,
+    "distance": 5.33726,
     "lookat": [
-      1.46703,
-      1.22679,
-      0.40976
+      1.52185,
+      1.29137,
+      0.48781
     ]
   },
-  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
-  "fixtures": [
-    {
-      "name": "main_backwall_shelf",
-      "_comment": "Protrudes from the MAIN TABLE back wall. Width 50.75 is exact; depth 8 is Kyle's estimate; z (underside height above the table) is NOT YET MEASURED so this is not rendered or gated - see missing().",
-      "x": 5.0,
-      "y": 0.0,
-      "width": 50.75,
-      "depth": 8.0,
-      "z": null,
-      "thickness": 0.75,
-      "notes": "Inset ~5 from the x=0 end of the main table (the end AWAY from the return), so it spans x 5..55.75. ASSUMPTION: 'the edge of the table' read as that free end rather than the return corner - confirm. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge, with two side pieces cut at 45 degrees. The frame is NOT modelled yet - the 45-degree brackets hang below the shelf and are what the arm would actually strike first.",
-      "depth_measured": false,
-      "width_measured": true,
-      "kind": "shelf"
-    }
-  ]
+  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."
 }
