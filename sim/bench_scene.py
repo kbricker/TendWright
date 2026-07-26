@@ -330,7 +330,7 @@ def main() -> int:
         for g in gaps:
             print(f"  - {g}")
         print("\nWhile anything above is unmeasured, a clean collision gate "
-              "does NOT\nmean the workspace is safe — only that the arm "
+              "does NOT\nmean the workspace is safe - only that the arm "
               "will not hit itself.")
     else:
         print("\nthe cell is fully measured")
