@@ -39,3 +39,4 @@ stills/
 
 # bench scene renders (regenerate with: sim.bench_scene --render DIR)
 scene_render/
+bench_views/
