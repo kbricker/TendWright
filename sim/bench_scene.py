@@ -146,10 +146,23 @@ class Fixture:
 
 @dataclass(frozen=True)
 class Leg:
-    """A table leg. `height` EXCLUDES the table top thickness - it is the
-    leg itself, floor to the underside of the top, which is how Kyle
-    measured them. Legs are the floor's only measurement: the top is
-    level and the floor is not, so differing leg lengths ARE the slope."""
+    """A leg station in a table truss.
+
+    `height` is the TRUSS HEIGHT: floor to the underside of the table
+    top, excluding the 3/4 top. It is NOT the cut length of one 2x4 -
+    the truss is legs plus rails, and no single piece is that long
+    (Kyle, 2026-07-26). Do not hand this number to a saw.
+
+    That distinction does not disturb the floor: floor-to-underside is
+    exactly the quantity the plane is solved from, so truss height is
+    the right measurement either way. Legs are the floor's ONLY
+    measurement - the top is level and the floor is not, so differing
+    truss heights ARE the slope.
+
+    The rendered post spans the full truss height, with the rails drawn
+    inside it. The real leg piece is shorter and the members overlap;
+    that is a simplification of appearance, not of extent.
+    """
 
     name: str
     x: float
@@ -355,8 +368,8 @@ class Scene:
                          f"({tilt:.2f} deg tilt, solved from "
                          f"{len(self.legs)} legs)")
             for leg in self.legs:
-                lines.append(f"    leg {leg.name:<20} x {leg.x:g}, "
-                             f"y {leg.y:g}, {leg.height:g} long -> floor "
+                lines.append(f"    truss {leg.name:<20} x {leg.x:g}, "
+                             f"y {leg.y:g}, {leg.height:g} tall -> floor "
                              f"{self.floor_z(leg.x, leg.y):.2f}")
         for f in self.foundations:
             lines.append(f"  foundation {f.name}: under wall '{f.wall}', "

@@ -58,7 +58,7 @@
     "measured": true,
     "from_side_wall": 8.25
   },
-  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: `height` is the leg itself, floor to the UNDERSIDE of the top, excluding the 3/4 top. Differing leg lengths ARE the slope, and the floor plane is solved from them rather than stored - so leg POSITIONS matter as much as their lengths. x/y are the leg's CENTRE. Nominal lumber is not actual lumber: a 2x4 is 1.5 x 3.5.",
+  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: differing heights ARE the slope, and the floor plane is solved from them rather than stored - so leg POSITIONS matter as much as heights. x/y are the leg station's CENTRE. `height` is TRUSS HEIGHT: floor to the UNDERSIDE of the table top, excluding the 3/4 top. It is NOT the cut length of a single 2x4 (Kyle, 2026-07-26) - the truss is legs plus rails and no one piece is that long. Do not hand these numbers to a saw. The distinction does not affect the floor: floor-to-underside is exactly what the plane needs. Nominal lumber is not actual lumber: a 2x4 is 1.5 x 3.5.",
   "legs": [
     {
       "name": "main_outside_corner",
@@ -66,7 +66,7 @@
       "y": 79.25,
       "height": 38.25,
       "section": "2x4",
-      "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset of 1.0 is an ESTIMATE from the photo, not a measurement. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED length.",
+      "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset of 1.0 is an ESTIMATE from the photo, not a measurement. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED truss height.",
       "truss": "main_far_end"
     },
     {
@@ -75,7 +75,7 @@
       "y": 79.25,
       "height": 39.125,
       "section": "2x4",
-      "notes": "Far end of the main table, the leg by the back wall. It stands RIGHT IN FRONT OF the footing, not inside it - its back face is on the footing's front face at x=7, so its centre is x 7.75. Part of a 4-piece 2x4 truss with main_outside_corner. MEASURED length.",
+      "notes": "Far end of the main table, the leg by the back wall. It stands RIGHT IN FRONT OF the footing, not inside it - its back face is on the footing's front face at x=7, so its centre is x 7.75. Part of a 4-piece 2x4 truss with main_outside_corner. MEASURED truss height.",
       "truss": "main_far_end"
     },
     {
@@ -84,7 +84,7 @@
       "y": 17.5,
       "height": 35.4,
       "section": "2x4",
-      "notes": "At the return's seam, 61.5 from the back wall. MEASURED length. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong."
+      "notes": "At the return's seam, 61.5 from the back wall. MEASURED truss height. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong."
     }
   ],
   "foundations": [
