@@ -36,7 +36,9 @@
       "height": 48.875,
       "yaw_deg": 90.0,
       "outward": "-x",
-      "notes": "The MAIN TABLE's back wall, running along +y at x=0. 48-7/8 above the table, MEASURED. Starts 8.25 out from the side wall, leaving the corner gap at y 0..8.25. Carries the shelf."
+      "notes": "The MAIN TABLE's back wall, running along +y at x=0, 5 in thick (material occupies x -5..0). 48-7/8 above the table, MEASURED. Starts 8.25 out from the side wall, leaving the corner gap at y 0..8.25. Extends DOWN below the table to its footing; the bottom edge follows the sloping floor. Carries the shelf.",
+      "thickness": 5.0,
+      "extends_below": true
     },
     {
       "name": "side",
@@ -47,7 +49,8 @@
       "yaw_deg": 0.0,
       "outward": "-y",
       "usable_height": 34.0,
-      "notes": "The RETURN's wall, running along +x at y=0. PHYSICALLY the same 48-7/8 as the main back wall; the 34 is USABLE space, cut short by ceiling-mount ducts above the return. Modelled as the true wall plus a usable_height limit rather than as a short wall, because a duct is an overhead obstacle, not a lower wall face."
+      "notes": "The RETURN's wall, running along +x at y=0. PHYSICALLY the same 48-7/8 as the main back wall; the 34 is USABLE space, cut short by ceiling-mount ducts above the return. Modelled as the true wall plus a usable_height limit rather than as a short wall, because a duct is an overhead obstacle, not a lower wall face.",
+      "thickness": 5.0
     }
   ],
   "corner_gap": {
@@ -55,45 +58,43 @@
     "measured": true,
     "from_side_wall": 8.25
   },
-  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: `height` is the leg itself, floor to the UNDERSIDE of the top, excluding the 3/4 top. Differing leg lengths ARE the slope, and the floor plane is solved from them rather than stored. Nominal lumber is not actual lumber - a 2x4 is 1.5 x 3.5.",
+  "_legs_note": "THE TABLE TOP IS LEVEL AND THE FLOOR IS NOT, so the legs are the only measurement of the floor: `height` is the leg itself, floor to the UNDERSIDE of the top, excluding the 3/4 top. Differing leg lengths ARE the slope, and the floor plane is solved from them rather than stored - so leg POSITIONS matter as much as their lengths. x/y are the leg's CENTRE. Nominal lumber is not actual lumber: a 2x4 is 1.5 x 3.5.",
   "legs": [
     {
       "name": "main_outside_corner",
-      "x": 27.5,
-      "y": 82.0,
+      "x": 25.75,
+      "y": 79.25,
       "height": 38.25,
       "section": "2x4",
-      "notes": "Outside (front) corner of the main table, at its far end from the return. MEASURED."
+      "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset of 1.0 is an ESTIMATE from the photo, not a measurement. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED length.",
+      "truss": "main_far_end"
     },
     {
       "name": "main_near_back_wall",
-      "x": 0.0,
-      "y": 82.0,
+      "x": 7.75,
+      "y": 79.25,
       "height": 39.125,
       "section": "2x4",
-      "notes": "Same far end of the main table, the leg close to the back wall. MEASURED. Longer than its partner because the floor drops away from the return."
+      "notes": "Far end of the main table, the leg by the back wall. It stands RIGHT IN FRONT OF the footing, not inside it - its back face is on the footing's front face at x=7, so its centre is x 7.75. Part of a 4-piece 2x4 truss with main_outside_corner. MEASURED length.",
+      "truss": "main_far_end"
     },
     {
       "name": "return_seam",
       "x": 61.5,
-      "y": 20.25,
+      "y": 17.5,
       "height": 35.4,
       "section": "2x4",
-      "notes": "At the return's seam, 61.5 from the back wall, where the 2x4 leg lands. MEASURED length. ASSUMPTION: placed at the return's outer edge (y=20.25); if it is against the wall or centred instead, say so - it tilts the solved floor plane."
+      "notes": "At the return's seam, 61.5 from the back wall. MEASURED length. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong."
     }
   ],
   "foundations": [
     {
       "name": "main_wall",
-      "x": 0.0,
-      "y": 0.0,
-      "width": 82.0,
-      "depth": 7.0,
+      "wall": "back",
+      "front": 7.0,
+      "back": 7.0,
       "height": 9.0,
-      "yaw_deg": 90.0,
-      "outward": "+x",
-      "level": true,
-      "notes": "Concrete footing along the MAIN TABLE wall: 9 tall, protruding 7 from the wall face. Kyle: it is LEVEL while the floor is not, so its height above the floor varies along the run. Modelled standing on the floor at the corner; re-measure at both ends if that matters."
+      "notes": "Concrete footing straddling the main table's back wall: 7 into the room, the wall's 5 thickness, then 7 behind - 19 total. 9 tall, sitting FLUSH on the floor, so it inherits the floor's 2.45 deg tilt rather than being a level block with a gap at one end."
     }
   ],
   "fixtures": [
@@ -142,14 +143,15 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -47.249,
-    "elevation": -22.625,
-    "distance": 5.33726,
+    "azimuth": -171.374,
+    "elevation": -28.062,
+    "distance": 9.65425,
     "lookat": [
-      1.52185,
-      1.29137,
-      0.48781
+      3.11593,
+      1.27744,
+      -1.61669
     ]
   },
-  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."
+  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
+  "_truss_note": "Legs sharing a `truss` name are one braced frame - Kyle's photo shows the far end of the main table as a 4-piece 2x4 truss: two legs, a top rail under the table top, and a bottom rail at the floor. The rails are DERIVED from the leg pair rather than listed, so moving a leg cannot leave its rails behind. ESTIMATE: the bottom rail is placed with its underside on the floor; measure its real height if it matters."
 }

@@ -105,6 +105,8 @@ class Wall:
     yaw_deg: float = 0.0
     outward: str = "-y"
     usable_height: float | None = None
+    thickness: float = 1.0     # real wall thickness, datum units
+    extends_below: bool = False  # does it continue down under the table?
     notes: str = ""
 
     @property
@@ -155,22 +157,29 @@ class Leg:
     height: float
     section: str = "2x4"
     along: str = "y"          # which axis the wide (3.5) face spans
+    truss: str | None = None  # legs sharing a name are one braced frame
     notes: str = ""
 
 
 @dataclass(frozen=True)
 class Foundation:
-    """A concrete footing running along a wall, below the table."""
+    """A concrete footing under a wall, below the table.
+
+    Tied to a WALL by name rather than given free coordinates: the
+    footing straddles the wall - it protrudes `front` into the room and
+    `back` behind, with the wall's own thickness between - so its extent
+    is only meaningful relative to that wall. Stating it independently
+    would let the two drift apart on the next re-zero.
+
+    It sits FLUSH on the floor, so it inherits the floor's tilt rather
+    than being a level block with a gap under one end.
+    """
 
     name: str
-    x: float
-    y: float
-    width: float
-    depth: float              # how far it protrudes from the wall face
-    height: float             # how tall, from the floor
-    yaw_deg: float = 0.0      # direction it RUNS: 0 = along +x
-    outward: str = "+y"       # which way it protrudes from the wall face
-    level: bool = True        # a level top over a sloping floor
+    wall: str
+    front: float              # protrusion into the room, from the wall face
+    back: float               # protrusion behind the wall
+    height: float             # how tall, up from the floor
     notes: str = ""
 
 
@@ -350,8 +359,9 @@ class Scene:
                              f"y {leg.y:g}, {leg.height:g} long -> floor "
                              f"{self.floor_z(leg.x, leg.y):.2f}")
         for f in self.foundations:
-            lines.append(f"  foundation {f.name}: {f.width:g} long, "
-                         f"{f.depth:g} out, {f.height:g} tall")
+            lines.append(f"  foundation {f.name}: under wall '{f.wall}', "
+                         f"{f.front:g} in front + {f.back:g} behind, "
+                         f"{f.height:g} tall, flush on the floor")
         for sh in self.fixtures:
             at = (f"underside {sh.z:g} above the top" if sh.z is not None
                   else "HEIGHT UNKNOWN - not modelled")
@@ -484,6 +494,8 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             yaw_deg=_num(entry, "yaw_deg", where, required=False) or 0.0,
             outward=_outward(entry, where),
             usable_height=_num(entry, "usable_height", where, required=False),
+            thickness=_num(entry, "thickness", where, required=False) or 1.0,
+            extends_below=bool(entry.get("extends_below", False)),
             notes=entry.get("notes", "")))
 
     fixtures: list[Fixture] = []
@@ -514,20 +526,23 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
         legs.append(Leg(
             name=entry.get("name", "leg"), x=_num(entry, "x", where),
             y=_num(entry, "y", where), height=h, section=section,
-            along=entry.get("along", "y"), notes=entry.get("notes", "")))
+            along=entry.get("along", "y"), truss=entry.get("truss"),
+            notes=entry.get("notes", "")))
 
     foundations: list[Foundation] = []
     for entry in doc.get("foundations") or []:
         where = f"{path} foundation {entry.get('name')!r}"
+        wall_name = entry.get("wall")
+        if not any(w.name == wall_name for w in walls):
+            raise BenchError(
+                f"{where}: wall {wall_name!r} not found",
+                f"a footing straddles a wall, so it must name one: "
+                f"{[w.name for w in walls]}")
         foundations.append(Foundation(
-            name=entry.get("name", "foundation"),
-            x=_num(entry, "x", where), y=_num(entry, "y", where),
-            width=_num(entry, "width", where),
-            depth=_num(entry, "depth", where),
+            name=entry.get("name", "foundation"), wall=wall_name,
+            front=_num(entry, "front", where),
+            back=_num(entry, "back", where),
             height=_num(entry, "height", where),
-            yaw_deg=_num(entry, "yaw_deg", where, required=False) or 0.0,
-            outward=_outward(entry, where) if "outward" in entry else "+y",
-            level=bool(entry.get("level", True)),
             notes=entry.get("notes", "")))
 
     arm = doc.get("arm") or {}
@@ -589,16 +604,34 @@ def build_spec(scene: Scene):
     for w in scene.walls:
         along_x = w.yaw_deg % 180 == 0
         ox, oy = OUTWARD[w.outward]
+        t = w.thickness
         # The wall FACE sits on the table edge; its body extends outward,
         # which is where the real wall is.
+        #
+        # A wall that continues BELOW the table runs down to its footing,
+        # and its bottom edge follows the sloping floor. A single box
+        # cannot have a sloped bottom, so the below-table part is a
+        # separate box reaching down to the LOWEST point of that edge -
+        # it over-fills slightly at the high end, which is invisible
+        # (it is under the table top and inside the footing) and errs
+        # toward more material rather than less.
+        low = 0.0
+        if w.extends_below:
+            found = next((f for f in scene.foundations if f.wall == w.name),
+                         None)
+            if found is not None and scene.floor_plane() is not None:
+                ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
+                        else [(w.x, w.y), (w.x, w.y + w.width)])
+                low = min(scene.floor_z(px, py) for px, py in ends) +                     found.height
+        span = w.height - low
         if along_x:
-            half = [w.width * m / 2, WALL_T * m / 2, w.height * m / 2]
-            pos = [(w.x + w.width / 2) * m, (w.y + oy * WALL_T / 2) * m,
-                   w.height * m / 2]
+            half = [w.width * m / 2, t * m / 2, span * m / 2]
+            pos = [(w.x + w.width / 2) * m, (w.y + oy * t / 2) * m,
+                   (low + span / 2) * m]
         else:
-            half = [WALL_T * m / 2, w.width * m / 2, w.height * m / 2]
-            pos = [(w.x + ox * WALL_T / 2) * m, (w.y + w.width / 2) * m,
-                   w.height * m / 2]
+            half = [t * m / 2, w.width * m / 2, span * m / 2]
+            pos = [(w.x + ox * t / 2) * m, (w.y + w.width / 2) * m,
+                   (low + span / 2) * m]
         spec.worldbody.add_geom(
             name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0],
@@ -643,24 +676,64 @@ def build_spec(scene: Scene):
             pos=[leg.x * m, leg.y * m, (base + leg.height / 2) * m],
             rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
 
+    # Legs sharing a truss name are one braced frame: a top rail under
+    # the table top and a bottom rail on the floor, as in Kyle's photo.
+    # Derived from the leg pair rather than listed separately, so moving
+    # a leg cannot leave its rails behind.
+    trusses: dict[str, list[Leg]] = {}
+    for leg in scene.legs:
+        if leg.truss:
+            trusses.setdefault(leg.truss, []).append(leg)
+    rail_w, rail_d = LUMBER["2x4"]
+    for tname, members in trusses.items():
+        if len(members) < 2:
+            continue
+        a, b = members[0], members[1]
+        top_under = -(scene.thickness or 0.75)
+        span_x, span_y = abs(b.x - a.x), abs(b.y - a.y)
+        cx_, cy_ = (a.x + b.x) / 2, (a.y + b.y) / 2
+        run_x = span_x >= span_y
+        length = (span_x if run_x else span_y) + rail_w
+        half = ([length * m / 2, rail_w * m / 2, rail_d * m / 2] if run_x
+                else [rail_w * m / 2, length * m / 2, rail_d * m / 2])
+        for label, ztop in (("top", top_under),
+                            ("bottom", min(scene.floor_z(a.x, a.y),
+                                           scene.floor_z(b.x, b.y))
+                             + rail_d if plane else None)):
+            if ztop is None:
+                continue
+            spec.worldbody.add_geom(
+                name=f"rail_{tname}_{label}", type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=half, pos=[cx_ * m, cy_ * m, (ztop - rail_d / 2) * m],
+                rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
+
     for f in scene.foundations:
-        along_x = f.yaw_deg % 180 == 0
-        ofx, ofy = OUTWARD[f.outward]
-        base = scene.floor_z(f.x, f.y)
-        if base is None:
-            continue  # no floor solved yet: nothing to stand it on
+        w = next((wl for wl in scene.walls if wl.name == f.wall), None)
+        if w is None or plane is None:
+            continue  # nothing to straddle, or no floor to stand on
+        along_x = w.yaw_deg % 180 == 0
+        ox, oy = OUTWARD[w.outward]
+        # Straddles the wall: `front` into the room, the wall's own
+        # thickness, then `back` behind. Centre it on that whole span.
+        total = f.front + w.thickness + f.back
+        mid = (f.front - f.back - w.thickness) / 2 * -1  # about the face
+        cx = w.x + (0 if along_x else ox * -mid)
+        cy = w.y + (oy * -mid if along_x else 0)
         if along_x:
-            half = [f.width * m / 2, f.depth * m / 2, f.height * m / 2]
-            pos = [(f.x + f.width / 2) * m, (f.y + ofy * f.depth / 2) * m,
-                   (base + f.height / 2) * m]
+            cx = w.x + w.width / 2
+            half = [w.width * m / 2, total * m / 2, f.height * m / 2]
+            cy = w.y + oy * (w.thickness + f.back - f.front) / 2
         else:
-            half = [f.depth * m / 2, f.width * m / 2, f.height * m / 2]
-            pos = [(f.x + ofx * f.depth / 2) * m, (f.y + f.width / 2) * m,
-                   (base + f.height / 2) * m]
+            cy = w.y + w.width / 2
+            half = [total * m / 2, w.width * m / 2, f.height * m / 2]
+            cx = w.x + ox * (w.thickness + f.back - f.front) / 2
+        base = scene.floor_z(cx, cy)
+        nz = 1.0 / math.sqrt(pa * pa + pb * pb + 1.0)
         spec.worldbody.add_geom(
             name=f"foundation_{f.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=half, pos=pos, rgba=[0.80, 0.79, 0.76, 1.0],
-            group=GROUP_STRUCTURE)
+            size=half, pos=[cx * m, cy * m, (base + f.height / 2) * m],
+            zaxis=[-pa * nz, -pb * nz, nz],   # flush on the sloping floor
+            rgba=[0.80, 0.79, 0.76, 1.0], group=GROUP_STRUCTURE)
 
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
