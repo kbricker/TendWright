@@ -487,30 +487,77 @@ def view(scene: Scene, save_view: bool = True,
         print("  NOTE: only what has been measured is here; run without "
               "--view to see what is absent")
 
-    saved = load_view(path)
-    last: dict | None = None
-    with mujoco.viewer.launch_passive(model, data) as v:
-        if saved:
-            v.cam.azimuth = saved["azimuth"]
-            v.cam.elevation = saved["elevation"]
-            v.cam.distance = saved["distance"]
-            v.cam.lookat[:] = saved["lookat"]
-            print("  restored your saved view")
-        while v.is_running():
-            # Captured every tick, not on exit: once the window closes the
-            # handle is dead and the camera cannot be read any more.
-            last = {"azimuth": round(float(v.cam.azimuth), 3),
-                    "elevation": round(float(v.cam.elevation), 3),
-                    "distance": round(float(v.cam.distance), 5),
-                    "lookat": [round(float(c), 5) for c in v.cam.lookat]}
-            v.sync()
-            time.sleep(1 / 60)
+    print(f"  edit {path} and it reloads automatically, keeping your view")
 
-    if save_view and last is not None:
-        store_view(path, last)
-        print(f"saved view: azimuth {last['azimuth']:g}, elevation "
-              f"{last['elevation']:g}, distance {last['distance']:g}")
-    return 0
+    # Reload loop. MuJoCo cannot swap a model inside a live viewer, so a
+    # measurement change means a new window - but the saved camera is
+    # restored immediately, so it reads as a refresh rather than a
+    # restart. This exists because the iterate-measure-look loop was
+    # otherwise close-the-window-and-retype every single time.
+    while True:
+        saved = load_view(path)
+        last: dict | None = None
+        stamp = _mtime(path)
+        reload_wanted = False
+
+        with mujoco.viewer.launch_passive(model, data) as v:
+            if saved:
+                v.cam.azimuth = saved["azimuth"]
+                v.cam.elevation = saved["elevation"]
+                v.cam.distance = saved["distance"]
+                v.cam.lookat[:] = saved["lookat"]
+            while v.is_running():
+                # Captured every tick, not on exit: once the window closes
+                # the handle is dead and the camera cannot be read.
+                last = {"azimuth": round(float(v.cam.azimuth), 3),
+                        "elevation": round(float(v.cam.elevation), 3),
+                        "distance": round(float(v.cam.distance), 5),
+                        "lookat": [round(float(c), 5) for c in v.cam.lookat]}
+                if _mtime(path) != stamp:
+                    reload_wanted = True
+                    break
+                v.sync()
+                time.sleep(1 / 60)
+
+        if save_view and last is not None:
+            try:
+                # Reads the file to preserve whatever was just edited, so
+                # it can catch an editor mid-write. Losing a camera angle
+                # is not worth crashing the viewer over.
+                store_view(path, last)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                print(f"  could not save the view ({exc}); carrying on",
+                      file=sys.stderr)
+            if not reload_wanted:
+                print(f"saved view: azimuth {last['azimuth']:g}, elevation "
+                      f"{last['elevation']:g}, distance {last['distance']:g}")
+        if not reload_wanted:
+            return 0
+
+        # Re-read. A half-written file (an editor mid-save) raises; wait
+        # and retry rather than dying on a transient.
+        for attempt in range(20):
+            time.sleep(0.15)
+            try:
+                scene = load_scene(path)
+                break
+            except BenchError as exc:
+                if attempt == 19:
+                    print(f"reload failed: {exc}", file=sys.stderr)
+                    return 2
+        model = build_model(scene)
+        data = mujoco.MjData(model)
+        mujoco.mj_forward(model, data)
+        print("scene changed - reloaded")
+        for gap in scene.missing():
+            print(f"  still missing: {gap}")
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def load_view(path: Path = SCENE_JSON) -> dict | None:
