@@ -2,12 +2,22 @@
   "_scope": "THIS PROJECT's use of a bench: which bench, what stands on it and where. Separate from the bench file on purpose - see bench.json's _scope.",
   "bench": "bench.json",
   "arm": {
-    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = along +x, positive counter-clockwise viewed from above. SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
-    "x": null,
-    "y": null,
-    "yaw_deg": null
+    "x": 51.5,
+    "y": 20.25,
+    "yaw_deg": null,
+    "_comment": "Arm base centre. x 51.5 = 24 on centre from the main table edge (x 27.5), measured along the return. y 20.25 puts it ON the return's front edge. ASSUMPTION: 'on the front edge' taken as the base CENTRE on the edge line; if the base plate sits flush with the edge instead, the centre is inboard by half the base and y should drop by that much. YAW IS STILL UNKNOWN and is the one value that gates everything: until it is set the twin keeps its infinite ground plane, because a wrong facing makes the collision gate call CLEAR over real tabletop. 0 = along +x (out along the return, away from the main table), positive counter-clockwise from above - so +90 faces the side wall and -90 faces the room."
   },
-  "cameras": [],
+  "cameras": [
+    {
+      "name": "bench",
+      "wall": "side",
+      "along": 51.5,
+      "z": 29.0,
+      "tilt_deg": 60.0,
+      "standoff": null,
+      "notes": "Aligned with the arm - same position along the return (x 51.5) - on the printed 60-degree wall bracket. LENS CENTRE 29 above the table top, MEASURED. `standoff` (how far the lens sits out from the wall face on the bracket) is NOT measured; the render uses a 2 in placeholder, which shifts the sight line but not its angle. Registry entry for the live camera is cameras.json - this is only where it is in space."
+    }
+  ],
   "render": {
     "shadows": false,
     "_comment": "Shadows OFF by default (Kyle, 2026-07-26) until the lighting is right - hard shadows over a half-built room read as geometry errors that are not there. Flip to true to experiment."

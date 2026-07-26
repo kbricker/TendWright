@@ -763,7 +763,8 @@ def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
         rgba=rgba, group=group)
 
 
-def build_spec(scene: Scene, shadows: bool = False):
+def build_spec(scene: Scene, shadows: bool = False,
+               cameras: 'tuple[Camera, ...]' = ()):
     """MuJoCo spec of the measured bench, in the DATUM frame.
 
     Metres, table top at z=0, +z up. Geometry only - no arm: this exists
@@ -1076,6 +1077,38 @@ def build_spec(scene: Scene, shadows: bool = False):
         _add_prism(spec, mujoco, f"foundation_{f.name}", pts,
                    [0.80, 0.79, 0.76, 1.0], GROUP_STRUCTURE)
 
+    # Cameras: a small body on its wall bracket plus a SIGHT LINE along
+    # the view direction. The sight line is the point - a camera box
+    # tells you nothing about whether it is aimed at the work.
+    for cam in cameras:
+        w = next((wl for wl in scene.walls if wl.name == cam.wall), None)
+        if w is None:
+            continue
+        along_x = w.yaw_deg % 180 == 0
+        ox, oy = OUTWARD[w.outward]
+        stand = 2.0 if cam.standoff is None else cam.standoff
+        # into the room is opposite the wall's outward direction
+        ix, iy = -ox, -oy
+        if along_x:
+            px, py = cam.along, w.y + iy * stand
+        else:
+            px, py = w.x + ix * stand, cam.along
+        spec.worldbody.add_geom(
+            name=f"camera_{cam.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[1.5 * m / 2, 1.5 * m / 2, 1.2 * m / 2],
+            pos=[px * m, py * m, cam.z * m],
+            rgba=[0.15, 0.15, 0.18, 1.0], group=GROUP_FIXTURE)
+        t = math.radians(cam.tilt_deg)
+        dx, dy, dz = ix * math.cos(t), iy * math.cos(t), -math.sin(t)
+        reach = 40.0
+        spec.worldbody.add_geom(
+            name=f"camsight_{cam.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[0.25 * m / 2, 0.25 * m / 2, reach * m / 2],
+            pos=[(px + dx * reach / 2) * m, (py + dy * reach / 2) * m,
+                 (cam.z + dz * reach / 2) * m],
+            zaxis=[dx, dy, dz],
+            rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_FIXTURE)
+
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
 
@@ -1140,8 +1173,9 @@ def build_spec(scene: Scene, shadows: bool = False):
     return spec
 
 
-def build_model(scene: Scene, shadows: bool = False):
-    return build_spec(scene, shadows).compile()
+def build_model(scene: Scene, shadows: bool = False,
+                cameras: 'tuple[Camera, ...]' = ()):
+    return build_spec(scene, shadows, cameras).compile()
 
 
 def view(cell: 'Cell', save_view: bool = True,
@@ -1161,7 +1195,7 @@ def view(cell: 'Cell', save_view: bool = True,
     import mujoco
     import mujoco.viewer
 
-    model = build_model(cell.bench, cell.shadows)
+    model = build_model(cell.bench, cell.shadows, cell.cameras)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     print("opening the MuJoCo viewer - close the window to exit")
@@ -1234,7 +1268,7 @@ def view(cell: 'Cell', save_view: bool = True,
                 if attempt == 19:
                     print(f"reload failed: {exc}", file=sys.stderr)
                     return 2
-        model = build_model(cell.bench, cell.shadows)
+        model = build_model(cell.bench, cell.shadows, cell.cameras)
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)
         print("scene changed - reloaded")
@@ -1283,12 +1317,13 @@ def store_view(path: Path, view_pose: dict) -> None:
 
 
 def render(scene: Scene, out_dir: Path, width: int = 1280,
-           height: int = 860) -> list[Path]:
+           height: int = 860,
+           cameras: 'tuple[Camera, ...]' = ()) -> list[Path]:
     """Render the bench from a few angles. Returns the files written."""
     import mujoco
     import numpy as np
 
-    model = build_model(scene)
+    model = build_model(scene, cameras=cameras)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
 
@@ -1374,6 +1409,25 @@ def _write_png(path: Path, rgb) -> None:
         + chunk(b"IEND", b""))
 
 
+@dataclass(frozen=True)
+class Camera:
+    """A camera on a wall bracket, looking down into the cell.
+
+    `z` is the LENS CENTRE above the table top - that is what Kyle
+    measures and what decides what the camera can see. `tilt_deg` is
+    the bracket's downward angle from horizontal (the printed brackets
+    are 45 and 60).
+    """
+
+    name: str
+    wall: str
+    along: float              # position along the wall's run
+    z: float                  # lens centre above the table top
+    tilt_deg: float = 60.0
+    standoff: float | None = None   # lens out from the wall FACE
+    notes: str = ""
+
+
 @dataclass
 class Cell:
     """A PROJECT's use of a bench: what stands on it and where.
@@ -1443,7 +1497,9 @@ class Cell:
                 lines.append("    WARNING: that point is not over any "
                              "measured bench surface")
         for cam in self.cameras:
-            lines.append(f"  camera {cam.get('name', '?')}")
+            lines.append(f"  CAMERA {cam.name}: on wall '{cam.wall}' at "
+                         f"{cam.along:g} along, lens {cam.z:g} above the "
+                         f"top, {cam.tilt_deg:g} deg down")
         return "\n".join(lines)
 
     def sketch(self, cols: int = 62) -> str:
@@ -1472,7 +1528,14 @@ def load_cell(path: Path = CELL_JSON) -> Cell:
         arm_x=_num(arm, "x", where, required=False),
         arm_y=_num(arm, "y", where, required=False),
         arm_yaw_deg=_num(arm, "yaw_deg", where, required=False),
-        cameras=doc.get("cameras") or [],
+        cameras=tuple(
+            Camera(name=c.get("name", "cam"), wall=c["wall"],
+                   along=float(c["along"]), z=float(c["z"]),
+                   tilt_deg=float(c.get("tilt_deg", 60.0)),
+                   standoff=(float(c["standoff"])
+                             if c.get("standoff") is not None else None),
+                   notes=c.get("notes", ""))
+            for c in (doc.get("cameras") or [])),
         shadows=bool((doc.get("render") or {}).get("shadows", False)))
 
 
@@ -1499,7 +1562,7 @@ def main() -> int:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
     if save_xml is not None:
-        save_xml.write_text(build_spec(cell.bench, cell.shadows).to_xml())
+        save_xml.write_text(build_spec(cell.bench, cell.shadows, cell.cameras).to_xml())
         print(f"wrote {save_xml}")
         print(f"  open it standalone with: uv run python -m mujoco.viewer "
               f"--mjcf={save_xml}")
@@ -1507,7 +1570,7 @@ def main() -> int:
     if "--view" in sys.argv:
         return view(cell)
     if render_to is not None:
-        for p in render(cell.bench, render_to):
+        for p in render(cell.bench, render_to, cameras=cell.cameras):
             print(f"wrote {p}")
         return 0
     if bench_only:
