@@ -1207,17 +1207,33 @@ def build_spec(scene: Scene, shadows: bool = False,
 def build_model(scene: Scene, shadows: bool = False,
                 cameras: 'tuple[Camera, ...]' = (),
                 arm: 'tuple[float, float, float] | None' = None):
-    """Compile the cell. The arm starts at its REST pose, not at qpos
-    zero - zero is the straight-up 'candle' the model ships with, which
-    is not a pose the real arm is ever in. Every MjData reset lands on
-    rest, because qpos0 is what mj_resetData uses."""
+    """Compile the cell. Pair with `rest_data` to get an MjData posed at
+    the arm's rest pose.
+
+    NEVER write `model.qpos0` to move the arm's default pose. qpos0 is
+    the joint REFERENCE configuration - MuJoCo measures every hinge angle
+    from it - so assigning the rest keyframe to it silently re-zeros all
+    six joints and renders every pose at (qpos - rest). It looks like a
+    default-pose knob and is not one. That bug shipped 2026-07-26 and
+    made the arm play the exercise routine through itself; `_selftest_
+    arm_pose_matches_twin` now pins it."""
+    return build_spec(scene, shadows, cameras, arm).compile()
+
+
+def rest_data(model):
+    """MjData for `model`, posed at the arm's rest keyframe.
+
+    The keyframe - not qpos0 - is how a starting pose is set, because a
+    keyframe carries a pose while qpos0 defines where joint angles are
+    measured FROM. Falls back to a plain reset for a bench with no arm."""
     import mujoco
 
-    model = build_spec(scene, shadows, cameras, arm).compile()
+    data = mujoco.MjData(model)
     key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "arm_rest")
     if key >= 0:
-        model.qpos0[:] = model.key_qpos[key]
-    return model
+        mujoco.mj_resetDataKeyframe(model, data, key)
+    mujoco.mj_forward(model, data)
+    return data
 
 
 def view(cell: 'Cell', save_view: bool = True,
@@ -1238,8 +1254,7 @@ def view(cell: 'Cell', save_view: bool = True,
     import mujoco.viewer
 
     model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
+    data = rest_data(model)
     print("opening the MuJoCo viewer - close the window to exit")
     print("  left-drag = orbit, right-drag = pan, scroll = zoom")
     print("  [ / ] cycles cameras (there is a fixed 'bench' one)")
@@ -1312,8 +1327,7 @@ def view(cell: 'Cell', save_view: bool = True,
                     print(f"reload failed: {exc}", file=sys.stderr)
                     return 2
         model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
-        data = mujoco.MjData(model)
-        mujoco.mj_forward(model, data)
+        data = rest_data(model)
         print("scene changed - reloaded")
         for gap in cell.missing():
             print(f"  still missing: {gap}")
@@ -1369,8 +1383,7 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
     import numpy as np
 
     model = build_model(scene, cameras=cameras, arm=arm)
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
+    data = rest_data(model)
 
     x0, y0, x1, y1 = scene.footprint()
     m = scene.to_m
@@ -1589,6 +1602,66 @@ def _selftest_arm_frame() -> None:
     print("arm-frame convention OK")
 
 
+def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
+    """The arm in the CELL must stand exactly where the TWIN says it does.
+
+    The whole point of the viewer is that watching a routine here is a
+    statement about the real arm. That only holds while both models put
+    the same ticks in the same place, so this compares every arm body,
+    relative to the base, across the exercise routine's own waypoints.
+
+    It exists because that guarantee broke silently: writing the rest
+    keyframe into `model.qpos0` (an attempt to open the viewer at rest)
+    re-zeroed every hinge, so the cell rendered `qpos - rest` while the
+    gate simulated `qpos`. The gate passed the routine, the viewer played
+    the arm straight through itself, and nothing failed. A pose is not
+    verified by looking right - it is verified against the model that
+    makes the safety claim.
+    """
+    import mujoco
+    import numpy as np
+
+    from sim.twin import JOINT_MAPS, Twin, exercise_waypoints
+
+    if cell.arm_pose is None:
+        print("arm-vs-twin pose: skipped (no arm placed)")
+        return
+    twin = Twin()
+    model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
+    data = rest_data(model)
+    bodies = ["Base", "Rotation_Pitch", "Upper_Arm", "Lower_Arm",
+              "Wrist_Pitch_Roll", "Fixed_Jaw", "Moving_Jaw"]
+    bid = lambda m, n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n)
+    adr = {}
+    for i, jm in JOINT_MAPS.items():
+        j = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                              f"arm_{jm.model_joint}")
+        assert j >= 0, f"cell model has no joint arm_{jm.model_joint}"
+        adr[i] = model.jnt_qposadr[j]
+    worst = 0.0
+    for pose in exercise_waypoints(twin.cals, 70):
+        twin.data.qpos[:] = twin._rest_qpos
+        data.qpos[:] = model.qpos0
+        for i, tick in pose.items():
+            q = twin.qpos_of(i, tick)[0]
+            twin.data.qpos[twin._adr[i]] = q
+            data.qpos[adr[i]] = q
+        mujoco.mj_forward(twin.model, twin.data)
+        mujoco.mj_forward(model, data)
+        t0 = twin.data.xpos[bid(twin.model, "Base")].copy()
+        c0 = data.xpos[bid(model, "arm_Base")].copy()
+        for n in bodies:
+            d = float(np.linalg.norm((twin.data.xpos[bid(twin.model, n)] - t0)
+                                     - (data.xpos[bid(model, "arm_" + n)] - c0)))
+            worst = max(worst, d)
+            assert d < 1e-6, (
+                f"{n} sits {d * 1000:.1f} mm apart between the cell and the "
+                f"twin at {pose} - the viewer is not showing what the gate "
+                f"simulated")
+    print(f"arm-vs-twin pose OK (worst disagreement {worst * 1000:.4f} mm "
+          f"across the exercise routine)")
+
+
 def animate_exercise(cell: 'Cell', span: int = 70,
                      step_deg: float = 1.0, hz: float = 60.0) -> int:
     """Play the exercise routine through the arm in the viewer.
@@ -1611,8 +1684,7 @@ def animate_exercise(cell: 'Cell', span: int = 70,
 
     twin = Twin()
     model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
+    data = rest_data(model)
 
     adr: dict[int, int] = {}
     for i, jm in JOINT_MAPS.items():
@@ -1718,6 +1790,10 @@ def main() -> int:
         print(f"wrote {save_xml}")
         print(f"  open it standalone with: uv run python -m mujoco.viewer "
               f"--mjcf={save_xml}")
+        return 0
+    if "--selftest" in sys.argv:
+        _selftest_arm_frame()
+        _selftest_arm_pose_matches_twin(cell)
         return 0
     if "--exercise" in sys.argv:
         return animate_exercise(cell)
