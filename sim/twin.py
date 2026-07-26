@@ -1,21 +1,51 @@
 """Digital twin of the SO-101 bench arm — collision-gated motion (plan #648).
 
-Maps calibrated servo ticks onto the vendored MuJoCo Menagerie SO-ARM100
-model (sim/assets/menagerie/trs_so_arm100/, Apache-2.0) and checks
+Maps calibrated servo ticks onto the vendored MuJoCo model of the
+SO-101 (sim/assets/so101/, TheRobotStudio, Apache-2.0) and checks
 planned trajectories for self-collision and table contact BEFORE the
 real arm moves. The bench tools call `Twin.check_trajectory` as a
 pre-flight gate; contacts are predicted, not discovered.
 
-Tick -> radian mapping: per joint, qpos = anchor_qpos + direction *
-RAD_PER_TICK * (tick - anchor_tick). Anchors tie the CAPTURED physical
-rest/closed pose to the model's `rest` keyframe (the Menagerie model
-ships one that matches the arm's folded slump). Directions were resolved
-by FK probes on the model and all six are now bench-verified — j1 pan
-and j5 roll were confirmed at the bench 2026-07-25 (see JOINT_MAPS).
+The model is the SO-101 as of plan #670. It previously ran on
+Menagerie's SO-ARM100 — a different arm, accepted as close enough
+during #648. That package is still vendored at
+sim/assets/menagerie/trs_so_arm100/ and is NOT used by anything: it is
+kept only until Kyle confirms the SO-101 against the real arm at the
+bench, because until then reverting is a live possibility. Delete it
+once that check passes.
+
+What the swap did and did not change is worth knowing:
+  - the derived clearance envelope came out IDENTICAL (m2 span 40%,
+    elbow 90 deg, m4 90 deg), independently re-derived, so the shipped
+    safety constants are confirmed rather than adjusted;
+  - both real bench collisions are still predicted;
+  - the arm's observed torque-off slump NO LONGER penetrates the model,
+    where the SO-100 read it as 0.14 mm past touching while the real arm
+    sat in that pose untouched — the new geometry matches reality better;
+  - the joint LIMITS did not improve. Both packages describe them as
+    approximate and both are narrower than the calibrated physical range
+    on j2 and j6, so `qpos_of` still clamps and still reports it.
+
+Tick -> qpos mapping: per joint, qpos = a + b * x, where x is the
+ratified frame's own reading (degrees, or ticks for the gripper's
+percentage frame) and (a, b) are MEASURED FROM THE MODEL at construction
+by `_derive_anchors` — see JOINT_MAPS for how each joint's zero is
+located. Nothing is transcribed: the SO-101 package ships no keyframe to
+anchor on, and the geometric derivation reproduced the SO-100's
+hand-posed `rest` keyframe to within 0.03 deg (under one tick), which is
+what licensed retiring it.
 
 Table: the arm is bolted to the bench, so the world plane z=0 IS the
-table. Base<->table contact is expected (mounted) and ignored; so is
-Fixed_Jaw<->Moving_Jaw (the gripper may close on itself harmlessly).
+table. base<->table contact is expected (mounted) and ignored; so is
+the gripper closing on its own jaw.
+
+Collision geometry differs from the old package and not always for the
+better: the SO-101 ships NO base collision mesh (removed upstream as
+problematic) and a far simpler gripper — 3 collidable geoms against the
+Menagerie model's 13 hand-built ones. Contacts involving the base are
+therefore invisible to the gate. Both bench collisions survive because
+they are also caught by table and shoulder pairs, which was checked, not
+assumed, before the swap was accepted.
 
 Poses within CONTACT_MARGIN_M of touching count as contact: the mapping
 carries real uncertainty, so the gate refuses near-misses too. The one
@@ -55,8 +85,7 @@ from hardware.bench.calibrate import JointCal, load_calibration
 from hardware.errors import BenchError
 from hardware.units import DegFrame, RAD_PER_TICK, fmt_ticks, span_deg
 
-MODEL_XML = (Path(__file__).parent
-             / "assets/menagerie/trs_so_arm100/so_arm100.xml")
+MODEL_XML = Path(__file__).parent / "assets/so101/so101_new_calib.xml"
 # Safety margin: geom pairs within this distance are surfaced as
 # near-misses, because the mapping carries real uncertainty (two
 # provisional directions, print tolerances, a hand-posed rest anchor)
@@ -91,11 +120,22 @@ CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 # The arm's torque-off slump does not reproduce itself. The slump captured
 # as `rest` and the slump observed 2026-07-25 differ by up to 4.7 deg
 # (j5), and in the fold the geometry converts joint error into penetration
-# depth at ~0.7 mm per degree. The model owns exactly ONE rest keyframe,
-# so which slump "rest" means is ambiguous by more than the clearance
-# being judged: at cal rest the jaw clears the shoulder by 4.45 mm, and
-# the observed slump reads 0.14 mm PAST touching — while the real arm sat
-# there, untouched.
+# depth at roughly a millimetre per degree, so which slump "rest" means
+# used to be ambiguous by more than the clearance being judged: on the
+# SO-100 model the observed slump read 0.14 mm PAST touching, while the
+# real arm sat there untouched.
+#
+# ON THE SO-101 GEOMETRY THAT PARTICULAR CONFLICT IS GONE (plan #670):
+# the observed slump now only reaches PROXIMITY, which structural pairs
+# never fail on, so it is accepted with or without the waiver — pinned
+# both ways in `selftest`. That is evidence the new geometry matches the
+# real arm better, and it is also why the waiver's paired refusal now
+# runs on a clearly-labelled SYNTHETIC deeper fold: a safety waiver that
+# no test can exercise is a claim, not a property.
+#
+# The waiver is KEPT because the hazard it covers has not gone away —
+# the slump still does not reproduce itself, and a re-capture, a changed
+# horn, or a warmer/looser arm can put it back into penetration.
 #
 # So during the leading settle (measured pose -> rest) structurally-nested
 # link pairs are not adjudicated. The moment the arm reaches `rest` the
@@ -133,9 +173,32 @@ CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 
 # Contact pairs that are expected and never gate-failures. (The table
 # plane hangs off the worldbody; _body_of_geom reports it as "table".)
+# The slump deviation actually observed on 2026-07-25, in ticks from the
+# calibrated rest pose. Applied as a DELTA so it tracks a re-capture
+# instead of pinning stale absolute ticks. This is the pose the gate
+# refused while the arm was sitting in it, untouched.
+#
+# It is a MEASUREMENT, not a test fixture, which is why the structural
+# scan reads it (see `_scan_structural`): the arm's torque-off slump does
+# not reproduce itself, so "where the links nest when the arm rests on
+# itself" is a small ENVELOPE of measured poses, not one pose. Scanning
+# only the calibrated rest missed `shoulder <-> lower_arm` on the SO-101
+# geometry — the pair is not within 60 mm at cal rest and comes within
+# the gate's reach in the slump, so the gate refused the arm's own
+# resting pose (plan #670).
+OBSERVED_SLUMP_DELTA = {1: +84, 2: +2, 3: +8, 4: +27, 5: -53, 6: -4}
+
+# Named explicitly because "gripper" is BOTH a joint and a body in this
+# model, and the jaw body is named after its mesh. Resolving a joint name
+# as a body name silently returns the wrong link — it put the measured
+# reach direction 2.9 deg out before this existed.
+BASE_BODY = "base"
+TOOL_BODY = "moving_jaw_so101_v1"
+WRIST_BODY = "gripper"
+
 ALLOWED_PAIRS = {
-    frozenset({"Base", "table"}),          # bolted to the bench
-    frozenset({"Fixed_Jaw", "Moving_Jaw"}),  # gripper closing on itself
+    frozenset({BASE_BODY, "table"}),         # bolted to the bench
+    frozenset({WRIST_BODY, TOOL_BODY}),      # gripper closing on itself
 }
 
 
@@ -143,43 +206,59 @@ ALLOWED_PAIRS = {
 class JointMap:
     """How one calibrated joint lands on a model joint.
 
-    anchor: which calibration.json tick ('rest' or 'min') corresponds to
-    this joint's value in the model's `rest` keyframe — the anchor qpos
-    is READ FROM THE MODEL, never duplicated here, so a vendored-model
-    update can't silently desync the map. direction: +1 when rising
-    physical ticks mean rising model qpos. bench_verified False =
-    provisional; `sim.twin check` prints how to confirm or flip it."""
+    `anchor` says how this joint's zero is LOCATED on the model. Nothing
+    here is a number: every anchor is measured from the model at
+    construction, so a vendored-model change cannot silently desync the
+    map (and the SO-101 package ships no keyframe to anchor on anyway).
+
+      "frame" — the ratified frame's zero has a geometric meaning ("upper
+        arm vertical", "forearm in line with the upper arm", "gripper in
+        line with the forearm"), so the anchor is MEASURED: probe the
+        model, find the qpos where that collinearity holds, and pin the
+        frame's zero there. Self-checking, because `sim.twin frames` then
+        re-measures the same quantity through a different path.
+      "rest" — pan and roll have nothing to be collinear with, so their
+        frame zero is not geometric and cannot be derived from the model.
+        These pin the physical REST tick to the model's own zero, which
+        is the relationship bench-verified on the previous model — kept
+        deliberately rather than re-guessed, so the model swap does not
+        quietly move a joint that was already confirmed correct.
+      "min" — the gripper: physical closed pinned to the model's closed
+        limit. Its frame is a percentage, not an angle, so it maps in
+        ticks.
+
+    bench_verified False = provisional; `sim.twin check` prints how to
+    confirm or flip it."""
 
     model_joint: str
     anchor: str
-    direction: int
     bench_verified: bool
 
 
-# Directions from FK probes on the vendored model (2026-07-25):
-# +Rotation = CCW from above; +Pitch = rise out of the rest fold;
-# +Elbow = fold; +Wrist_Pitch = gripper tips up; +Wrist_Roll = CCW
-# about the jaw's local +Y; +Jaw = open. Physical directions from the
-# captured calibration signs (calibrate.py JOINT_POSITIVE).
-# j1 and j5 were bench-verified 2026-07-25 (Kyle jogged each and reported
-# the sense; `jog`'s +/- keys step TICKS, independent of the display
-# frame). Both answers cross-check against the direction captured months
-# earlier by `calibrate capture`, from a different vantage point:
-#   j1: capture recorded sign -1 against "CCW viewed from above", so
-#       increasing ticks = CW from above. Model +Rotation is CCW from
-#       above => direction -1. Already correct; confirmed, not changed.
-#   j5: capture recorded sign -1 against "CCW head-on", so increasing
-#       ticks = CW head-on. Kyle observed CW with the gripper pointing
-#       at him. FK probe: direction +1 reproduces that (analytically via
-#       omega . point_direction, and empirically from jaw displacement);
-#       -1 gives the mirror image. FLIPPED from -1.
+# The SO-101 model uses LeRobot's joint names, which match
+# calibration.json's names exactly — one less place for a mismatch than
+# the SO-100 package's Rotation/Pitch/Elbow.
+#
+# Directions are DERIVED, not declared (plan #670). For the pitch chain
+# the sign falls out of the same probe that finds the anchor: measure the
+# segment angle at two qpos values and the slope IS the direction. That
+# probe agrees with the previous model on all three joints, and its
+# anchors reproduce that model's hand-posed rest keyframe to within
+# 0.03 deg — under a tick — which is what licensed retiring the keyframe.
+#
+# j1 and j5 stay bench-verified rather than derived: pan and roll have no
+# collinear reference, so the model cannot be asked where their zero is.
+# Their relationship to the model was confirmed at the bench 2026-07-25
+# (Kyle jogged each and reported the sense) and is carried across
+# unchanged. The gripper's open direction IS geometric and was verified
+# by measuring jaw separation across the model's range on both models.
 JOINT_MAPS: dict[int, JointMap] = {
-    1: JointMap("Rotation", "rest", -1, True),
-    2: JointMap("Pitch", "rest", +1, True),
-    3: JointMap("Elbow", "rest", +1, True),
-    4: JointMap("Wrist_Pitch", "rest", +1, True),
-    5: JointMap("Wrist_Roll", "rest", +1, True),
-    6: JointMap("Jaw", "min", +1, True),           # physical closed = model closed
+    1: JointMap("shoulder_pan", "rest", True),
+    2: JointMap("shoulder_lift", "frame", True),
+    3: JointMap("elbow_flex", "frame", True),
+    4: JointMap("wrist_flex", "frame", True),
+    5: JointMap("wrist_roll", "rest", True),
+    6: JointMap("gripper", "min", True),   # physical closed = model closed
 }
 
 
@@ -250,10 +329,10 @@ class Twin:
             raise BenchError(
                 f"calibration.json lacks joint(s) {missing}",
                 "the twin needs all six joints — calibrate capture first")
-        self._rest_qpos = self.model.key("rest").qpos.copy()
         # link pairs that nest structurally in the fold (never the table)
         self._structural: set[frozenset] = set()
         self._adr: dict[int, int] = {}
+        self._jid: dict[int, int] = {}
         self._range: dict[int, tuple[float, float]] = {}
         for i, jm in JOINT_MAPS.items():
             jid = mujoco.mj_name2id(
@@ -261,28 +340,144 @@ class Twin:
             if jid < 0:
                 raise BenchError(f"model joint {jm.model_joint} not found",
                                  "the vendored model changed — fix JOINT_MAPS")
+            self._jid[i] = jid
             self._adr[i] = self.model.jnt_qposadr[jid]
             self._range[i] = tuple(self.model.jnt_range[jid])
-        # Link pairs nesting in the model's folded rest pose are
-        # structural — they are built to sit against each other there.
-        # Scanned at STRUCTURAL_DETECT_M, wider than the gate reach.
-        # The table is excluded by construction: the arm is not built to
-        # rest on it, so a table contact is always a finding.
+        self._lin = self._derive_anchors()
+        self._rest_qpos = np.zeros(self.model.nq)
+        for i in sorted(self.cals):
+            self._rest_qpos[self._adr[i]] = self.qpos_of(i, self.cals[i].rest)[0]
+        self._scan_structural()
+
+
+    def _scan_structural(self) -> None:
+        """Find the link pairs that nest when the arm rests on itself.
+
+        Scanned over the MEASURED resting poses — the calibrated rest and
+        the observed slump — not one pose, because the torque-off slump
+        does not reproduce itself and "where the links nest" is therefore
+        a small envelope. Both inputs are measurements of the real arm at
+        rest; nothing here is a chosen tolerance.
+
+        Scanned at STRUCTURAL_DETECT_M, deliberately wider than the gate
+        reach: missing a nesting pair makes the gate cry wolf forever
+        after, while including one only ever costs a proximity warning —
+        these pairs still fail on real penetration.
+
+        The table is excluded by construction: the arm is not built to
+        rest on it, so a table contact is always a finding."""
+        poses = [{i: self.cals[i].rest for i in self.cals},
+                 {i: self.cals[i].rest + OBSERVED_SLUMP_DELTA.get(i, 0)
+                  for i in self.cals}]
         self.model.geom_margin[:] = STRUCTURAL_DETECT_M / 2
-        self.data.qpos[:] = self._rest_qpos
-        mujoco.mj_forward(self.model, self.data)
-        for n in range(self.data.ncon):
-            con = self.data.contact[n]
-            pair = frozenset({self._body_of_geom(con.geom1),
-                              self._body_of_geom(con.geom2)})
-            if "table" not in pair:
-                self._structural.add(pair)
+        for pose in poses:
+            self.data.qpos[:] = self._rest_qpos
+            for i, tick in pose.items():
+                self.data.qpos[self._adr[i]] = self.qpos_of(i, tick)[0]
+            mujoco.mj_forward(self.model, self.data)
+            for n in range(self.data.ncon):
+                con = self.data.contact[n]
+                pair = frozenset({self._body_of_geom(con.geom1),
+                                  self._body_of_geom(con.geom2)})
+                if "table" not in pair:
+                    self._structural.add(pair)
         self.model.geom_margin[:] = _GEOM_MARGIN_M  # back to gate reach
 
+    def reach_yaw_deg(self) -> float:
+        """Which way the arm reaches, in the MODEL's own base frame (deg,
+        CCW from +x).
 
-    def _anchor_tick(self, i: int) -> int:
+        A cell places the arm by the direction it reaches, so whoever
+        attaches this model needs to know where the model thinks forward
+        is — and packages disagree: the SO-100 reached along its own -Y
+        (-90 deg), the SO-101 along +X (0 deg). That 90 deg is exactly
+        the constant the bench scene used to carry as a literal `+90`,
+        which would have silently pointed the arm at the wrong wall after
+        the model swap. Measured, so it follows the model."""
+        pose = {i: self.cals[i].rest for i in sorted(self.cals)}
+        for j, deg in ((1, 0.0), (2, 60.0), (3, 0.0), (4, 0.0)):
+            pose[j] = self.cals[j].frame.tick(deg)   # pan straight, arm out
+        self.data.qpos[:] = self._rest_qpos
+        for i, tick in pose.items():
+            self.data.qpos[self._adr[i]] = self.qpos_of(i, tick)[0]
+        mujoco.mj_forward(self.model, self.data)
+        bid = lambda n: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, n)
+        v = self.data.xpos[bid(TOOL_BODY)] - self.data.xpos[bid(BASE_BODY)]
+        if float(np.hypot(v[0], v[1])) < 1e-3:
+            raise BenchError("cannot measure the model's reach direction",
+                             "the arm is vertical at the probe pose")
+        return math.degrees(math.atan2(v[1], v[0]))
+
+    def _seg_angle(self, joint: int) -> float:
+        """Signed angle (deg) from the parent direction to the segment
+        this joint drives, about the joint's OWN world axis — the
+        quantity the ratified frame claims to display. Reads whatever
+        pose `self.data` is currently in; the caller sets it."""
+        def seg(pair: tuple[str, str]):
+            a = self.data.xpos[mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_BODY, pair[0])]
+            b = self.data.xpos[mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_BODY, pair[1])]
+            v = b - a
+            return v / float(np.linalg.norm(v))
+
+        v = seg(PITCH_SEGMENTS[joint])
+        parent = (seg(PITCH_PARENTS[joint]) if joint in PITCH_PARENTS
+                  else np.array([0.0, 0.0, 1.0]))
+        axis = self.data.xaxis[self._jid[joint]]
+        return math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
+                                       float(parent @ v)))
+
+    def _derive_anchors(self) -> dict[int, tuple[float, float]]:
+        """Locate every joint's zero ON THE MODEL: qpos = a + b * x.
+
+        `x` is the frame's human reading — degrees for the five angular
+        joints, TICKS for the gripper (whose frame is a percentage).
+
+        Nothing is hand-entered. For the pitch chain both terms come from
+        probing the model at two qpos values: the segment angle is linear
+        in qpos, so two samples give the slope (which IS the direction)
+        and the offset (which IS the anchor). That is the whole reason
+        this survives a model swap — the previous model's hand-posed
+        `rest` keyframe had no counterpart in the SO-101 package, and a
+        transcribed constant would have been a number nobody could
+        re-derive."""
+        lin: dict[int, tuple[float, float]] = {}
+        for i, jm in JOINT_MAPS.items():
+            cal = self.cals[i]
+            lo, _hi = self._range[i]
+            if jm.anchor == "min":
+                # percentage frame: map in ticks, physical closed -> model closed
+                lin[i] = (lo - RAD_PER_TICK * cal.min, RAD_PER_TICK)
+            elif jm.anchor == "rest":
+                # no geometric zero to find; pin physical rest to model zero
+                lin[i] = (-math.radians(cal.frame.deg(cal.rest)),
+                          math.radians(1.0))
+            else:                                   # "frame" — measure it
+                probe = math.radians(10.0)
+                samples = []
+                for q in (0.0, probe):
+                    self.data.qpos[:] = 0.0
+                    self.data.qpos[self._adr[i]] = q
+                    mujoco.mj_forward(self.model, self.data)
+                    samples.append(self._seg_angle(i))
+                slope = (samples[1] - samples[0]) / 10.0   # deg seg / deg qpos
+                if abs(slope) < 0.5:
+                    raise BenchError(
+                        f"joint {i} ({jm.model_joint}) barely moves the "
+                        f"segment it should drive (slope {slope:.3f})",
+                        "PITCH_SEGMENTS no longer matches the model's body "
+                        "tree — the anchor cannot be measured")
+                # qpos_deg = (frame_deg - samples[0]) / slope
+                lin[i] = (math.radians(-samples[0] / slope),
+                          math.radians(1.0 / slope))
+        return lin
+
+    def frame_x(self, i: int, tick: int) -> float:
+        """The frame reading `qpos_of` maps from: degrees for the angular
+        joints, ticks for the gripper's percentage frame."""
         cal = self.cals[i]
-        return cal.rest if JOINT_MAPS[i].anchor == "rest" else cal.min
+        return tick if JOINT_MAPS[i].anchor == "min" else cal.frame.deg(tick)
 
     def qpos_of(self, i: int, tick: int) -> tuple[float, float]:
         """(qpos clamped to the model range, clamp magnitude in deg).
@@ -291,10 +486,8 @@ class Twin:
         is less extreme than reality, so a contact at the physical range
         end could go unpredicted. That is why every clamp is reported
         and printed even on a clean gate."""
-        jm = JOINT_MAPS[i]
-        anchor_qpos = self._rest_qpos[self._adr[i]]
-        q = (anchor_qpos
-             + jm.direction * RAD_PER_TICK * (tick - self._anchor_tick(i)))
+        a, b = self._lin[i]
+        q = a + b * self.frame_x(i, tick)
         lo, hi = self._range[i]
         clamped = min(hi, max(lo, q))
         return clamped, abs(q - clamped) * 180.0 / math.pi
@@ -557,25 +750,20 @@ def cmd_validate(twin: Twin, span: int) -> int:
 # reference — nothing to be in line with — so they are not covered here.
 # Both were bench-verified by jog on 2026-07-25 instead.
 PITCH_SEGMENTS = {
-    2: ("Upper_Arm", "Lower_Arm"),
-    3: ("Lower_Arm", "Wrist_Pitch_Roll"),
-    4: ("Wrist_Pitch_Roll", "Fixed_Jaw"),
+    2: ("upper_arm", "lower_arm"),
+    3: ("lower_arm", "wrist"),
+    4: ("wrist", "gripper"),
 }
 PITCH_PARENTS = {
-    3: ("Upper_Arm", "Lower_Arm"),
-    4: ("Lower_Arm", "Wrist_Pitch_Roll"),
+    3: ("upper_arm", "lower_arm"),
+    4: ("lower_arm", "wrist"),
 }
-PITCH_AXIS = (1.0, 0.0, 0.0)  # world +X at pan zero
+# The measurement axis is READ FROM THE MODEL (each joint's own world
+# axis at the pose being measured), never declared. It was a hardcoded
+# world +X for the SO-100 package; the SO-101's base frame is rotated,
+# so its pitch axis is +Y, and a constant here would have silently
+# measured the wrong angle rather than failing.
 FRAME_TOL_DEG = 1.5  # a tick is 0.088 deg; this is slop for mesh origins
-
-
-def _seg_dir(twin: Twin, pair: tuple[str, str]):
-    a = twin.data.xpos[mujoco.mj_name2id(
-        twin.model, mujoco.mjtObj.mjOBJ_BODY, pair[0])]
-    b = twin.data.xpos[mujoco.mj_name2id(
-        twin.model, mujoco.mjtObj.mjOBJ_BODY, pair[1])]
-    v = b - a
-    return v / (v @ v) ** 0.5
 
 
 def relative_angle(twin: Twin, joint: int, tick: int) -> tuple[float, float]:
@@ -599,12 +787,7 @@ def relative_angle(twin: Twin, joint: int, tick: int) -> tuple[float, float]:
             clamped = clamp_deg
         twin.data.qpos[twin._adr[i]] = q
     mujoco.mj_forward(twin.model, twin.data)
-    v = _seg_dir(twin, PITCH_SEGMENTS[joint])
-    parent = (_seg_dir(twin, PITCH_PARENTS[joint]) if joint in PITCH_PARENTS
-              else np.array([0.0, 0.0, 1.0]))
-    axis = np.array(PITCH_AXIS)
-    return (math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
-                                    float(parent @ v))), clamped)
+    return twin._seg_angle(joint), clamped
 
 
 def cmd_frames(twin: Twin) -> int:
@@ -643,13 +826,6 @@ def cmd_frames(twin: Twin) -> int:
     return 1 if fails else 0
 
 
-# The slump deviation actually observed on 2026-07-25, in ticks from the
-# calibrated rest pose. Applied as a DELTA so the fixture tracks a
-# re-capture instead of pinning stale absolute ticks. This is the pose
-# the gate refused while the arm was sitting in it, untouched.
-OBSERVED_SLUMP_DELTA = {1: +84, 2: +2, 3: +8, 4: +27, 5: -53, 6: -4}
-
-
 def cmd_selftest(twin: Twin) -> int:
     """Pin the gate's safety contracts. No hardware, no motion.
 
@@ -663,6 +839,21 @@ def cmd_selftest(twin: Twin) -> int:
     # Clamping the fixture would erase the very penetration under test.
     slump = {i: rest[i] + d
              for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
+    # SYNTHETIC — 1.5x the measured slump deviation. Not a pose the arm
+    # has ever been in, and it is not presented as one: it exists only to
+    # drive a structural pair into real penetration so the settle waiver
+    # has something to waive. On the SO-101 geometry the MEASURED slump
+    # only reaches proximity (which structural pairs never fail on), so
+    # without this the waiver would be untested code claiming to be a
+    # safety property.
+    #
+    # 1.5 is bounded on BOTH sides by measurement, not chosen for taste:
+    # below ~1.2 nothing penetrates and the test is vacuous, and at 1.6
+    # the gripper reaches the TABLE, which is never waived and would
+    # make the test fail for the wrong reason. The usable window is
+    # narrow, which is itself worth knowing.
+    deep = {i: rest[i] + round(1.5 * d)
+            for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
     lift = {**rest, 2: rest[2] + round(25 / span_deg(1))}
     fails: list[str] = []
 
@@ -685,12 +876,19 @@ def cmd_selftest(twin: Twin) -> int:
     else:
         print("  [ok ] table is excluded from the structural set")
 
-    traj("settle from the observed slump onto rest is accepted",
+    traj("settle from the OBSERVED slump onto rest is accepted",
          [slump, rest], True, True)
-    traj("...and is REFUSED without the settle waiver (the waiver is "
-         "what accepts it, not luck)", [slump, rest], False, False)
+    traj("...and the observed slump no longer needs the waiver at all — "
+         "it is accepted without it, because on this geometry it only "
+         "comes into proximity, never penetration (it DID penetrate on "
+         "the SO-100 model, at a pose the real arm sat in untouched)",
+         [slump, rest], True, False)
+    traj("a synthetic deeper fold IS accepted during the settle",
+         [deep, rest], True, True)
+    traj("...and is REFUSED without the settle waiver — so the waiver is "
+         "what accepts it, not luck", [deep, rest], False, False)
     traj("the waiver does not leak past the settle",
-         [rest, rest, slump], False, True)
+         [rest, rest, deep], False, True)
     traj("a table strike during the settle is still refused",
          [slump, lift], False, True)
     pose("the run-1 bench collision is still predicted", lift, False)

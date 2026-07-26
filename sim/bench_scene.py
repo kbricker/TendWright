@@ -1130,14 +1130,19 @@ def build_spec(scene: Scene, shadows: bool = False,
         except (ValueError, OSError):
             child = None
         if child is not None:
-            # The model reaches along its own -Y at pan zero, and yaw says
-            # which BENCH direction that must point along. Working the
-            # axes through gives a pure z-rotation of yaw + 90: at yaw
-            # -90 (reaching along -y) the arm frame coincides with the
-            # bench frame, which is the case to sanity-check against.
+            # yaw says which BENCH direction the arm must reach along; the
+            # MODEL has its own idea of forward, and the two packages
+            # disagree by 90 deg (SO-100 reached along its own -Y, SO-101
+            # along +X). So the rotation is yaw MINUS the model's own
+            # reach angle - asked of the model, not written down here.
+            # This was a literal `+ 90`, which is exactly -(-90): correct
+            # for the old model by coincidence of being transcribed from
+            # it, and would have quietly aimed the arm at the wrong wall
+            # after the swap (plan #670).
+            from sim.twin import Twin
             frame = spec.worldbody.add_frame(
                 pos=[ax_ * m, ay_ * m, 0.0],
-                euler=[0.0, 0.0, ayaw + 90.0])
+                euler=[0.0, 0.0, ayaw - Twin().reach_yaw_deg()])
             spec.attach(child, prefix="arm_", frame=frame)
 
     x0, y0, x1, y1 = scene.footprint()
@@ -1602,6 +1607,53 @@ def _selftest_arm_frame() -> None:
     print("arm-frame convention OK")
 
 
+def _selftest_arm_faces_its_yaw(cell: 'Cell') -> None:
+    """The arm must REACH along the yaw the cell asked for.
+
+    The attach rotation composes the cell's yaw with the model's own idea
+    of forward, and those are separate facts that no other check couples:
+    the pose selftest compares the cell against the twin base-relative,
+    so it passes happily with the whole arm rotated. Swapping the model
+    turned the reach 90 deg (SO-100 reached along -Y, SO-101 along +X) —
+    aiming the arm across the bench instead of at the wall, in a scene
+    where every collision claim depends on which way it points.
+    """
+    import math
+
+    import mujoco
+
+    from sim.twin import BASE_BODY, JOINT_MAPS, TOOL_BODY, Twin
+
+    if cell.arm_pose is None:
+        print("arm reach direction: skipped (no arm placed)")
+        return
+    twin = Twin()
+    worst = 0.0
+    for yaw in (0.0, 90.0, -90.0, 180.0):
+        model = build_model(cell.bench, cell.shadows, cell.cameras,
+                            (cell.arm_x, cell.arm_y, yaw))
+        data = rest_data(model)
+        pose = {i: twin.cals[i].rest for i in sorted(twin.cals)}
+        for j, deg in ((1, 0.0), (2, 60.0), (3, 0.0), (4, 0.0)):
+            pose[j] = twin.cals[j].frame.tick(deg)
+        for i, tick in pose.items():
+            j = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                                  f"arm_{JOINT_MAPS[i].model_joint}")
+            data.qpos[model.jnt_qposadr[j]] = twin.qpos_of(i, tick)[0]
+        mujoco.mj_forward(model, data)
+        bid = lambda n: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n)
+        v = data.xpos[bid("arm_" + TOOL_BODY)] - data.xpos[bid("arm_" + BASE_BODY)]
+        got = math.degrees(math.atan2(v[1], v[0]))
+        err = abs((got - yaw + 180.0) % 360.0 - 180.0)
+        worst = max(worst, err)
+        assert err < 0.5, (
+            f"cell yaw {yaw:+.0f} deg but the arm reaches {got:+.1f} deg "
+            f"({err:.1f} deg out) — the arm is pointed the wrong way")
+    print(f"arm reach direction OK (worst {worst:.3f} deg over four yaws; "
+          f"this model reaches along {twin.reach_yaw_deg():+.1f} deg of its "
+          f"own frame)")
+
+
 def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
     """The arm in the CELL must stand exactly where the TWIN says it does.
 
@@ -1793,6 +1845,7 @@ def main() -> int:
         return 0
     if "--selftest" in sys.argv:
         _selftest_arm_frame()
+        _selftest_arm_faces_its_yaw(cell)
         _selftest_arm_pose_matches_twin(cell)
         return 0
     if "--exercise" in sys.argv:
