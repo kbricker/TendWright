@@ -401,6 +401,38 @@ def build_spec(scene: Scene):
         pos=[x1 * m, y1 * m, 1.6], dir=[-0.5, -0.5, -0.8],
         type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.45, 0.45, 0.45])
+
+    # A fixed camera at the OPEN corner. Without one the interactive
+    # viewer starts on its default free camera, which for this scene can
+    # sit outside the walls looking at a flat grey face - navigation then
+    # feels broken when it is only occluded. Press [ / ] in the viewer to
+    # cycle onto it.
+    ox = sum(OUTWARD[w.outward][0] for w in scene.walls) or -1
+    oy = sum(OUTWARD[w.outward][1] for w in scene.walls) or -1
+    n = math.hypot(ox, oy)
+    cx, cy = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
+    reach = max(x1 - x0, y1 - y0) * m * 1.1
+    eye = [cx - ox / n * reach, cy - oy / n * reach, reach * 0.75]
+    # Aim it by constructing the axes, not by guessing euler angles: a
+    # MuJoCo camera looks along its own -z with +y up, so a hand-picked
+    # euler triple points it at empty space (it rendered pure black).
+    # xyaxes takes the camera's x and y axes directly.
+    fx, fy, fz = (cx - eye[0], cy - eye[1], 0.15 - eye[2])
+    fn = math.sqrt(fx * fx + fy * fy + fz * fz)
+    fx, fy, fz = fx / fn, fy / fn, fz / fn
+    # right = forward x world-up, then true-up = right x forward
+    rx, ry, rz = fy * 1.0 - fz * 0.0, fz * 0.0 - fx * 1.0, 0.0
+    rn = math.hypot(rx, ry) or 1.0
+    rx, ry, rz = rx / rn, ry / rn, 0.0
+    ux = ry * fz - rz * fy
+    uy = rz * fx - rx * fz
+    uz = rx * fy - ry * fx
+    spec.worldbody.add_camera(
+        name="bench", pos=eye, xyaxes=[rx, ry, rz, ux, uy, uz], fovy=50.0)
+    # Pin the navigation statistics rather than letting them be inferred:
+    # they set the viewer's zoom/pan rate and its near/far clipping.
+    spec.stat.center = [cx, cy, 0.15]
+    spec.stat.extent = reach
     return spec
 
 
