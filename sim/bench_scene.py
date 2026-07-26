@@ -390,17 +390,35 @@ def build_spec(scene: Scene):
         spec.worldbody.add_geom(
             name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0])
-    # Two lights: the default headlight alone flattens a box scene into
-    # one grey mass, and the corner gap is the thing worth seeing.
     x0, y0, x1, y1 = scene.footprint()
-    spec.worldbody.add_light(
-        pos=[(x0 + x1) / 2 * m, (y0 + y1) / 2 * m, 2.2],
-        dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
-        diffuse=[0.55, 0.55, 0.55])
-    spec.worldbody.add_light(
-        pos=[x1 * m, y1 * m, 1.6], dir=[-0.5, -0.5, -0.8],
+    cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
+
+    # Lighting. Two hard directional lights over bare boxes gave a flat,
+    # muddy read with black shadows and a black void behind. A room is
+    # mostly BOUNCE, so: strong ambient in the headlight, one key light
+    # with shadows for shape, two soft fills to lift the shadow side, and
+    # a gradient skybox so the background is not a void.
+    spec.visual.headlight.ambient = [0.42, 0.42, 0.45]
+    spec.visual.headlight.diffuse = [0.30, 0.30, 0.30]
+    spec.visual.headlight.specular = [0.06, 0.06, 0.06]
+    spec.add_texture(
+        name="sky", type=mujoco.mjtTexture.mjTEXTURE_SKYBOX,
+        builtin=mujoco.mjtBuiltin.mjBUILTIN_GRADIENT,
+        rgb1=[0.32, 0.36, 0.42], rgb2=[0.10, 0.11, 0.14],
+        width=256, height=256)
+    key = spec.worldbody.add_light(
+        pos=[cx0 - 0.9, cy0 + 1.1, 2.4], dir=[0.35, -0.42, -0.84],
         type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
-        diffuse=[0.45, 0.45, 0.45])
+        diffuse=[0.62, 0.61, 0.58], specular=[0.12, 0.12, 0.12])
+    key.castshadow = True
+    for pos, direction, level in (
+            ([cx0 + 1.4, cy0 + 1.4, 1.7], [-0.5, -0.5, -0.7], 0.26),
+            ([cx0, cy0 - 1.2, 1.9], [0.0, 0.62, -0.78], 0.20)):
+        fill = spec.worldbody.add_light(
+            pos=pos, dir=direction,
+            type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
+            diffuse=[level, level, level * 1.05])
+        fill.castshadow = False
 
     # A fixed camera at the OPEN corner. Without one the interactive
     # viewer starts on its default free camera, which for this scene can
@@ -440,12 +458,20 @@ def build_model(scene: Scene):
     return build_spec(scene).compile()
 
 
-def view(scene: Scene) -> int:
+def view(scene: Scene, save_view: bool = True,
+         path: Path = SCENE_JSON) -> int:
     """Open the bench in MuJoCo's interactive viewer.
 
     Needs a display, so this is a DESK command - cell1 is headless.
     Blocks until the window is closed.
+
+    Uses launch_PASSIVE rather than launch, because passive hands back a
+    handle whose camera can be read: whatever angle you leave the window
+    at is saved to the scene file and restored next time (and reused by
+    --render). launch() owns its camera and never gives it back.
     """
+    import time
+
     import mujoco
     import mujoco.viewer
 
@@ -453,12 +479,71 @@ def view(scene: Scene) -> int:
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     print("opening the MuJoCo viewer - close the window to exit")
-    print("  drag = orbit, right-drag = pan, scroll = zoom")
+    print("  left-drag = orbit, right-drag = pan, scroll = zoom")
+    print("  [ / ] cycles cameras (there is a fixed 'bench' one)")
+    if save_view:
+        print(f"  the view you leave it at is saved to {path}")
     if scene.missing():
-        print("  NOTE: this is only what has been measured; see the plain "
-              "`sim.bench_scene` output for what is absent")
-    mujoco.viewer.launch(model, data)
+        print("  NOTE: only what has been measured is here; run without "
+              "--view to see what is absent")
+
+    saved = load_view(path)
+    last: dict | None = None
+    with mujoco.viewer.launch_passive(model, data) as v:
+        if saved:
+            v.cam.azimuth = saved["azimuth"]
+            v.cam.elevation = saved["elevation"]
+            v.cam.distance = saved["distance"]
+            v.cam.lookat[:] = saved["lookat"]
+            print("  restored your saved view")
+        while v.is_running():
+            # Captured every tick, not on exit: once the window closes the
+            # handle is dead and the camera cannot be read any more.
+            last = {"azimuth": round(float(v.cam.azimuth), 3),
+                    "elevation": round(float(v.cam.elevation), 3),
+                    "distance": round(float(v.cam.distance), 5),
+                    "lookat": [round(float(c), 5) for c in v.cam.lookat]}
+            v.sync()
+            time.sleep(1 / 60)
+
+    if save_view and last is not None:
+        store_view(path, last)
+        print(f"saved view: azimuth {last['azimuth']:g}, elevation "
+              f"{last['elevation']:g}, distance {last['distance']:g}")
     return 0
+
+
+def load_view(path: Path = SCENE_JSON) -> dict | None:
+    """The saved free-camera pose, if the scene file carries one."""
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    v = doc.get("view")
+    if not isinstance(v, dict):
+        return None
+    try:
+        if not (isinstance(v["lookat"], list) and len(v["lookat"]) == 3):
+            return None
+        return {"azimuth": float(v["azimuth"]),
+                "elevation": float(v["elevation"]),
+                "distance": float(v["distance"]),
+                "lookat": [float(c) for c in v["lookat"]]}
+    except (KeyError, TypeError, ValueError):
+        return None  # a malformed view is not worth failing the tool over
+
+
+def store_view(path: Path, view_pose: dict) -> None:
+    """Write the camera pose back, leaving every measurement untouched."""
+    doc = json.loads(path.read_text())
+    doc["view"] = view_pose
+    doc["_view_note"] = ("Saved free-camera pose from the last --view "
+                         "session (MuJoCo units, metres). Restored on the "
+                         "next --view and used by --render. Delete this "
+                         "key to go back to the derived angles.")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(doc, indent=2) + "\n")
+    tmp.replace(path)
 
 
 def render(scene: Scene, out_dir: Path, width: int = 1280,
@@ -501,15 +586,25 @@ def render(scene: Scene, out_dir: Path, width: int = 1280,
         "iso": (base, -40, 1.85),
         "operator": (base + 30, -28, 1.8),
     }
+    # A view saved from the interactive viewer wins - if Kyle found an
+    # angle he likes, that is the one worth rendering.
+    saved = load_view()
+    if saved:
+        views["saved"] = (saved["azimuth"], saved["elevation"], None)
+
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     with mujoco.Renderer(model, height=height, width=width) as r:
         cam = mujoco.MjvCamera()
         mujoco.mjv_defaultCamera(cam)
         for name, (az, el, dist) in views.items():
-            cam.lookat[:] = np.array(centre)
+            if dist is None and saved:  # the saved pose, verbatim
+                cam.lookat[:] = np.array(saved["lookat"])
+                cam.distance = saved["distance"]
+            else:
+                cam.lookat[:] = np.array(centre)
+                cam.distance = span * dist
             cam.azimuth, cam.elevation = az, el
-            cam.distance = span * dist
             r.update_scene(data, camera=cam)
             path = out_dir / f"bench_{name}.png"
             _write_png(path, r.render())
