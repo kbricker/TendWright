@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "units": "in",
+  "_datum": "BACK-LEFT corner of the main table top, standing at the bench facing it. +x runs right along the main table, +y runs FORWARD toward where you stand. z is not used here - table surfaces are the top face, and height_to_floor_in carries the vertical.",
+  "_measured": "2026-07-26, Kyle: main run and return. Unmeasured values are null ON PURPOSE - the twin models only what is measured and reports the rest as absent, because a guessed obstacle is worse than a missing one (the gate would report CLEAR against a fiction).",
+
+  "table": {
+    "thickness": 0.75,
+    "height_to_floor": null,
+    "surfaces": [
+      {
+        "name": "main",
+        "x": 0.0,
+        "y": 0.0,
+        "width": 82.0,
+        "depth": 27.5,
+        "notes": "the long run across the back"
+      },
+      {
+        "name": "return",
+        "x": 0.0,
+        "y": 27.5,
+        "width": 20.25,
+        "depth": 48.5,
+        "notes": "left-side return, forward of the main run; 27.5 + 48.5 = 76 total depth from the back edge"
+      }
+    ]
+  },
+
+  "arm": {
+    "_comment": "Where the arm's base centre sits on the table, in datum coords, and which way it faces. yaw_deg is the direction the arm points with m1 at 0 deg: 0 = toward the front of the desk (+y), positive counter-clockwise viewed from above (so +90 points along -x, to the left). SAFETY-CRITICAL: switching the twin from its infinite ground plane to the real finite tabletop makes the gate LESS conservative - it will believe there is air past the table edge. A wrong arm position therefore means the gate can call CLEAR over real tabletop. Until x/y/yaw_deg are measured the twin keeps the infinite plane.",
+    "x": null,
+    "y": null,
+    "yaw_deg": null
+  },
+
+  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. ROUGHED IN 2026-07-26 at Kyle's direction, pending real measurement: both heights are 'about 3 usable feet' and the corner gap is a placeholder.",
+  "walls": [
+    {
+      "name": "back",
+      "x": 6.0,
+      "y": 0.0,
+      "width": 76.0,
+      "height": 36.0,
+      "yaw_deg": 0.0,
+      "notes": "ROUGH: runs along the back edge of the main table. Starts 6 in from the side wall to leave the unmeasured corner gap - that 6 is a placeholder, not a measurement."
+    },
+    {
+      "name": "side",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 76.0,
+      "height": 36.0,
+      "yaw_deg": 90.0,
+      "notes": "ROUGH: runs the full length of the return, end to end, on the left."
+    }
+  ],
+  "corner_gap": {
+    "_comment": "PLACEHOLDER, needs measuring. Kyle 2026-07-26: 'there is one gap I need to measure, but lets rough in 6 inches from the sidewall in the corner'. Modelled as the back wall starting 6 in out from the side wall. Confirm this is what the gap actually is before anything depends on it.",
+    "measured": false,
+    "from_side_wall": 6.0
+  },
+
+  "cameras": []
+}
