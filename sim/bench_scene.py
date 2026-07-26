@@ -35,7 +35,10 @@ reported as absent — a guessed wall is worse than no wall, because the
 gate would report CLEAR against a fiction. `missing()` lists exactly what
 is absent so a clean gate is never mistaken for a safe workspace.
 
-    uv run python -m sim.bench_scene      # print the scene + what's missing
+    uv run python -m sim.bench_scene              # summary + ASCII plan
+    uv run python -m sim.bench_scene --view       # interactive viewer (desk)
+    uv run python -m sim.bench_scene --render DIR # png views
+    uv run python -m sim.bench_scene --save-xml F # MJCF you can open anywhere
 """
 
 from __future__ import annotations
@@ -316,8 +319,8 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
 WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 
 
-def build_model(scene: Scene):
-    """MuJoCo model of the measured bench, in the DATUM frame.
+def build_spec(scene: Scene):
+    """MuJoCo spec of the measured bench, in the DATUM frame.
 
     Metres, table top at z=0, +z up. Geometry only - no arm: this exists
     to look at the measurements, and (once the arm is placed) to become
@@ -368,7 +371,32 @@ def build_model(scene: Scene):
         pos=[x1 * m, y1 * m, 1.6], dir=[-0.5, -0.5, -0.8],
         type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.45, 0.45, 0.45])
-    return spec.compile()
+    return spec
+
+
+def build_model(scene: Scene):
+    return build_spec(scene).compile()
+
+
+def view(scene: Scene) -> int:
+    """Open the bench in MuJoCo's interactive viewer.
+
+    Needs a display, so this is a DESK command - cell1 is headless.
+    Blocks until the window is closed.
+    """
+    import mujoco
+    import mujoco.viewer
+
+    model = build_model(scene)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    print("opening the MuJoCo viewer - close the window to exit")
+    print("  drag = orbit, right-drag = pan, scroll = zoom")
+    if scene.missing():
+        print("  NOTE: this is only what has been measured; see the plain "
+              "`sim.bench_scene` output for what is absent")
+    mujoco.viewer.launch(model, data)
+    return 0
 
 
 def render(scene: Scene, out_dir: Path, width: int = 1280,
@@ -444,6 +472,11 @@ def main() -> int:
         i = sys.argv.index("--render")
         render_to = Path(sys.argv[i + 1] if len(sys.argv) > i + 1
                          else "scene_render")
+    save_xml = None
+    if "--save-xml" in sys.argv:
+        i = sys.argv.index("--save-xml")
+        save_xml = Path(sys.argv[i + 1] if len(sys.argv) > i + 1
+                        else "bench_scene.xml")
     try:
         scene = load_scene()
     except BenchError as exc:
@@ -451,6 +484,14 @@ def main() -> int:
         if exc.hint:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
+    if save_xml is not None:
+        save_xml.write_text(build_spec(scene).to_xml())
+        print(f"wrote {save_xml}")
+        print(f"  open it standalone with: uv run python -m mujoco.viewer "
+              f"--mjcf={save_xml}")
+        return 0
+    if "--view" in sys.argv:
+        return view(scene)
     if render_to is not None:
         for p in render(scene, render_to):
             print(f"wrote {p}")
