@@ -194,7 +194,6 @@ class Foundation:
     back: float               # protrusion behind the wall
     height: float             # how tall, up from the floor
     front_top: float | None = None   # protrusion at the TOP, if battered
-    level_top: bool = False   # level top over a sloping floor
     notes: str = ""
 
     @property
@@ -336,22 +335,22 @@ class Scene:
         z0, a, b = plane
         return z0 + a * x + b * y
 
-    def foundation_top_z(self, f: "Foundation") -> float | None:
-        """Top of a footing, in datum z. ONE definition, used by both the
-        footing geometry and any wall that runs down to meet it - they
-        disagreed once, leaving a wall hanging 3 in below its own
-        footing's top."""
-        w = next((wl for wl in self.walls if wl.name == f.wall), None)
-        if w is None or self.floor_plane() is None:
+    def foundation_top_z(self, f: "Foundation", x: float,
+                         y: float) -> float | None:
+        """Top of a footing AT A POINT, in datum z.
+
+        Both footings sit a CONSTANT height off the floor end to end
+        (Kyle), so their tops follow the floor's slope rather than being
+        level. That makes the top a function of position, not a single
+        number - and the wooden wall above runs parallel to it.
+
+        ONE definition, used by the footing geometry AND by any wall
+        that comes down to meet it. They computed it separately once and
+        disagreed, leaving a wall hanging 3.2 in below its own footing.
+        """
+        if self.floor_plane() is None:
             return None
-        along_x = w.yaw_deg % 180 == 0
-        ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
-                else [(w.x, w.y), (w.x, w.y + w.width)])
-        if f.level_top:
-            mid = w.x + w.width / 2 if along_x else w.y + w.width / 2
-            ref = (mid, w.y) if along_x else (w.x, mid)
-            return self.floor_z(*ref) + f.height
-        return min(self.floor_z(px, py) for px, py in ends) + f.height
+        return self.floor_z(x, y) + f.height
 
     def missing(self) -> list[str]:
         """Everything unmeasured, in the order it blocks work."""
@@ -604,7 +603,6 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             back=_num(entry, "back", where),
             height=_num(entry, "height", where),
             front_top=_num(entry, "front_top", where, required=False),
-            level_top=bool(entry.get("level_top", False)),
             notes=entry.get("notes", "")))
 
     ledgers: list[Ledger] = []
@@ -653,6 +651,33 @@ LUMBER = {"2x4": (1.5, 3.5), "2x6": (1.5, 5.5), "2x4_half": (1.5, 1.75),
           "4x4": (3.5, 3.5)}
 
 
+def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
+    """A solid from a 4-corner PROFILE swept between two run positions.
+
+    `corners` is [(x, y, z_lo, z_hi)] x 4 in datum metres... actually
+    eight explicit points: the near-end quad then the far-end quad, each
+    ordered around the profile. Built as a mesh because the shapes here
+    are trapezoids - a footing battered on one face, a wall whose bottom
+    follows the sloping floor while its top stays level - and a box
+    cannot taper. Convex, so MuJoCo's collision hull is exact.
+    """
+    verts: list[float] = []
+    for pt in corners:
+        verts.extend(pt)
+    faces = [
+        0, 1, 2, 0, 2, 3,      # near cap
+        4, 6, 5, 4, 7, 6,      # far cap
+        0, 4, 5, 0, 5, 1,
+        1, 5, 6, 1, 6, 2,
+        2, 6, 7, 2, 7, 3,
+        3, 7, 4, 3, 4, 0,
+    ]
+    spec.add_mesh(name=f"mesh_{name}", uservert=verts, userface=faces)
+    spec.worldbody.add_geom(
+        name=name, type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f"mesh_{name}",
+        rgba=rgba, group=group)
+
+
 def build_spec(scene: Scene):
     """MuJoCo spec of the measured bench, in the DATUM frame.
 
@@ -666,6 +691,9 @@ def build_spec(scene: Scene):
     import mujoco
 
     m = scene.to_m
+    # Solved up front: walls, footings and rails all need it, and the
+    # wall loop runs before the floor is drawn.
+    plane = scene.floor_plane()
     spec = mujoco.MjSpec()
     spec.compiler.degree = True
     # Offscreen framebuffer defaults to 640x480; renders are clipped to it.
@@ -683,36 +711,47 @@ def build_spec(scene: Scene):
         along_x = w.yaw_deg % 180 == 0
         ox, oy = OUTWARD[w.outward]
         t = w.thickness
-        # The wall FACE sits on the table edge; its body extends outward,
-        # which is where the real wall is.
-        #
-        # A wall that continues BELOW the table runs down to its footing,
-        # and its bottom edge follows the sloping floor. A single box
-        # cannot have a sloped bottom, so the below-table part is a
-        # separate box reaching down to the LOWEST point of that edge -
-        # it over-fills slightly at the high end, which is invisible
-        # (it is under the table top and inside the footing) and errs
-        # toward more material rather than less.
-        low = 0.0
-        if w.extends_below:
-            found = next((f for f in scene.foundations if f.wall == w.name),
-                         None)
-            top = scene.foundation_top_z(found) if found else None
-            if top is not None:
-                low = top
-        span = w.height - low
-        if along_x:
-            half = [w.width * m / 2, t * m / 2, span * m / 2]
-            pos = [(w.x + w.width / 2) * m, (w.y + oy * t / 2) * m,
-                   (low + span / 2) * m]
+        found = next((f for f in scene.foundations if f.wall == w.name), None)
+        r0 = (w.x if along_x else w.y)
+        r1 = r0 + w.width
+
+        def wxy(run: float, prot: float) -> tuple[float, float]:
+            if along_x:
+                return run, w.y + oy * prot
+            return w.x + ox * prot, run
+
+        if w.extends_below and found is not None and plane is not None:
+            # Top LEVEL (the table is level), bottom parallel to the
+            # sloping floor where it lands on its footing - so the wall
+            # is a trapezoid in elevation, not a box.
+            pts = []
+            for run in (r0, r1):
+                for prot in (0.0, t):
+                    pass
+                a_ = wxy(run, 0.0)
+                b_ = wxy(run, t)
+                lo_a = scene.foundation_top_z(found, *a_)
+                lo_b = scene.foundation_top_z(found, *b_)
+                pts += [[a_[0] * m, a_[1] * m, lo_a * m],
+                        [b_[0] * m, b_[1] * m, lo_b * m],
+                        [b_[0] * m, b_[1] * m, w.height * m],
+                        [a_[0] * m, a_[1] * m, w.height * m]]
+            _add_prism(spec, mujoco, f"wall_{w.name}", pts,
+                       [0.85, 0.85, 0.88, 1.0], GROUP_WALL)
         else:
-            half = [t * m / 2, w.width * m / 2, span * m / 2]
-            pos = [(w.x + ox * t / 2) * m, (w.y + w.width / 2) * m,
-                   (low + span / 2) * m]
-        spec.worldbody.add_geom(
-            name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0],
-            group=GROUP_WALL)
+            if along_x:
+                half = [w.width * m / 2, t * m / 2, w.height * m / 2]
+                pos = [(w.x + w.width / 2) * m, (w.y + oy * t / 2) * m,
+                       w.height / 2 * m]
+            else:
+                half = [t * m / 2, w.width * m / 2, w.height * m / 2]
+                pos = [(w.x + ox * t / 2) * m, (w.y + w.width / 2) * m,
+                       w.height / 2 * m]
+            spec.worldbody.add_geom(
+                name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+                size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0],
+                group=GROUP_WALL)
+
     for sh in scene.fixtures:
         if sh.z is None:
             continue  # unmeasured height: not modelled, by policy
@@ -725,7 +764,6 @@ def build_spec(scene: Scene):
             group=FIXTURE_GROUP.get(sh.kind, GROUP_FIXTURE))
 
     # --- floor, legs, foundations (all below the table) ---
-    plane = scene.floor_plane()
     fx0, fy0, fx1, fy1 = scene.footprint()
     if plane is not None:
         z0, pa, pb = plane
@@ -841,62 +879,33 @@ def build_spec(scene: Scene):
     for f in scene.foundations:
         w = next((wl for wl in scene.walls if wl.name == f.wall), None)
         if w is None or plane is None:
-            continue  # nothing to straddle, or no floor to stand on
+            continue
         along_x = w.yaw_deg % 180 == 0
         ox, oy = OUTWARD[w.outward]
-        run_mid = w.x + w.width / 2 if along_x else w.y + w.width / 2
-        ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
-                else [(w.x, w.y), (w.x, w.y + w.width)])
-        floor_lo = min(scene.floor_z(px, py) for px, py in ends)
-        base_ref = scene.floor_z(*(ends[0] if False else (
-            (run_mid, w.y) if along_x else (w.x, run_mid))))
+        r0 = (w.x if along_x else w.y)
+        r1 = r0 + w.width
+        near = -f.back - w.thickness
+        far_bot = f.front
+        far_top = f.front_top if f.front_top is not None else f.front
 
-        # A LEVEL top over a sloping floor: the top sits at one height and
-        # the block reaches down past the floor's low point. A box cannot
-        # have a sloped bottom, so it over-fills below grade - buried, and
-        # erring toward more material rather than less.
-        top_z = scene.foundation_top_z(f)
-        bot_z = floor_lo - 2.0
-        depth_top = f.front_top if f.front_top is not None else f.front
-
-        def slab(name, near, far, z_lo, z_hi, tilt=None):
-            """near/far are protrusions from the wall face, room-positive."""
-            thick = far - near
-            mid = (near + far) / 2
-            span = z_hi - z_lo
+        def xy(run: float, prot: float) -> tuple[float, float]:
             if along_x:
-                half = [w.width * m / 2, thick * m / 2, span * m / 2]
-                pos = [run_mid * m, (w.y + oy * -mid) * m,
-                       (z_lo + span / 2) * m]
-            else:
-                half = [thick * m / 2, w.width * m / 2, span * m / 2]
-                pos = [(w.x + ox * -mid) * m, run_mid * m,
-                       (z_lo + span / 2) * m]
-            kw = {"zaxis": tilt} if tilt else {}
-            spec.worldbody.add_geom(
-                name=name, type=mujoco.mjtGeom.mjGEOM_BOX, size=half,
-                pos=pos, rgba=[0.80, 0.79, 0.76, 1.0],
-                group=GROUP_STRUCTURE, **kw)
+                return run, w.y + oy * -prot
+            return w.x + ox * -prot, run
 
-        # Main body: from behind the wall out to the TOP protrusion.
-        slab(f"foundation_{f.name}", -f.back - w.thickness, depth_top,
-             bot_z, top_z)
-        if f.battered:
-            # The battered face slopes from `front` at the floor to
-            # `front_top` at the top. A box cannot taper, so this is a
-            # parallelogram: a slab of the extra thickness, tilted so its
-            # OUTER face has the right slope. Its inner face slopes too,
-            # but that is buried in the main body.
-            extra = f.front - depth_top
-            rise = top_z - floor_lo
-            ang = math.atan2(extra, rise) if rise else 0.0
-            n = math.hypot(math.sin(ang), math.cos(ang)) or 1.0
-            sx = math.sin(ang) / n
-            cz = math.cos(ang) / n
-            tilt = ([0.0, -oy * sx, cz] if along_x
-                    else [-ox * sx, 0.0, cz])
-            slab(f"foundation_{f.name}_batter", depth_top - 0.1,
-                 depth_top + extra, floor_lo, top_z, tilt=tilt)
+        def v(run: float, prot: float, up: float) -> list[float]:
+            px, py = xy(run, prot)
+            return [px * m, py * m, (scene.floor_z(px, py) + up) * m]
+
+        # ONE SOLID TRAPEZOID: wide at the floor, narrow where it meets
+        # the wall, and sitting a constant height off the floor so the
+        # whole thing tilts with the slab.
+        pts = []
+        for run in (r0, r1):
+            pts += [v(run, near, -2.0), v(run, far_bot, 0.0),
+                    v(run, far_top, f.height), v(run, near, f.height)]
+        _add_prism(spec, mujoco, f"foundation_{f.name}", pts,
+                   [0.80, 0.79, 0.76, 1.0], GROUP_STRUCTURE)
 
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m

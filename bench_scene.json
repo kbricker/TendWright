@@ -95,7 +95,7 @@
       "front": 7.0,
       "back": 7.0,
       "height": 9.0,
-      "notes": "Concrete footing straddling the main table's back wall: 7 into the room, the wall's 5 thickness, then 7 behind - 19 total. 9 tall, sitting FLUSH on the floor, so it inherits the floor's 2.45 deg tilt rather than being a level block with a gap at one end."
+      "notes": "Concrete footing straddling the main table back wall: 7 into the room, the wall 5, then 7 behind. 9 OFF THE FLOOR END TO END, so it follows the slab slope. Untapered."
     },
     {
       "name": "return_wall",
@@ -104,8 +104,7 @@
       "front_top": 2.0,
       "back": 0.0,
       "height": 27.0,
-      "level_top": true,
-      "notes": "The HIGH concrete foundation along the return wall. 27 tall, LEVEL at the top edge and FLUSH with the floor at the bottom, so its height above grade varies along the run. BATTERED front face: protrudes 2 from the wall face at the top, about 5 at the floor ('about' is Kyle's word - the 5 is an estimate, the 2 and 27 are not). back 0 puts its rear face flush with the return wall's outside edge, as Kyle asked for the diagram. A box cannot taper, so the batter is a tilted parallelogram slab whose OUTER face carries the correct slope; its inner face is buried in the main body."
+      "notes": "The HIGH concrete foundation along the return wall. 27 OFF THE FLOOR END TO END, so it follows the slab slope rather than being level - and the wooden wall above runs parallel to it. BATTERED front face: 2 proud of the wall where it meets the wall, about 5 at the floor. back 0 puts its rear face flush with the return wall outside edge. Built as ONE SOLID TRAPEZOID (a mesh) - wide at the floor, narrow at the top."
     }
   ],
   "fixtures": [
@@ -154,13 +153,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -149.061,
-    "elevation": 16.563,
-    "distance": 0.42199,
+    "azimuth": -151.499,
+    "elevation": 1.375,
+    "distance": 5.40804,
     "lookat": [
-      1.53177,
-      2.6683,
-      -0.60829
+      2.11878,
+      -0.38675,
+      -0.62054
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
