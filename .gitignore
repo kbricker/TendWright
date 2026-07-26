@@ -36,3 +36,6 @@ Thumbs.db
 
 # Camera bus (plan #656): interval stills are local artifacts
 stills/
+
+# bench scene renders (regenerate with: sim.bench_scene --render DIR)
+scene_render/

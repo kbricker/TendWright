@@ -313,7 +313,137 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
         arm_yaw_deg=_num(arm, "yaw_deg", where, required=False))
 
 
+WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
+
+
+def build_model(scene: Scene):
+    """MuJoCo model of the measured bench, in the DATUM frame.
+
+    Metres, table top at z=0, +z up. Geometry only - no arm: this exists
+    to look at the measurements, and (once the arm is placed) to become
+    the twin's real workspace instead of its infinite ground plane.
+
+    mujoco is imported here, not at module scope, so loading and
+    validating measurements never needs the physics stack.
+    """
+    import mujoco
+
+    m = scene.to_m
+    spec = mujoco.MjSpec()
+    spec.compiler.degree = True
+    # Offscreen framebuffer defaults to 640x480; renders are clipped to it.
+    spec.visual.global_.offwidth = 1920
+    spec.visual.global_.offheight = 1200
+    for s in scene.surfaces:
+        x0, y0, x1, y1 = s.corners()
+        t = (scene.thickness or 0.75) * m
+        spec.worldbody.add_geom(
+            name=f"table_{s.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[(x1 - x0) * m / 2, (y1 - y0) * m / 2, t / 2],
+            pos=[(x0 + x1) / 2 * m, (y0 + y1) / 2 * m, -t / 2],
+            rgba=[0.72, 0.60, 0.44, 1.0])
+    for w in scene.walls:
+        along_x = w.yaw_deg % 180 == 0
+        # The wall FACE sits on the table edge; its body extends outward
+        # (behind/left), which is where the real wall is.
+        if along_x:
+            half = [w.width * m / 2, WALL_T * m / 2, w.height * m / 2]
+            pos = [(w.x + w.width / 2) * m, (w.y - WALL_T / 2) * m,
+                   w.height * m / 2]
+        else:
+            half = [WALL_T * m / 2, w.width * m / 2, w.height * m / 2]
+            pos = [(w.x - WALL_T / 2) * m, (w.y + w.width / 2) * m,
+                   w.height * m / 2]
+        spec.worldbody.add_geom(
+            name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0])
+    # Two lights: the default headlight alone flattens a box scene into
+    # one grey mass, and the corner gap is the thing worth seeing.
+    x0, y0, x1, y1 = scene.footprint()
+    spec.worldbody.add_light(
+        pos=[(x0 + x1) / 2 * m, (y0 + y1) / 2 * m, 2.2],
+        dir=[0, 0, -1], type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
+        diffuse=[0.55, 0.55, 0.55])
+    spec.worldbody.add_light(
+        pos=[x1 * m, y1 * m, 1.6], dir=[-0.5, -0.5, -0.8],
+        type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
+        diffuse=[0.45, 0.45, 0.45])
+    return spec.compile()
+
+
+def render(scene: Scene, out_dir: Path, width: int = 1280,
+           height: int = 860) -> list[Path]:
+    """Render the bench from a few angles. Returns the files written."""
+    import mujoco
+    import numpy as np
+
+    model = build_model(scene)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    x0, y0, x1, y1 = scene.footprint()
+    m = scene.to_m
+    centre = [(x0 + x1) / 2 * m, (y0 + y1) / 2 * m, 0.0]
+    span = max(x1 - x0, y1 - y0) * m
+
+    # Distance factors are multiples of the scene's largest span. To fit a
+    # span across MuJoCo's default 45-degree fovy needs span/(2*tan(22.5))
+    # = 1.21 spans; anything less puts the camera INSIDE the walls, which
+    # is what the first attempt did.
+    # MuJoCo's azimuth is the VIEW DIRECTION, not the camera's position:
+    # az 35 puts the camera at -x,-y, i.e. outside both walls looking at
+    # their backs. The walls live on the x=0 and y=0 edges, so the open
+    # side - where the operator stands - needs the camera at +x,+y, which
+    # is a view direction of about 225.
+    views = {  # (azimuth, elevation, distance factor)
+        # az 270 renders the plan MIRRORED in x (the left-side return
+        # appears on the right), which would hide exactly the kind of
+        # left/right error this view exists to catch. 90 reads true.
+        "top": (90, -89, 1.75),
+        "iso": (225, -40, 1.85),
+        "operator": (255, -28, 1.8),
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    with mujoco.Renderer(model, height=height, width=width) as r:
+        cam = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(cam)
+        for name, (az, el, dist) in views.items():
+            cam.lookat[:] = np.array(centre)
+            cam.azimuth, cam.elevation = az, el
+            cam.distance = span * dist
+            r.update_scene(data, camera=cam)
+            path = out_dir / f"bench_{name}.png"
+            _write_png(path, r.render())
+            written.append(path)
+    return written
+
+
+def _write_png(path: Path, rgb) -> None:
+    """Minimal PNG writer - stdlib zlib only, no new dependency."""
+    import struct
+    import zlib
+
+    h, w, _ = rgb.shape
+    raw = b"".join(b"\x00" + rgb[y].tobytes() for y in range(h))
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + tag + payload
+                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 6))
+        + chunk(b"IEND", b""))
+
+
 def main() -> int:
+    render_to = None
+    if "--render" in sys.argv:
+        i = sys.argv.index("--render")
+        render_to = Path(sys.argv[i + 1] if len(sys.argv) > i + 1
+                         else "scene_render")
     try:
         scene = load_scene()
     except BenchError as exc:
@@ -321,6 +451,10 @@ def main() -> int:
         if exc.hint:
             print(f"hint:  {exc.hint}", file=sys.stderr)
         return 2
+    if render_to is not None:
+        for p in render(scene, render_to):
+            print(f"wrote {p}")
+        return 0
     print(scene.describe())
     print()
     print(scene.sketch())
