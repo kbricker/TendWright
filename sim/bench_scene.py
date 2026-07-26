@@ -935,17 +935,27 @@ def build_spec(scene: Scene):
                 return run, w.y + oy * -prot
             return w.x + ox * -prot, run
 
-        def v(run: float, prot: float, up: float) -> list[float]:
+        def v_floor(run: float, prot: float, drop: float) -> list[float]:
+            """A point ON the floor (bottom of the block)."""
             px, py = xy(run, prot)
-            return [px * m, py * m, (scene.floor_z(px, py) + up) * m]
+            return [px * m, py * m, (scene.floor_z(px, py) + drop) * m]
+
+        def v_top(run: float, prot: float) -> list[float]:
+            """A point on the block's TOP - via foundation_top_z, so a
+            LEVEL top really is level. Computing floor + height here
+            instead is what kept the return footing's top parallel to
+            the floor after the level-top rule was added: the rule lived
+            in the API and never reached the geometry."""
+            px, py = xy(run, prot)
+            return [px * m, py * m, scene.foundation_top_z(f, px, py) * m]
 
         # ONE SOLID TRAPEZOID: wide at the floor, narrow where it meets
         # the wall, and sitting a constant height off the floor so the
         # whole thing tilts with the slab.
         pts = []
         for run in (r0, r1):
-            pts += [v(run, near, -2.0), v(run, far_bot, 0.0),
-                    v(run, far_top, f.height), v(run, near, f.height)]
+            pts += [v_floor(run, near, -2.0), v_floor(run, far_bot, 0.0),
+                    v_top(run, far_top), v_top(run, near)]
         _add_prism(spec, mujoco, f"foundation_{f.name}", pts,
                    [0.80, 0.79, 0.76, 1.0], GROUP_STRUCTURE)
 
