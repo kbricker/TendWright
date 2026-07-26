@@ -104,7 +104,12 @@
       "front_top": 2.0,
       "back": 0.0,
       "height": 27.0,
-      "notes": "The HIGH concrete foundation along the return wall. 27 OFF THE FLOOR END TO END, so it follows the slab slope rather than being level - and the wooden wall above runs parallel to it. BATTERED front face: 2 proud of the wall where it meets the wall, about 5 at the floor. back 0 puts its rear face flush with the return wall outside edge. Built as ONE SOLID TRAPEZOID (a mesh) - wide at the floor, narrow at the top."
+      "notes": "The HIGH concrete foundation along the return wall. Its top is LEVEL. The 27 is the height above the floor AT THE RETURN SEAM LEG (x 61.5), which is where Kyle measured it - NOT the height everywhere. The floor drops toward the main table wall, so the block is TALLER than 27 down that end. That is why the measuring point is stored with the number. BATTERED front face: 2 proud of the wall at the top, about 5 at the floor. back 0 puts its rear face flush with the return wall outside edge. ONE SOLID TRAPEZOID - wide at the floor, narrow at the top.",
+      "level_top": true,
+      "height_ref": [
+        61.5,
+        17.5
+      ]
     }
   ],
   "fixtures": [
@@ -153,13 +158,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -151.499,
-    "elevation": 1.375,
-    "distance": 5.40804,
+    "azimuth": -80.061,
+    "elevation": -11.562,
+    "distance": 8.14814,
     "lookat": [
-      2.11878,
-      -0.38675,
-      -0.62054
+      2.67841,
+      -1.41742,
+      -0.19862
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",

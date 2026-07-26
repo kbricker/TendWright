@@ -194,6 +194,8 @@ class Foundation:
     back: float               # protrusion behind the wall
     height: float             # how tall, up from the floor
     front_top: float | None = None   # protrusion at the TOP, if battered
+    level_top: bool = False          # level top over a sloping floor
+    height_ref: tuple[float, float] | None = None  # where `height` was taken
     notes: str = ""
 
     @property
@@ -350,7 +352,23 @@ class Scene:
         """
         if self.floor_plane() is None:
             return None
-        return self.floor_z(x, y) + f.height
+        if not f.level_top:
+            return self.floor_z(x, y) + f.height
+        # A LEVEL top: `height` is the clearance at ONE measured point,
+        # not everywhere. Over a sloping floor the block is therefore
+        # taller than `height` wherever the floor drops away - which is
+        # the whole reason the measuring point has to be recorded with
+        # the number.
+        if f.height_ref is not None:
+            rx, ry = f.height_ref
+        else:
+            w = next((wl for wl in self.walls if wl.name == f.wall), None)
+            if w is None:
+                return None
+            along_x = w.yaw_deg % 180 == 0
+            mid = (w.x + w.width / 2) if along_x else (w.y + w.width / 2)
+            rx, ry = (mid, w.y) if along_x else (w.x, mid)
+        return self.floor_z(rx, ry) + f.height
 
     def missing(self) -> list[str]:
         """Everything unmeasured, in the order it blocks work."""
@@ -603,6 +621,9 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             back=_num(entry, "back", where),
             height=_num(entry, "height", where),
             front_top=_num(entry, "front_top", where, required=False),
+            level_top=bool(entry.get("level_top", False)),
+            height_ref=(tuple(entry["height_ref"])
+                        if entry.get("height_ref") else None),
             notes=entry.get("notes", "")))
 
     ledgers: list[Ledger] = []
@@ -652,26 +673,47 @@ LUMBER = {"2x4": (1.5, 3.5), "2x6": (1.5, 5.5), "2x4_half": (1.5, 1.75),
 
 
 def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
-    """A solid from a 4-corner PROFILE swept between two run positions.
+    """A solid from two 4-corner profiles: near-end quad then far-end.
 
-    `corners` is [(x, y, z_lo, z_hi)] x 4 in datum metres... actually
-    eight explicit points: the near-end quad then the far-end quad, each
-    ordered around the profile. Built as a mesh because the shapes here
-    are trapezoids - a footing battered on one face, a wall whose bottom
-    follows the sloping floor while its top stays level - and a box
-    cannot taper. Convex, so MuJoCo's collision hull is exact.
+    Built as a mesh because these shapes are trapezoids - a footing
+    battered on one face, a wall whose bottom follows the sloping floor
+    while its top stays level - and a box cannot taper. They are convex,
+    so MuJoCo's collision hull is exact rather than an approximation.
+
+    Face winding is COMPUTED, not hand-written: each triangle is flipped
+    if its normal points toward the solid's centroid. Hand-ordering the
+    twelve triangles depends on which end is "near" and on the wall's
+    handedness, and getting it wrong renders faces inside-out - which is
+    exactly what happened. Deriving it removes the whole class of error.
     """
+    pts = [list(map(float, c)) for c in corners]
+    cx = sum(p[0] for p in pts) / len(pts)
+    cy = sum(p[1] for p in pts) / len(pts)
+    cz = sum(p[2] for p in pts) / len(pts)
+    quads = [(0, 1, 2, 3), (4, 5, 6, 7),
+             (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+    faces: list[int] = []
+    for a, b, c, d in quads:
+        for tri in ((a, b, c), (a, c, d)):
+            i, j, k = tri
+            ux = pts[j][0] - pts[i][0]
+            uy = pts[j][1] - pts[i][1]
+            uz = pts[j][2] - pts[i][2]
+            vx = pts[k][0] - pts[i][0]
+            vy = pts[k][1] - pts[i][1]
+            vz = pts[k][2] - pts[i][2]
+            nx, ny, nz = (uy * vz - uz * vy,
+                          uz * vx - ux * vz,
+                          ux * vy - uy * vx)
+            # vector from the centroid out to this face
+            ox = pts[i][0] - cx
+            oy = pts[i][1] - cy
+            oz = pts[i][2] - cz
+            faces.extend(tri if (nx * ox + ny * oy + nz * oz) > 0
+                         else (i, k, j))
     verts: list[float] = []
-    for pt in corners:
+    for pt in pts:
         verts.extend(pt)
-    faces = [
-        0, 1, 2, 0, 2, 3,      # near cap
-        4, 6, 5, 4, 7, 6,      # far cap
-        0, 4, 5, 0, 5, 1,
-        1, 5, 6, 1, 6, 2,
-        2, 6, 7, 2, 7, 3,
-        3, 7, 4, 3, 4, 0,
-    ]
     spec.add_mesh(name=f"mesh_{name}", uservert=verts, userface=faces)
     spec.worldbody.add_geom(
         name=name, type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f"mesh_{name}",
