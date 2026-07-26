@@ -34,27 +34,27 @@
       "notes": "Where the return's two tops meet, 61.5 from the back wall (27.5 + 34). A 2x4 LEG lands here - it is below the table top (-z) so it cannot be reached by the arm, but it is recorded now so it is not forgotten. Details pending from Kyle."
     }
   ],
-  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. outward is the direction the wall MATERIAL sits from its face. ROUGHED IN 2026-07-26 at Kyle's direction, pending real measurement: both heights are 'about 3 usable feet' and the corner gap is a placeholder.",
+  "_walls_note": "height is USABLE HEIGHT ABOVE THE TABLE TOP, not floor to ceiling - the arm can only ever reach what is above the surface it is bolted to. yaw_deg is the direction the wall RUNS: 0 = along +x, 90 = along +y. outward is the direction the wall MATERIAL sits from its face. Both heights MEASURED 2026-07-26, replacing the earlier 'about 3 feet' rough.",
   "walls": [
     {
       "name": "back",
       "x": 0.0,
       "y": 0.0,
       "width": 73.75,
-      "height": 36.0,
+      "height": 48.875,
       "yaw_deg": 0.0,
       "outward": "-y",
-      "notes": "Runs along the back edge of the main table, stopping 8.25 short of the side wall (82 - 8.25 = 73.75) to leave the corner gap. Height still ROUGH at 'about 3 usable feet'."
+      "notes": "MAIN TABLE back wall. Height 48-7/8 above the table surface, MEASURED 2026-07-26. Stops 8.25 short of the side wall (82 - 8.25 = 73.75), leaving the corner gap. Carries the shelf."
     },
     {
       "name": "side",
       "x": 82.0,
       "y": 0.0,
       "width": 133.5,
-      "height": 36.0,
+      "height": 34.0,
       "yaw_deg": 90.0,
       "outward": "+x",
-      "notes": "Runs the full length of the return, end to end, on the LEFT as you face the back wall (high x in datum coords). Length follows the corrected return: 133.5 from the back wall. Height still ROUGH."
+      "notes": "RETURN's wall - Kyle calls this a backwall too. Usable height 34 above the table, MEASURED 2026-07-26 (the main table's back wall is taller at 48-7/8). Runs the full length of the return, 133.5, on your LEFT as you face the back wall (high x in datum coords)."
     }
   ],
   "corner_gap": {
@@ -79,5 +79,20 @@
       0.40855
     ]
   },
-  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."
+  "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
+  "shelves": [
+    {
+      "name": "main_backwall_shelf",
+      "_comment": "Protrudes from the MAIN TABLE back wall. Width 50.75 is exact; depth 8 is Kyle's estimate; z (underside height above the table) is NOT YET MEASURED so this is not rendered or gated - see missing().",
+      "x": 5.0,
+      "y": 0.0,
+      "width": 50.75,
+      "depth": 8.0,
+      "z": null,
+      "thickness": 0.75,
+      "notes": "Inset ~5 from the x=0 end of the main table (the end AWAY from the return), so it spans x 5..55.75. ASSUMPTION: 'the edge of the table' read as that free end rather than the return corner - confirm. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge, with two side pieces cut at 45 degrees. The frame is NOT modelled yet - the 45-degree brackets hang below the shelf and are what the arm would actually strike first.",
+      "depth_measured": false,
+      "width_measured": true
+    }
+  ]
 }

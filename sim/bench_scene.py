@@ -107,11 +107,32 @@ class Wall:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class Shelf:
+    """A slab held off a wall, above the table top.
+
+    `z` is the height of its UNDERSIDE above the table surface, because
+    that is the number that decides whether the arm can pass beneath it.
+    Null until measured - a shelf at a guessed height is the worst kind
+    of obstacle, since the gate would clear a path that does not exist.
+    """
+
+    name: str
+    x: float
+    y: float
+    width: float
+    depth: float
+    z: float | None = None
+    thickness: float = 0.75
+    notes: str = ""
+
+
 @dataclass
 class Scene:
     units: str
     surfaces: list[Surface]
     walls: list[Wall] = field(default_factory=list)
+    shelves: list[Shelf] = field(default_factory=list)
     thickness: float | None = None
     height_to_floor: float | None = None
     arm_x: float | None = None
@@ -180,6 +201,12 @@ class Scene:
             gaps.append("table height, floor to top surface")
         if not self.walls:
             gaps.append("walls - none measured, so none are modelled")
+        for sh in self.shelves:
+            if sh.z is None:
+                gaps.append(
+                    f"shelf '{sh.name}': height of its UNDERSIDE above the "
+                    f"table top - NOT MODELLED without it, because that is "
+                    f"the number deciding whether the arm passes beneath")
         return gaps
 
     def describe(self) -> str:
@@ -334,10 +361,24 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             outward=_outward(entry, where),
             notes=entry.get("notes", "")))
 
+    shelves: list[Shelf] = []
+    for entry in doc.get("shelves") or []:
+        where = f"{path} shelf {entry.get('name')!r}"
+        wid = _num(entry, "width", where)
+        dep = _num(entry, "depth", where)
+        if wid <= 0 or dep <= 0:
+            raise BenchError(f"{where}: width and depth must be positive", "")
+        shelves.append(Shelf(
+            name=entry.get("name", "shelf"), x=_num(entry, "x", where),
+            y=_num(entry, "y", where), width=wid, depth=dep,
+            z=_num(entry, "z", where, required=False),
+            thickness=_num(entry, "thickness", where, required=False) or 0.75,
+            notes=entry.get("notes", "")))
+
     arm = doc.get("arm") or {}
     where = f"{path} arm"
     return Scene(
-        units=units, surfaces=surfaces, walls=walls,
+        units=units, surfaces=surfaces, walls=walls, shelves=shelves,
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
         arm_x=_num(arm, "x", where, required=False),
@@ -390,6 +431,16 @@ def build_spec(scene: Scene):
         spec.worldbody.add_geom(
             name=f"wall_{w.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=half, pos=pos, rgba=[0.85, 0.85, 0.88, 1.0])
+    for sh in scene.shelves:
+        if sh.z is None:
+            continue  # unmeasured height: not modelled, by policy
+        spec.worldbody.add_geom(
+            name=f"shelf_{sh.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[sh.width * m / 2, sh.depth * m / 2, sh.thickness * m / 2],
+            pos=[(sh.x + sh.width / 2) * m, (sh.y + sh.depth / 2) * m,
+                 (sh.z + sh.thickness / 2) * m],
+            rgba=[0.66, 0.55, 0.40, 1.0])
+
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
 
