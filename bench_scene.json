@@ -63,18 +63,18 @@
   "legs": [
     {
       "name": "main_outside_corner",
-      "x": 25.75,
-      "y": 79.25,
+      "x": 26.25,
+      "y": 79.75,
       "height": 38.25,
       "section": "2x4",
-      "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset of 1.0 is an ESTIMATE from the photo, not a measurement. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED truss height.",
+      "notes": "Outside (front) corner of the main table at its far end, INSET from both edges - the top overhangs the frame. Inset is 0.5 - MEASURED (Kyle), replacing an earlier 1.0 estimate. Part of a 4-piece 2x4 truss with main_near_back_wall. MEASURED truss height.",
       "truss": "main_far_end",
       "measured": true
     },
     {
       "name": "main_near_back_wall",
       "x": 7.75,
-      "y": 79.25,
+      "y": 79.75,
       "height": 39.125,
       "section": "2x4",
       "notes": "Far end of the main table, the leg by the back wall. It stands RIGHT IN FRONT OF the footing, not inside it - its back face is on the footing's front face at x=7, so its centre is x 7.75. Part of a 4-piece 2x4 truss with main_outside_corner. MEASURED truss height.",
@@ -84,29 +84,39 @@
     {
       "name": "return_seam",
       "x": 61.5,
-      "y": 17.5,
+      "y": 18.0,
       "height": 35.4,
       "section": "2x4",
-      "notes": "At the return's seam, 61.5 from the back wall. MEASURED truss height. Inset 1.0 from the return's outer edge on the same ESTIMATE. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong.",
-      "measured": true
+      "notes": "At the return's seam, 61.5 from the back wall. MEASURED truss height. Inset 0.5 from the return's outer edge. ASSUMPTION: it is on the outer edge rather than against the wall or centred - that choice tilts the solved floor plane, so correct it if wrong. Part of the seam truss.",
+      "measured": true,
+      "truss": "return_seam"
     },
     {
       "name": "return_end_outside",
-      "x": 130.75,
-      "y": 18.5,
+      "x": 131.25,
+      "y": 19.0,
       "along": "x",
       "truss": "return_far_end",
       "measured": false,
-      "notes": "Return's far-end truss, outside corner. Position inset 1.0 from the return end (x 133.5) and from its outer edge (y 20.25), same construction as the main table's end truss. HEIGHT IS INFERRED from the solved floor plane, not measured - it does not feed back into the floor solve."
+      "notes": "Return's far-end truss, outside corner. Position inset 0.5 from the return end (x 133.5) and from its outer edge (y 20.25), same construction as the main table's end truss. HEIGHT IS INFERRED from the solved floor plane, not measured - it does not feed back into the floor solve."
     },
     {
       "name": "return_end_wallside",
-      "x": 130.75,
+      "x": 131.25,
       "y": 5.75,
       "along": "x",
       "truss": "return_far_end",
       "measured": false,
       "notes": "Return's far-end truss, the leg by the side wall. Stands in FRONT of the return footing, whose battered face reaches y=5 at the floor - so its back face is on that, centre y 5.75. HEIGHT INFERRED from the floor plane."
+    },
+    {
+      "name": "return_seam_wallside",
+      "x": 61.5,
+      "y": 5.75,
+      "along": "x",
+      "truss": "return_seam",
+      "measured": false,
+      "notes": "Back leg of the SEAM truss, by the side wall. Rotated 90 degrees from leg 3 - it is oriented like the legs in the other trusses, which leg 3 is not (Kyle). Stands in front of the return footing, whose battered face reaches y=5 at the floor. HEIGHT INFERRED from the solved floor plane."
     }
   ],
   "foundations": [
@@ -146,6 +156,17 @@
       "notes": "Protrudes from the MAIN TABLE back wall. 50.75 long (exact) along +y, 8 deep (Kyle's estimate) out along +x. Inset ~5 from the main table's far end (y=82), so it spans y 26.25..77 - ASSUMPTION about which edge 'inset 5 from the edge of the table' meant. Its UNDERSIDE HEIGHT above the table is NOT MEASURED, so it is not rendered or gated. Frame is half-cut 2x4: a beam along the wall at the shelf's back edge with two sides cut at 45 degrees; those brackets hang BELOW the shelf and are what the arm would strike first, so the slab alone would be optimistic.",
       "depth_measured": false,
       "width_measured": true
+    },
+    {
+      "name": "return_undershelf",
+      "kind": "shelf",
+      "x": 61.5,
+      "width": 72.0,
+      "y": 3.55,
+      "depth": 16.0,
+      "z": -22.5,
+      "thickness": 0.5,
+      "notes": "Shelf UNDER the return: its top sits 22 below the return table top (so z, the underside, is -22.5 for a 1/2 thick shelf). Runs from LEG 3 (x 61.5) to the return's extreme end (x 133.5) and is 16 deep. Its back edge is flush with the trapezoid footing's battered face at that height - COMPUTED, not eyeballed: the face is 3.44 proud at x 61.5 and 3.66 at x 133.5, so 3.55 is used and the real edge wanders about 0.11 either side."
     }
   ],
   "features": [
@@ -179,13 +200,13 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -125.624,
-    "elevation": -9.687,
-    "distance": 9.96758,
+    "azimuth": -152.999,
+    "elevation": -5.374,
+    "distance": 5.75523,
     "lookat": [
-      2.67841,
-      -1.41742,
-      -0.19862
+      1.07804,
+      0.78755,
+      -0.54126
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
@@ -197,6 +218,9 @@
     },
     "return_far_end": {
       "_comment": "Same 4-piece construction as main_far_end: rails full length running FLAT, posts attached between them. No top_rail_to_wall - it is at the open end of the return, not against a wall."
+    },
+    "return_seam": {
+      "_comment": "Truss at the return's seam. Leg 3 is measured; its wall-side partner is inferred. Note the two posts are rotated 90 degrees from each other - that is how it is actually built, not an error."
     }
   },
   "ledgers": [
@@ -224,20 +248,21 @@
   "beams": [
     {
       "name": "main_front",
-      "x0": 27.5,
+      "x0": 25.25,
       "y0": 0.0,
-      "x1": 27.5,
+      "x1": 25.25,
       "y1": 82.0,
-      "notes": "Support along the FRONT edge of the main table, running its full length all the way to the return wall (y=0). Stood on edge, top flush under the table top."
+      "notes": "Support along the FRONT edge of the main table, running its full length to the return wall (y=0). Inset 0.5 from the table edge; the coordinates here are the beam's centre line."
     },
     {
       "name": "return_front",
       "x0": 27.5,
-      "y0": 20.25,
-      "x1": 133.5,
-      "y1": 20.25,
-      "notes": "Support along the FRONT edge of the return, from the main front beam out to the return's extreme end."
+      "y0": 18.0,
+      "x1": 61.5,
+      "y1": 18.0,
+      "notes": "Support along the FRONT edge of the return, from the main table's front beam (x 27.5) only as far as LEG 3 at the seam (x 61.5) - not to the return's end. Inset 0.5 from the table edge; the coordinates here are the beam's centre line."
     }
   ],
-  "_beams_note": "Edge supports, as opposed to the wall ledgers. ORIENTATION ASSUMPTION: stood on edge (3.5 tall, 1.5 thick) like a joist - the structural default for an edge support. The wall ledgers are the other way up because Kyle said their wide face lies flat on the wall. Say if these are flat too."
+  "_beams_note": "Edge supports, as opposed to the wall ledgers. Laid FLAT: the wide (3.5) face fastens to the underside of the table top, so each is 3.5 across and 1.5 deep vertically. Kyle corrected these - they were stood on edge, 90 degrees out.",
+  "_inset_note": "ALL inset distances are 0.5 in (Kyle, 2026-07-26) - legs, trusses and edge beams alike. This is MEASURED and replaces an earlier 1.0 estimate, which moved every leg and therefore re-solved the floor plane."
 }

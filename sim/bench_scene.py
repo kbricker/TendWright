@@ -932,22 +932,23 @@ def build_spec(scene: Scene):
                 size=half, pos=pos, rgba=[0.78, 0.65, 0.44, 1.0],
                 group=GROUP_STRUCTURE)
 
-    # Beams: supports along table edges. On edge (3.5 tall, 1.5 thick),
-    # top flush under the table top.
+    # Beams: supports along table edges, laid FLAT - the wide (3.5) face
+    # is what fastens to the underside of the top, so each is 3.5 across
+    # and only 1.5 deep vertically (Kyle; they were on edge, 90 out).
     for bm in scene.beams:
-        bt, bw = LUMBER[bm.section]     # 1.5 thick, 3.5 tall
+        thin, wide = LUMBER[bm.section]      # 1.5 vertical, 3.5 across
         top_under = -(scene.thickness or 0.75)
         run_x = abs(bm.x1 - bm.x0) >= abs(bm.y1 - bm.y0)
         length = abs(bm.x1 - bm.x0) if run_x else abs(bm.y1 - bm.y0)
         if run_x:
-            half = [length * m / 2, bt * m / 2, bw * m / 2]
+            half = [length * m / 2, wide * m / 2, thin * m / 2]
         else:
-            half = [bt * m / 2, length * m / 2, bw * m / 2]
+            half = [wide * m / 2, length * m / 2, thin * m / 2]
         spec.worldbody.add_geom(
             name=f"beam_{bm.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=half,
             pos=[(bm.x0 + bm.x1) / 2 * m, (bm.y0 + bm.y1) / 2 * m,
-                 (top_under - bw / 2) * m],
+                 (top_under - thin / 2) * m],
             rgba=[0.76, 0.63, 0.42, 1.0], group=GROUP_STRUCTURE)
 
     # Ledgers: wide face flat on the wall, top flush with the table
