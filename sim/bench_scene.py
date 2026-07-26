@@ -190,10 +190,17 @@ class Foundation:
 
     name: str
     wall: str
-    front: float              # protrusion into the room, from the wall face
+    front: float              # protrusion into the room AT THE FLOOR
     back: float               # protrusion behind the wall
     height: float             # how tall, up from the floor
+    front_top: float | None = None   # protrusion at the TOP, if battered
+    level_top: bool = False   # level top over a sloping floor
     notes: str = ""
+
+    @property
+    def battered(self) -> bool:
+        return self.front_top is not None and abs(
+            self.front_top - self.front) > 1e-9
 
 
 @dataclass(frozen=True)
@@ -211,6 +218,8 @@ class Ledger:
     name: str
     wall: str
     section: str = "2x4"
+    start: float | None = None   # along the wall's run; None = wall start
+    end: float | None = None     # None = wall end
     notes: str = ""
 
 
@@ -224,6 +233,7 @@ class Scene:
     foundations: list[Foundation] = field(default_factory=list)
     ledgers: list[Ledger] = field(default_factory=list)
     trusses: dict = field(default_factory=dict)
+    shadows: bool = False
     thickness: float | None = None
     height_to_floor: float | None = None
     arm_x: float | None = None
@@ -325,6 +335,23 @@ class Scene:
             return None
         z0, a, b = plane
         return z0 + a * x + b * y
+
+    def foundation_top_z(self, f: "Foundation") -> float | None:
+        """Top of a footing, in datum z. ONE definition, used by both the
+        footing geometry and any wall that runs down to meet it - they
+        disagreed once, leaving a wall hanging 3 in below its own
+        footing's top."""
+        w = next((wl for wl in self.walls if wl.name == f.wall), None)
+        if w is None or self.floor_plane() is None:
+            return None
+        along_x = w.yaw_deg % 180 == 0
+        ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
+                else [(w.x, w.y), (w.x, w.y + w.width)])
+        if f.level_top:
+            mid = w.x + w.width / 2 if along_x else w.y + w.width / 2
+            ref = (mid, w.y) if along_x else (w.x, mid)
+            return self.floor_z(*ref) + f.height
+        return min(self.floor_z(px, py) for px, py in ends) + f.height
 
     def missing(self) -> list[str]:
         """Everything unmeasured, in the order it blocks work."""
@@ -576,6 +603,8 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             front=_num(entry, "front", where),
             back=_num(entry, "back", where),
             height=_num(entry, "height", where),
+            front_top=_num(entry, "front_top", where, required=False),
+            level_top=bool(entry.get("level_top", False)),
             notes=entry.get("notes", "")))
 
     ledgers: list[Ledger] = []
@@ -588,6 +617,8 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
         ledgers.append(Ledger(
             name=entry.get("name", "ledger"), wall=wall_name,
             section=entry.get("section", "2x4"),
+            start=_num(entry, "start", where, required=False),
+            end=_num(entry, "end", where, required=False),
             notes=entry.get("notes", "")))
 
     arm = doc.get("arm") or {}
@@ -595,6 +626,7 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
     return Scene(
         units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
         ledgers=ledgers, trusses=doc.get('trusses') or {},
+        shadows=bool((doc.get('render') or {}).get('shadows', False)),
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
         arm_x=_num(arm, "x", where, required=False),
@@ -665,10 +697,9 @@ def build_spec(scene: Scene):
         if w.extends_below:
             found = next((f for f in scene.foundations if f.wall == w.name),
                          None)
-            if found is not None and scene.floor_plane() is not None:
-                ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
-                        else [(w.x, w.y), (w.x, w.y + w.width)])
-                low = min(scene.floor_z(px, py) for px, py in ends) +                     found.height
+            top = scene.foundation_top_z(found) if found else None
+            if top is not None:
+                low = top
         span = w.height - low
         if along_x:
             half = [w.width * m / 2, t * m / 2, span * m / 2]
@@ -779,12 +810,17 @@ def build_spec(scene: Scene):
         ox, oy = OUTWARD[w.outward]
         top_under = -(scene.thickness or 0.75)
         zc = top_under - lw / 2
-        if w.yaw_deg % 180 == 0:            # runs along x
-            half = [w.width * m / 2, lt * m / 2, lw * m / 2]
-            pos = [(w.x + w.width / 2) * m, (w.y - oy * lt / 2) * m, zc * m]
-        else:                               # runs along y
-            half = [lt * m / 2, w.width * m / 2, lw * m / 2]
-            pos = [(w.x - ox * lt / 2) * m, (w.y + w.width / 2) * m, zc * m]
+        along_x = w.yaw_deg % 180 == 0
+        run0 = w.x if along_x else w.y
+        a_ = led.start if led.start is not None else run0
+        b_ = led.end if led.end is not None else run0 + w.width
+        length, mid = b_ - a_, (a_ + b_) / 2
+        if along_x:
+            half = [length * m / 2, lt * m / 2, lw * m / 2]
+            pos = [mid * m, (w.y - oy * lt / 2) * m, zc * m]
+        else:
+            half = [lt * m / 2, length * m / 2, lw * m / 2]
+            pos = [(w.x - ox * lt / 2) * m, mid * m, zc * m]
         spec.worldbody.add_geom(
             name=f"ledger_{led.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=half, pos=pos, rgba=[0.74, 0.61, 0.41, 1.0],
@@ -808,27 +844,59 @@ def build_spec(scene: Scene):
             continue  # nothing to straddle, or no floor to stand on
         along_x = w.yaw_deg % 180 == 0
         ox, oy = OUTWARD[w.outward]
-        # Straddles the wall: `front` into the room, the wall's own
-        # thickness, then `back` behind. Centre it on that whole span.
-        total = f.front + w.thickness + f.back
-        mid = (f.front - f.back - w.thickness) / 2 * -1  # about the face
-        cx = w.x + (0 if along_x else ox * -mid)
-        cy = w.y + (oy * -mid if along_x else 0)
-        if along_x:
-            cx = w.x + w.width / 2
-            half = [w.width * m / 2, total * m / 2, f.height * m / 2]
-            cy = w.y + oy * (w.thickness + f.back - f.front) / 2
-        else:
-            cy = w.y + w.width / 2
-            half = [total * m / 2, w.width * m / 2, f.height * m / 2]
-            cx = w.x + ox * (w.thickness + f.back - f.front) / 2
-        base = scene.floor_z(cx, cy)
-        nz = 1.0 / math.sqrt(pa * pa + pb * pb + 1.0)
-        spec.worldbody.add_geom(
-            name=f"foundation_{f.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=half, pos=[cx * m, cy * m, (base + f.height / 2) * m],
-            zaxis=[-pa * nz, -pb * nz, nz],   # flush on the sloping floor
-            rgba=[0.80, 0.79, 0.76, 1.0], group=GROUP_STRUCTURE)
+        run_mid = w.x + w.width / 2 if along_x else w.y + w.width / 2
+        ends = ([(w.x, w.y), (w.x + w.width, w.y)] if along_x
+                else [(w.x, w.y), (w.x, w.y + w.width)])
+        floor_lo = min(scene.floor_z(px, py) for px, py in ends)
+        base_ref = scene.floor_z(*(ends[0] if False else (
+            (run_mid, w.y) if along_x else (w.x, run_mid))))
+
+        # A LEVEL top over a sloping floor: the top sits at one height and
+        # the block reaches down past the floor's low point. A box cannot
+        # have a sloped bottom, so it over-fills below grade - buried, and
+        # erring toward more material rather than less.
+        top_z = scene.foundation_top_z(f)
+        bot_z = floor_lo - 2.0
+        depth_top = f.front_top if f.front_top is not None else f.front
+
+        def slab(name, near, far, z_lo, z_hi, tilt=None):
+            """near/far are protrusions from the wall face, room-positive."""
+            thick = far - near
+            mid = (near + far) / 2
+            span = z_hi - z_lo
+            if along_x:
+                half = [w.width * m / 2, thick * m / 2, span * m / 2]
+                pos = [run_mid * m, (w.y + oy * -mid) * m,
+                       (z_lo + span / 2) * m]
+            else:
+                half = [thick * m / 2, w.width * m / 2, span * m / 2]
+                pos = [(w.x + ox * -mid) * m, run_mid * m,
+                       (z_lo + span / 2) * m]
+            kw = {"zaxis": tilt} if tilt else {}
+            spec.worldbody.add_geom(
+                name=name, type=mujoco.mjtGeom.mjGEOM_BOX, size=half,
+                pos=pos, rgba=[0.80, 0.79, 0.76, 1.0],
+                group=GROUP_STRUCTURE, **kw)
+
+        # Main body: from behind the wall out to the TOP protrusion.
+        slab(f"foundation_{f.name}", -f.back - w.thickness, depth_top,
+             bot_z, top_z)
+        if f.battered:
+            # The battered face slopes from `front` at the floor to
+            # `front_top` at the top. A box cannot taper, so this is a
+            # parallelogram: a slab of the extra thickness, tilted so its
+            # OUTER face has the right slope. Its inner face slopes too,
+            # but that is buried in the main body.
+            extra = f.front - depth_top
+            rise = top_z - floor_lo
+            ang = math.atan2(extra, rise) if rise else 0.0
+            n = math.hypot(math.sin(ang), math.cos(ang)) or 1.0
+            sx = math.sin(ang) / n
+            cz = math.cos(ang) / n
+            tilt = ([0.0, -oy * sx, cz] if along_x
+                    else [-ox * sx, 0.0, cz])
+            slab(f"foundation_{f.name}_batter", depth_top - 0.1,
+                 depth_top + extra, floor_lo, top_z, tilt=tilt)
 
     x0, y0, x1, y1 = scene.footprint()
     cx0, cy0 = (x0 + x1) / 2 * m, (y0 + y1) / 2 * m
@@ -850,7 +918,7 @@ def build_spec(scene: Scene):
         pos=[cx0 - 0.9, cy0 + 1.1, 2.4], dir=[0.35, -0.42, -0.84],
         type=mujoco.mjtLightType.mjLIGHT_DIRECTIONAL,
         diffuse=[0.62, 0.61, 0.58], specular=[0.12, 0.12, 0.12])
-    key.castshadow = True
+    key.castshadow = scene.shadows
     for pos, direction, level in (
             ([cx0 + 1.4, cy0 + 1.4, 1.7], [-0.5, -0.5, -0.7], 0.26),
             ([cx0, cy0 - 1.2, 1.9], [0.0, 0.62, -0.78], 0.20)):
