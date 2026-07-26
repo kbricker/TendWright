@@ -196,6 +196,24 @@ class Foundation:
     notes: str = ""
 
 
+@dataclass(frozen=True)
+class Ledger:
+    """The 2x4 that carries the table off a wall, running its length.
+
+    Fixed with its WIDE (nominal 4in, actually 3.5) face flat against
+    the wall, so it stands 3.5 tall and projects only 1.5 into the room.
+    Its top is flush with the underside of the table top - the top rests
+    on it. A truss's top rail meets it in a HALF-LAP: a 1/2-thickness
+    cutout in this piece. Modelled as plain overlapping boxes; the lap
+    is joinery, not extent, and MuJoCo only cares about the envelope.
+    """
+
+    name: str
+    wall: str
+    section: str = "2x4"
+    notes: str = ""
+
+
 @dataclass
 class Scene:
     units: str
@@ -204,6 +222,8 @@ class Scene:
     fixtures: list[Fixture] = field(default_factory=list)
     legs: list[Leg] = field(default_factory=list)
     foundations: list[Foundation] = field(default_factory=list)
+    ledgers: list[Ledger] = field(default_factory=list)
+    trusses: dict = field(default_factory=dict)
     thickness: float | None = None
     height_to_floor: float | None = None
     arm_x: float | None = None
@@ -558,10 +578,23 @@ def load_scene(path: Path = SCENE_JSON) -> Scene:
             height=_num(entry, "height", where),
             notes=entry.get("notes", "")))
 
+    ledgers: list[Ledger] = []
+    for entry in doc.get("ledgers") or []:
+        where = f"{path} ledger {entry.get('name')!r}"
+        wall_name = entry.get("wall")
+        if not any(w.name == wall_name for w in walls):
+            raise BenchError(f"{where}: wall {wall_name!r} not found",
+                             f"known walls: {[w.name for w in walls]}")
+        ledgers.append(Ledger(
+            name=entry.get("name", "ledger"), wall=wall_name,
+            section=entry.get("section", "2x4"),
+            notes=entry.get("notes", "")))
+
     arm = doc.get("arm") or {}
     where = f"{path} arm"
     return Scene(
         units=units, surfaces=surfaces, walls=walls, fixtures=fixtures, legs=legs, foundations=foundations,
+        ledgers=ledgers, trusses=doc.get('trusses') or {},
         thickness=_num(table, "thickness", where, required=False),
         height_to_floor=_num(table, "height_to_floor", where, required=False),
         arm_x=_num(arm, "x", where, required=False),
@@ -678,47 +711,96 @@ def build_spec(scene: Scene):
             zaxis=[-pa * nz, -pb * nz, nz],
             rgba=[0.55, 0.54, 0.52, 1.0], group=GROUP_FLOOR)
 
-    for leg in scene.legs:
-        w_, d_ = LUMBER[leg.section]
-        hx, hy = (d_, w_) if leg.along == "x" else (w_, d_)
-        top_under = -(scene.thickness or 0.75)
-        base = top_under - leg.height
-        spec.worldbody.add_geom(
-            name=f"leg_{leg.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=[hx * m / 2, hy * m / 2, leg.height * m / 2],
-            pos=[leg.x * m, leg.y * m, (base + leg.height / 2) * m],
-            rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
+    LEG_GEOMS: list[tuple] = []  # emitted after trusses set their spans
 
-    # Legs sharing a truss name are one braced frame: a top rail under
-    # the table top and a bottom rail on the floor, as in Kyle's photo.
-    # Derived from the leg pair rather than listed separately, so moving
-    # a leg cannot leave its rails behind.
+    # A TRUSS is rails-first: the rails run the full length and the
+    # posts are attached to them, not the other way round (Kyle). Rails
+    # lie FLAT - wide face horizontal - so each is 1.5 thick vertically
+    # and 3.5 across. The top rail runs on to the wall, where it meets
+    # the ledger in a half-lap; the lap is joinery, so the boxes simply
+    # overlap.
     trusses: dict[str, list[Leg]] = {}
     for leg in scene.legs:
         if leg.truss:
             trusses.setdefault(leg.truss, []).append(leg)
-    rail_w, rail_d = LUMBER["2x4"]
+    rail_t, rail_w = LUMBER["2x4"]          # 1.5 thick, 3.5 wide
+    truss_posts: dict[str, tuple[float, float]] = {}
     for tname, members in trusses.items():
-        if len(members) < 2:
+        if len(members) < 2 or plane is None:
             continue
+        cfg = scene.trusses.get(tname, {}) if isinstance(scene.trusses, dict) else {}
         a, b = members[0], members[1]
         top_under = -(scene.thickness or 0.75)
-        span_x, span_y = abs(b.x - a.x), abs(b.y - a.y)
-        cx_, cy_ = (a.x + b.x) / 2, (a.y + b.y) / 2
-        run_x = span_x >= span_y
-        length = (span_x if run_x else span_y) + rail_w
-        half = ([length * m / 2, rail_w * m / 2, rail_d * m / 2] if run_x
-                else [rail_w * m / 2, length * m / 2, rail_d * m / 2])
-        for label, ztop in (("top", top_under),
-                            ("bottom", min(scene.floor_z(a.x, a.y),
-                                           scene.floor_z(b.x, b.y))
-                             + rail_d if plane else None)):
-            if ztop is None:
-                continue
+        run_x = abs(b.x - a.x) >= abs(b.y - a.y)
+        half_post = LUMBER[a.section][0] / 2
+        if run_x:
+            lo = min(a.x, b.x) - half_post
+            hi = max(a.x, b.x) + half_post
+            cross = (a.y + b.y) / 2
+        else:
+            lo = min(a.y, b.y) - half_post
+            hi = max(a.y, b.y) + half_post
+            cross = (a.x + b.x) / 2
+        floor_lo = min(scene.floor_z(a.x, a.y), scene.floor_z(b.x, b.y))
+        # The posts live BETWEEN the rails, since they attach to them.
+        truss_posts[tname] = (floor_lo + rail_t, top_under - rail_t)
+
+        wall_name = cfg.get("top_rail_to_wall")
+        for label, zc, ends in (
+                ("top", top_under - rail_t / 2, "wall"),
+                ("bottom", floor_lo + rail_t / 2, None)):
+            r_lo, r_hi = lo, hi
+            if ends == "wall" and wall_name:
+                w = next((wl for wl in scene.walls if wl.name == wall_name),
+                         None)
+                if w is not None:
+                    face = w.x if (w.yaw_deg % 180) else w.y
+                    r_lo, r_hi = min(r_lo, face), max(r_hi, face)
+            length = r_hi - r_lo
+            mid = (r_lo + r_hi) / 2
+            if run_x:
+                half = [length * m / 2, rail_w * m / 2, rail_t * m / 2]
+                pos = [mid * m, cross * m, zc * m]
+            else:
+                half = [rail_w * m / 2, length * m / 2, rail_t * m / 2]
+                pos = [cross * m, mid * m, zc * m]
             spec.worldbody.add_geom(
                 name=f"rail_{tname}_{label}", type=mujoco.mjtGeom.mjGEOM_BOX,
-                size=half, pos=[cx_ * m, cy_ * m, (ztop - rail_d / 2) * m],
-                rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
+                size=half, pos=pos, rgba=[0.78, 0.65, 0.44, 1.0],
+                group=GROUP_STRUCTURE)
+
+    # Ledgers: wide face flat on the wall, top flush with the table
+    # underside, running the wall's length.
+    for led in scene.ledgers:
+        w = next((wl for wl in scene.walls if wl.name == led.wall), None)
+        if w is None:
+            continue
+        lt, lw = LUMBER[led.section]        # 1.5 projection, 3.5 tall
+        ox, oy = OUTWARD[w.outward]
+        top_under = -(scene.thickness or 0.75)
+        zc = top_under - lw / 2
+        if w.yaw_deg % 180 == 0:            # runs along x
+            half = [w.width * m / 2, lt * m / 2, lw * m / 2]
+            pos = [(w.x + w.width / 2) * m, (w.y - oy * lt / 2) * m, zc * m]
+        else:                               # runs along y
+            half = [lt * m / 2, w.width * m / 2, lw * m / 2]
+            pos = [(w.x - ox * lt / 2) * m, (w.y + w.width / 2) * m, zc * m]
+        spec.worldbody.add_geom(
+            name=f"ledger_{led.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=half, pos=pos, rgba=[0.74, 0.61, 0.41, 1.0],
+            group=GROUP_STRUCTURE)
+
+    for leg in scene.legs:
+        w_, d_ = LUMBER[leg.section]
+        hx, hy = (d_, w_) if leg.along == "x" else (w_, d_)
+        top_under = -(scene.thickness or 0.75)
+        lo_z, hi_z = truss_posts.get(
+            leg.truss or "", (top_under - leg.height, top_under))
+        spec.worldbody.add_geom(
+            name=f"leg_{leg.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[hx * m / 2, hy * m / 2, (hi_z - lo_z) * m / 2],
+            pos=[leg.x * m, leg.y * m, (lo_z + hi_z) / 2 * m],
+            rgba=[0.78, 0.65, 0.44, 1.0], group=GROUP_STRUCTURE)
 
     for f in scene.foundations:
         w = next((wl for wl in scene.walls if wl.name == f.wall), None)

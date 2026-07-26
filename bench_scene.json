@@ -143,15 +143,29 @@
   },
   "cameras": [],
   "view": {
-    "azimuth": -171.374,
-    "elevation": -28.062,
-    "distance": 9.65425,
+    "azimuth": 169.126,
+    "elevation": 2.688,
+    "distance": 7.55721,
     "lookat": [
-      3.11593,
-      1.27744,
-      -1.61669
+      1.66247,
+      2.04051,
+      0.50128
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles.",
-  "_truss_note": "Legs sharing a `truss` name are one braced frame - Kyle's photo shows the far end of the main table as a 4-piece 2x4 truss: two legs, a top rail under the table top, and a bottom rail at the floor. The rails are DERIVED from the leg pair rather than listed, so moving a leg cannot leave its rails behind. ESTIMATE: the bottom rail is placed with its underside on the floor; measure its real height if it matters."
+  "_truss_note": "Legs sharing a `truss` name are one braced frame - Kyle's photo shows the far end of the main table as a 4-piece 2x4 truss: two legs, a top rail under the table top, and a bottom rail at the floor. The rails are DERIVED from the leg pair rather than listed, so moving a leg cannot leave its rails behind. ESTIMATE: the bottom rail is placed with its underside on the floor; measure its real height if it matters.",
+  "trusses": {
+    "main_far_end": {
+      "top_rail_to_wall": "back",
+      "_comment": "Rails-first frame at the main table's far end. The rails run the FULL length and the posts attach to them (Kyle) - so the posts span BETWEEN the rails rather than floor-to-top. Rails lie FLAT: 1.5 thick vertically, 3.5 across. The TOP rail carries on to the back wall, where it meets the ledger in a half-lap - a 1/2-thickness cutout in the ledger. The lap is joinery, not extent, so the boxes simply overlap."
+    }
+  },
+  "ledgers": [
+    {
+      "name": "main_backwall",
+      "wall": "back",
+      "section": "2x4",
+      "notes": "The 2x4 that hangs the table off the back wall, running its full length. Fixed with its WIDE (nominal 4in, actually 3.5) face flat against the wall, so it stands 3.5 tall and projects only 1.5 into the room. Its top is flush with the underside of the table top - the top rests on it. Receives the truss top rail in a half-lap."
+    }
+  ]
 }
