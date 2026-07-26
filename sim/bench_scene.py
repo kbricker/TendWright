@@ -57,6 +57,7 @@ not, and belongs to the room.
     uv run python -m sim.bench_scene              # summary + ASCII plan
     uv run python -m sim.bench_scene --bench-only # the place, no project
     uv run python -m sim.bench_scene --view       # interactive viewer (desk)
+    uv run python -m sim.bench_scene --exercise   # play the routine (model only)
     uv run python -m sim.bench_scene --render DIR # png views
     uv run python -m sim.bench_scene --save-xml F # MJCF you can open anywhere
 """
@@ -704,9 +705,11 @@ WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 ARM_GROUP = 2          # the arm rides with the fixtures group
 GROUP_TABLE, GROUP_WALL, GROUP_FIXTURE = 0, 1, 2
 GROUP_OVERHEAD, GROUP_STRUCTURE, GROUP_FLOOR = 3, 4, 5
+GROUP_HIDDEN = GROUP_OVERHEAD   # kept in the model, off by default
 GROUP_NAMES = {GROUP_TABLE: "table", GROUP_WALL: "walls",
                GROUP_FIXTURE: "fixtures/shelves/ducts/arm",
-               GROUP_OVERHEAD: "arm collision hulls (off by default)",
+               GROUP_OVERHEAD: "diagnostics: camera sight lines + arm "
+                               "collision hulls (off by default)",
                GROUP_STRUCTURE: "legs/frame/foundation",
                GROUP_FLOOR: "floor"}
 # Ducts and ceiling moved in with the fixtures: group 3 now belongs to the
@@ -1114,7 +1117,7 @@ def build_spec(scene: Scene, shadows: bool = False,
             pos=[(px + dx * reach / 2) * m, (py + dy * reach / 2) * m,
                  (cam.z + dz * reach / 2) * m],
             zaxis=[dx, dy, dz],
-            rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_FIXTURE)
+            rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_HIDDEN)
 
     # The ARM itself, attached from the vendored Menagerie model the twin
     # already uses - one source for the arm's geometry, so the picture and
@@ -1204,7 +1207,17 @@ def build_spec(scene: Scene, shadows: bool = False,
 def build_model(scene: Scene, shadows: bool = False,
                 cameras: 'tuple[Camera, ...]' = (),
                 arm: 'tuple[float, float, float] | None' = None):
-    return build_spec(scene, shadows, cameras, arm).compile()
+    """Compile the cell. The arm starts at its REST pose, not at qpos
+    zero - zero is the straight-up 'candle' the model ships with, which
+    is not a pose the real arm is ever in. Every MjData reset lands on
+    rest, because qpos0 is what mj_resetData uses."""
+    import mujoco
+
+    model = build_spec(scene, shadows, cameras, arm).compile()
+    key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "arm_rest")
+    if key >= 0:
+        model.qpos0[:] = model.key_qpos[key]
+    return model
 
 
 def view(cell: 'Cell', save_view: bool = True,
@@ -1576,6 +1589,76 @@ def _selftest_arm_frame() -> None:
     print("arm-frame convention OK")
 
 
+def animate_exercise(cell: 'Cell', span: int = 70,
+                     step_deg: float = 1.0, hz: float = 60.0) -> int:
+    """Play the exercise routine through the arm in the viewer.
+
+    The waypoints come from the SAME `exercise_waypoints` the bench
+    pre-flight gate and `sim.twin exercise` use, and the tick->qpos map
+    comes from the twin - so what you watch here is the routine the arm
+    actually runs, not a re-implementation of it that could drift.
+
+    Nothing moves on the bench: this drives qpos directly and never
+    touches the servo bus.
+    """
+    import time
+
+    import mujoco
+    import mujoco.viewer
+
+    from sim.twin import JOINT_MAPS, Twin, exercise_waypoints
+    from hardware.units import span_deg
+
+    twin = Twin()
+    model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+
+    adr: dict[int, int] = {}
+    for i, jm in JOINT_MAPS.items():
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                                f"arm_{jm.model_joint}")
+        if jid >= 0:
+            adr[i] = model.jnt_qposadr[jid]
+
+    waypoints = exercise_waypoints(twin.cals, span)
+    step_ticks = max(1.0, step_deg / span_deg(1))
+    frames: list[dict[int, int]] = []
+    for a, b in zip(waypoints, waypoints[1:]):
+        ids = sorted(set(a) | set(b))
+        worst = max(abs(b.get(i, a[i]) - a.get(i, b[i])) for i in ids)
+        for n in range(1, max(1, math.ceil(worst / step_ticks)) + 1):
+            f = n / max(1, math.ceil(worst / step_ticks))
+            frames.append({i: round(a.get(i, b[i])
+                                    + f * (b.get(i, a[i]) - a.get(i, b[i])))
+                           for i in ids})
+    print(f"exercise: {len(waypoints)} waypoints -> {len(frames)} frames "
+          f"at {span}% span")
+    print("  nothing moves on the bench - this is the model only")
+    print("  close the window to stop; it loops")
+
+    saved = load_view()
+    with mujoco.viewer.launch_passive(model, data) as v:
+        v.opt.geomgroup[:] = 1
+        v.opt.geomgroup[GROUP_HIDDEN] = 0
+        if saved:
+            v.cam.azimuth = saved["azimuth"]
+            v.cam.elevation = saved["elevation"]
+            v.cam.distance = saved["distance"]
+            v.cam.lookat[:] = saved["lookat"]
+        n = 0
+        while v.is_running():
+            pose = frames[n % len(frames)]
+            for i, tick in pose.items():
+                if i in adr:
+                    data.qpos[adr[i]] = twin.qpos_of(i, tick)[0]
+            mujoco.mj_forward(model, data)
+            v.sync()
+            n += 1
+            time.sleep(1.0 / hz)
+    return 0
+
+
 def load_cell(path: Path = CELL_JSON) -> Cell:
     """Load the project's cell config, and the bench it points at."""
     try:
@@ -1636,6 +1719,8 @@ def main() -> int:
         print(f"  open it standalone with: uv run python -m mujoco.viewer "
               f"--mjcf={save_xml}")
         return 0
+    if "--exercise" in sys.argv:
+        return animate_exercise(cell)
     if "--view" in sys.argv:
         return view(cell)
     if render_to is not None:
