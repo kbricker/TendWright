@@ -538,6 +538,52 @@ class Twin:
         # the plane lives on the worldbody; report it by what it is
         return "table" if name == "world" else name
 
+    def check_clip(self, clip, hz: float | None = None,
+                   settle_from_measured: bool = False) -> GateReport:
+        """Gate the frames a clip ACTUALLY produces (plan #660).
+
+        The difference from `check_trajectory` is the whole point of the
+        clip layer: this samples each joint on its own speed/accel ramp,
+        exactly as the servos will run it, instead of sliding every
+        joint in lockstep between waypoints. Lockstep certified poses
+        the arm never occupies and skipped poses it does.
+
+        `settle_from_measured`: the clip's FIRST edge starts from the
+        arm's measured slump rather than a planned pose, so structural
+        nesting is not adjudicated until it reaches the second pose —
+        see the module's settle note. Pass it only when that is true."""
+        from sim.clip import DEFAULT_HZ, sample_edge
+
+        contacts: list[PredictedContact] = []
+        seen_pairs: set[frozenset] = set()
+        clamps: dict[int, float] = {}
+        checked = 0
+        excused = 0
+        if not clip.poses:
+            return GateReport(0, [], {}, 0)
+
+        def check(pose: dict[int, int], step: int) -> None:
+            nonlocal checked, excused
+            settling = settle_from_measured and step <= 1
+            found, cl, ex = self.contacts_at(pose, step,
+                                             adjudicate_nesting=not settling)
+            checked += 1
+            excused += ex
+            for i, d in cl.items():
+                clamps[i] = max(clamps.get(i, 0.0), d)
+            for c in found:
+                pair = frozenset({c.body_a, c.body_b})
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    contacts.append(c)
+
+        check(dict(clip.poses[0].ticks), 0)
+        for n, (a, b) in enumerate(clip.edges(), start=1):
+            for frame in sample_edge(clip.profile, a, b,
+                                     hz if hz is not None else DEFAULT_HZ):
+                check(frame, n)
+        return GateReport(checked, contacts, clamps, excused)
+
     def check_trajectory(self, waypoints: list[dict[int, int]],
                          step_deg: float = INTERP_STEP_DEG,
                          settle_from_measured: bool = False) -> GateReport:
@@ -654,9 +700,39 @@ def cmd_check(twin: Twin) -> int:
     return 1 if found else 0
 
 
+def exercise_clip_for(cals: dict[int, JointCal], span_pct: int,
+                      ids: list[int] | None = None,
+                      profile=None):
+    """The exercise routine as a CLIP — poses AND the motion profile.
+
+    Same delegation as `exercise_waypoints`, one layer up: the routine
+    is defined once, in exercise.py, and everything that simulates or
+    plays it resolves to that definition rather than restating it."""
+    from hardware.bench.exercise import (
+        ACCELERATION, SPAN_MAX, SPEED_BASE, SWEEP_ORDER, SWEEP_SPAN_CAPS,
+        clamp_goal, exercise_clip, sweep_window)
+    from sim.clip import MotionProfile
+
+    sweep_ids = [i for i in SWEEP_ORDER
+                 if i in cals and (ids is None or i in ids)]
+    rest = {i: clamp_goal(cals[i], cals[i].rest) for i in sorted(cals)}
+    windows = {i: sweep_window(
+        cals[i], min(span_pct, SWEEP_SPAN_CAPS.get(i, SPAN_MAX)))
+        for i in sweep_ids}
+    return exercise_clip(cals, rest, windows, sweep_ids, None,
+                         profile or MotionProfile(speed=SPEED_BASE,
+                                                  acceleration=ACCELERATION))
+
+
 def cmd_exercise(twin: Twin, span: int) -> int:
-    report = twin.check_trajectory(exercise_waypoints(twin.cals, span))
+    from sim.clip import clip_duration
+
+    clip = exercise_clip_for(twin.cals, span)
+    report = twin.check_clip(clip)
     print(report.summary(twin.cals))
+    print(f"  clip: {len(clip.poses)} poses, {clip_duration(clip):.1f} s at "
+          f"speed {clip.profile.speed} ticks/s, acceleration "
+          f"{clip.profile.acceleration}")
     print("CLEAR" if report.clean else "WOULD COLLIDE")
     _print_provisional()
     return 0 if report.clean else 1
@@ -893,6 +969,38 @@ def cmd_selftest(twin: Twin) -> int:
          [slump, lift], False, True)
     pose("the run-1 bench collision is still predicted", lift, False)
     pose("rest is clean", rest, True)
+
+    # --- plan #660: the gate and the player must be the SAME motion ---
+    # Not "do they read the same waypoints" (they always did) but "does
+    # the gate walk the exact frames the viewer plays". Anything the gate
+    # interpolates for itself is a path nobody watches, and anything the
+    # viewer interpolates for itself is a path nobody gated.
+    from sim.clip import DEFAULT_HZ, MotionProfile, sample_clip
+
+    clip = exercise_clip_for(twin.cals, 70)
+    frames = sample_clip(clip, DEFAULT_HZ)
+    want("the gate checks EXACTLY the frames the viewer plays",
+         twin.check_clip(clip).poses_checked == len(frames), True)
+    want("...and that is more than one frame per pose, so it is really "
+         "walking the motion", len(frames) > 4 * len(clip.poses), True)
+
+    # An edit to the routine must reach the gate. If these matched, the
+    # gate would be simulating something the routine no longer says.
+    narrow = exercise_clip_for(twin.cals, 30)
+    want("editing the routine changes what the gate simulates",
+         sample_clip(narrow, DEFAULT_HZ) != frames, True)
+
+    # The profile is part of the definition, not a viewer preference:
+    # same poses at a different speed is a different motion.
+    slow = exercise_clip_for(twin.cals, 70,
+                             profile=MotionProfile(
+                                 speed=max(1, clip.profile.speed // 4),
+                                 acceleration=clip.profile.acceleration))
+    slow_frames = sample_clip(slow, DEFAULT_HZ)
+    want("the same poses at a slower profile are a DIFFERENT motion",
+         len(slow_frames) > len(frames), True)
+    want("...but still end on the same pose",
+         slow_frames[-1] == frames[-1], True)
     print("twin selftest " + ("OK" if not fails else f"FAILED: {fails}"))
     return 1 if fails else 0
 

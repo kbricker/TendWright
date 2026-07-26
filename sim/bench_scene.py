@@ -1226,17 +1226,38 @@ def build_model(scene: Scene, shadows: bool = False,
 
 
 def rest_data(model):
-    """MjData for `model`, posed at the arm's rest keyframe.
+    """MjData for `model`, posed at the arm's CALIBRATED rest.
 
-    The keyframe - not qpos0 - is how a starting pose is set, because a
-    keyframe carries a pose while qpos0 defines where joint angles are
-    measured FROM. Falls back to a plain reset for a bench with no arm."""
+    Rest comes from calibration.json via the twin, not from a keyframe:
+    the SO-101 package ships none (plan #670), and a keyframe would be
+    someone else's idea of rest anyway, while calibration.json holds the
+    pose this arm was actually captured in.
+
+    Never write `model.qpos0` to do this. qpos0 is the joint REFERENCE
+    configuration - MuJoCo measures every hinge angle from it - so
+    assigning a pose to it silently re-zeroes all six joints and renders
+    everything at (qpos - rest). It looks like a default-pose knob and is
+    not one; that bug shipped 2026-07-26 and made the arm play the
+    exercise routine through itself. Set `data`, never `model`.
+
+    Falls back to a plain reset for a bench with no arm, or if the twin
+    is unavailable (no mujoco model / no calibration)."""
     import mujoco
 
     data = mujoco.MjData(model)
-    key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "arm_rest")
-    if key >= 0:
-        mujoco.mj_resetDataKeyframe(model, data, key)
+    mujoco.mj_resetData(model, data)
+    try:
+        from sim.twin import JOINT_MAPS, Twin
+        twin = Twin()
+    except Exception:                       # bench-only scene, or no cal
+        mujoco.mj_forward(model, data)
+        return data
+    for i, jm in JOINT_MAPS.items():
+        j = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                              f"arm_{jm.model_joint}")
+        if j >= 0:
+            data.qpos[model.jnt_qposadr[j]] = twin.qpos_of(
+                i, twin.cals[i].rest)[0]
     mujoco.mj_forward(model, data)
     return data
 
@@ -1673,7 +1694,7 @@ def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
     import mujoco
     import numpy as np
 
-    from sim.twin import JOINT_MAPS, Twin, exercise_waypoints
+    from sim.twin import BASE_BODY, JOINT_MAPS, Twin, exercise_waypoints
 
     if cell.arm_pose is None:
         print("arm-vs-twin pose: skipped (no arm placed)")
@@ -1681,9 +1702,20 @@ def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
     twin = Twin()
     model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
     data = rest_data(model)
-    bodies = ["Base", "Rotation_Pitch", "Upper_Arm", "Lower_Arm",
-              "Wrist_Pitch_Roll", "Fixed_Jaw", "Moving_Jaw"]
-    bid = lambda m, n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n)
+    # Read the body list OFF THE TWIN rather than listing names here. A
+    # hardcoded list survived the SO-101 swap holding SO-100 names, and
+    # this test still passed: mj_name2id returns -1 for a missing name
+    # and xpos[-1] wraps to the last body, so both sides compared the
+    # same wrong link and agreed perfectly. Every lookup is asserted
+    # below for the same reason.
+    bodies = [mujoco.mj_id2name(twin.model, mujoco.mjtObj.mjOBJ_BODY, b)
+              for b in range(1, twin.model.nbody)]
+
+    def bid(m, n):
+        i = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n)
+        assert i >= 0, f"model has no body {n!r}"
+        return i
+
     adr = {}
     for i, jm in JOINT_MAPS.items():
         j = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
@@ -1700,11 +1732,21 @@ def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
             data.qpos[adr[i]] = q
         mujoco.mj_forward(twin.model, twin.data)
         mujoco.mj_forward(model, data)
-        t0 = twin.data.xpos[bid(twin.model, "Base")].copy()
-        c0 = data.xpos[bid(model, "arm_Base")].copy()
+        # Compare in each model's own BASE-LOCAL frame. Base-relative
+        # world offsets are not comparable: the cell rotates the arm by
+        # its attach yaw, so identical poses give vectors that differ by
+        # exactly that rotation. Dividing it out is what makes this a
+        # test of the POSE rather than of the placement (which is the
+        # reach-direction selftest's job).
+        tb, cb = bid(twin.model, BASE_BODY), bid(model, "arm_" + BASE_BODY)
+        t0 = twin.data.xpos[tb].copy()
+        c0 = data.xpos[cb].copy()
+        tR = twin.data.xmat[tb].reshape(3, 3).copy()
+        cR = data.xmat[cb].reshape(3, 3).copy()
         for n in bodies:
-            d = float(np.linalg.norm((twin.data.xpos[bid(twin.model, n)] - t0)
-                                     - (data.xpos[bid(model, "arm_" + n)] - c0)))
+            tv = tR.T @ (twin.data.xpos[bid(twin.model, n)] - t0)
+            cv = cR.T @ (data.xpos[bid(model, "arm_" + n)] - c0)
+            d = float(np.linalg.norm(tv - cv))
             worst = max(worst, d)
             assert d < 1e-6, (
                 f"{n} sits {d * 1000:.1f} mm apart between the cell and the "
@@ -1715,13 +1757,24 @@ def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
 
 
 def animate_exercise(cell: 'Cell', span: int = 70,
-                     step_deg: float = 1.0, hz: float = 60.0) -> int:
-    """Play the exercise routine through the arm in the viewer.
+                     speed: int | None = None, hz: float = 60.0) -> int:
+    """Play the exercise CLIP through the arm in the viewer (plan #660).
 
-    The waypoints come from the SAME `exercise_waypoints` the bench
-    pre-flight gate and `sim.twin exercise` use, and the tick->qpos map
-    comes from the twin - so what you watch here is the routine the arm
-    actually runs, not a re-implementation of it that could drift.
+    What you watch here is the routine the arm runs, at the pace the arm
+    runs it. The clip carries the same MotionProfile whose speed and
+    acceleration are written into the servo registers, and the frames
+    come from `sim.clip.sample_clip` - the one sampler the pre-flight
+    collision gate also uses.
+
+    That last part is the change. This used to interpolate its own way
+    between waypoints, sliding every joint in lockstep so they all
+    arrived together; the servos each run their own ramp and a
+    short-travel joint parks early. The endpoints matched and the motion
+    between them did not, which is precisely what "validate it in the
+    sim first" cannot survive.
+
+    Playback is REAL TIME against the clip's own duration, so if it
+    looks slow here it will be slow on the bench.
 
     Nothing moves on the bench: this drives qpos directly and never
     touches the servo bus.
@@ -1731,8 +1784,11 @@ def animate_exercise(cell: 'Cell', span: int = 70,
     import mujoco
     import mujoco.viewer
 
-    from sim.twin import JOINT_MAPS, Twin, exercise_waypoints
-    from hardware.units import span_deg
+    from hardware.bench.exercise import (
+        ACCELERATION, SPAN_MAX, SPEED_BASE, SWEEP_ORDER, SWEEP_SPAN_CAPS,
+        clamp_goal, exercise_clip, sweep_window)
+    from sim.clip import MotionProfile, clip_duration, sample_clip
+    from sim.twin import JOINT_MAPS, Twin
 
     twin = Twin()
     model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
@@ -1745,19 +1801,23 @@ def animate_exercise(cell: 'Cell', span: int = 70,
         if jid >= 0:
             adr[i] = model.jnt_qposadr[jid]
 
-    waypoints = exercise_waypoints(twin.cals, span)
-    step_ticks = max(1.0, step_deg / span_deg(1))
-    frames: list[dict[int, int]] = []
-    for a, b in zip(waypoints, waypoints[1:]):
-        ids = sorted(set(a) | set(b))
-        worst = max(abs(b.get(i, a[i]) - a.get(i, b[i])) for i in ids)
-        for n in range(1, max(1, math.ceil(worst / step_ticks)) + 1):
-            f = n / max(1, math.ceil(worst / step_ticks))
-            frames.append({i: round(a.get(i, b[i])
-                                    + f * (b.get(i, a[i]) - a.get(i, b[i])))
-                           for i in ids})
-    print(f"exercise: {len(waypoints)} waypoints -> {len(frames)} frames "
+    cals = twin.cals
+    sweep_ids = [i for i in SWEEP_ORDER if i in cals]
+    rest = {i: clamp_goal(cals[i], cals[i].rest) for i in sorted(cals)}
+    windows = {i: sweep_window(cals[i],
+                               min(span, SWEEP_SPAN_CAPS.get(i, SPAN_MAX)))
+               for i in sweep_ids}
+    profile = MotionProfile(speed=speed or SPEED_BASE,
+                            acceleration=ACCELERATION)
+    clip = exercise_clip(cals, rest, windows, sweep_ids, None, profile)
+    frames = sample_clip(clip, hz)
+    seconds = clip_duration(clip)
+    print(f"exercise clip: {len(clip.poses)} poses -> {len(frames)} frames "
           f"at {span}% span")
+    print(f"  profile: speed {profile.speed} ticks/s, acceleration "
+          f"{profile.acceleration} (x100 ticks/s^2) - the same numbers the "
+          f"servos get")
+    print(f"  runs {seconds:.1f} s on the bench, played here in real time")
     print("  nothing moves on the bench - this is the model only")
     print("  close the window to stop; it loops")
 

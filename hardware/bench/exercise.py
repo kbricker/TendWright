@@ -125,6 +125,32 @@ def gate_waypoints(cals: dict[int, JointCal], rest: dict[int, int],
     return seq
 
 
+def exercise_clip(cals: dict[int, JointCal], rest: dict[int, int],
+                  windows: dict[int, tuple[int, int]],
+                  sweep_ids: list[int],
+                  start: dict[int, int] | None = None,
+                  profile: 'MotionProfile | None' = None) -> 'Clip':
+    """The routine as a CLIP — poses plus the profile that moves between
+    them (plan #660).
+
+    The profile carried here is the one whose `speed` and `acceleration`
+    are written into the servo registers below, so the path the gate
+    simulates and the path the arm takes come from the same two numbers.
+    Sharing only the pose list — which is all `gate_waypoints` ever did —
+    made the endpoints agree while leaving the motion between them free
+    to differ."""
+    from sim.clip import DEFAULT_PROFILE, Clip, Pose
+
+    names = ["start"] if start is not None else []
+    seq = gate_waypoints(cals, rest, windows, sweep_ids, start)
+    # label the poses for readable refusals; the sequence itself is
+    # gate_waypoints', so the two cannot describe different routines
+    while len(names) < len(seq):
+        names.append(f"p{len(names)}")
+    return Clip("exercise", [Pose(n, p) for n, p in zip(names, seq)],
+                profile or DEFAULT_PROFILE)
+
+
 def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
                      ids: list[int]) -> None:
     """Refuse to run unless every joint is inside its calibrated range and
@@ -277,11 +303,14 @@ def run() -> int:
               "cuts on your Enter). The power switch is the hard e-stop.")
 
         # Pre-flight collision gate: simulate the exact routine in the
-        # digital twin BEFORE anything energizes. Waypoints mirror the
-        # execution loop below — keep them in sync until #649's FSM port
-        # drives both from one plan structure.
+        # digital twin BEFORE anything energizes. The gate consumes a
+        # CLIP carrying `profile` — the same speed/acceleration written
+        # into the servo registers in the execution loop below — so it
+        # simulates the path the arm will actually take between poses,
+        # not a lockstep glide the servos never perform (plan #660).
         if not args.no_gate:
             try:
+                from sim.clip import MotionProfile
                 from sim.twin import Twin
             except ImportError as exc:
                 raise BenchError(
@@ -289,9 +318,10 @@ def run() -> int:
                     "run `uv sync` for mujoco, or --no-gate to skip "
                     "(bench emergencies only)") from exc
             start = {i: bus.read_position(i) for i in ids}
-            report = Twin(cal_path).check_trajectory(
-                gate_waypoints(cals, rest, windows, sweep_ids, start),
-                # waypoint 0 is the arm's measured slump, not a plan
+            profile = MotionProfile(speed=speed, acceleration=ACCELERATION)
+            report = Twin(cal_path).check_clip(
+                exercise_clip(cals, rest, windows, sweep_ids, start, profile),
+                # pose 0 is the arm's measured slump, not a plan
                 settle_from_measured=True)
             # The summary carries clamp warnings — an anchor/range
             # mismatch is loudest exactly when the gate PASSES, so

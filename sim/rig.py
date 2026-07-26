@@ -3,7 +3,7 @@
 Plan #660. The twin (#648) answers "would this pose collide?"; this
 answers "where is each joint, and which way does it turn?" — the
 spatial vocabulary pose authoring needs. Everything is simulated: the
-vendored SO-ARM100 model carries the real arm's geometry, so joint
+vendored SO-101 model carries the real arm's geometry, so joint
 centerpoints and axes are derived, never measured by hand.
 
 FRAME (Kyle, 2026-07-25): the origin is m1's centerpoint. +Z is up,
@@ -33,7 +33,7 @@ import numpy as np
 
 from hardware.errors import BenchError
 
-from .twin import JOINT_MAPS, Twin
+from .twin import JOINT_MAPS, TOOL_BODY, Twin
 
 # Model joint -> the physical joint number the bench calls it.
 JOINT_NUMBER = {jm.model_joint: i for i, jm in JOINT_MAPS.items()}
@@ -117,7 +117,7 @@ class Rig:
         if qpos is not None:
             self.data.qpos[:] = qpos
         mujoco.mj_forward(self.model, self.data)
-        rel = (self.data.body("Moving_Jaw").xpos - self._origin) * 1000.0
+        rel = (self.data.body(TOOL_BODY).xpos - self._origin) * 1000.0
         return float(rel[0]), float(rel[1]), float(rel[2])
 
 
