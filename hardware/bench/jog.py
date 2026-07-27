@@ -24,11 +24,28 @@ actual do not become equal: a servo settles into a deadband a few ticks
 off its goal, so "holding" means inside the shared settle tolerance, not
 identical numbers.
 
+COLLISION GATE (plan #699). Every step is checked against the digital
+twin before it reaches the bus, and refused if the arm would hit itself
+or the table. Soft limits cannot do this: they are per-joint, and
+self-collision is a function of the WHOLE pose — two joints each well
+inside their own range still fold the arm through itself, which is
+exactly the collision the bench actually had. So jog re-reads all six
+joints on every step, because the five it is not driving still decide
+whether the sixth may move.
+
+A refused step leaves the joint where it was and says which links would
+touch. `--force` commands it anyway (logged to stderr) — kept because
+jog is a testing tool and exploring near a limit is its job. If a joint
+is off the bus the gate goes INACTIVE and says so; `--no-gate` skips it
+without the notice. The gate models the arm and the table ONLY: the
+bench, fixtures, anything in the gripper and the cable are all invisible
+to it, so a clear verdict means "it will not hit itself", never "safe".
+
 Exit codes: 0 quit, 2 error, 3 operator e-stop, 130 Ctrl+C.
 Torque always starts OFF and is cut again on every exit path.
 
 Usage: jog --id N [--port PORT] [--step TICKS | --step-deg D]
-           [--min T] [--max T] [--cal FILE]
+           [--min T] [--max T] [--cal FILE] [--force] [--no-gate]
 """
 
 from __future__ import annotations
@@ -86,6 +103,12 @@ def run() -> int:
                         dest="soft_max", help="soft limit high (ticks)")
     parser.add_argument("--cal", default="calibration.json",
                         help="calibration file for limits + unit display")
+    parser.add_argument("--force", action="store_true",
+                        help="command moves the collision gate refuses "
+                             "(logged loudly; the arm can hit itself)")
+    parser.add_argument("--no-gate", action="store_true",
+                        help="skip the collision gate entirely — for when "
+                             "the other joints are off the bus")
     args = parser.parse_args()
 
     if args.step is not None and args.step_deg is not None:
@@ -121,10 +144,36 @@ def run() -> int:
     def show(tick: int) -> str:
         return fmt_ticks(frame, tick)
 
+    # The gate needs the WHOLE arm: whether the forearm hits the upper
+    # arm is a function of every joint, not of the one being jogged. So
+    # jog has to read joints it does not command. Joints that do not
+    # answer disable the gate rather than being guessed — a pose we
+    # cannot see is a pose we cannot judge (plan #699).
+    from .posegate import PoseGate
+    gate_ids: list[int] = []
+    gate = None
+    if not args.no_gate:
+        from sim.clip import MotionProfile
+
+        from .calibrate import JOINT_NAMES
+        gate = PoseGate(sorted(JOINT_NAMES),
+                        cal_path=cal_path,
+                        profile=MotionProfile(speed=JOG_SPEED,
+                                              acceleration=JOG_ACCELERATION))
+
     with FeetechBus(args.port) as bus:
         if bus.ping(args.servo_id) is None:
             raise BenchError(f"servo {args.servo_id} did not answer",
                              "run the scan tool to see what is on the bus")
+        if gate is not None and gate.active:
+            gate_ids = [i for i in gate.ids if bus.ping(i) is not None]
+            absent = [i for i in gate.ids if i not in gate_ids]
+            if absent:
+                gate = None
+                print(f"collision gate INACTIVE — joint(s) {absent} did not "
+                      f"answer, so the arm's pose cannot be read. Moves are "
+                      f"NOT checked for self-collision. (--no-gate to skip "
+                      f"this check silently)")
         # Enforce the advertised starting state instead of assuming it: a
         # previous tool may have died with torque latched on.
         bus.set_torque(args.servo_id, False)
@@ -151,6 +200,14 @@ def run() -> int:
         print(f"live from the encoder; 'holding' = within "
               f"{SETTLE_TOL_TICKS} ticks of target (servos settle into a "
               f"deadband, they do not land exactly on it)")
+        if gate is not None:
+            print(gate.banner())
+            if args.force:
+                print("--force: refusals will be OVERRIDDEN and logged. "
+                      "The arm can hit itself.")
+        elif args.no_gate:
+            print("collision gate SKIPPED (--no-gate) — moves are NOT "
+                  "checked for self-collision")
 
         prev_pos = target
 
@@ -219,6 +276,27 @@ def run() -> int:
                 clamped = max(soft_min, min(soft_max, target + delta))
                 if clamped != target + delta:
                     print(f"\nsoft limit — clamped to {show(clamped)}")
+
+                # Ask the twin BEFORE the bus. The whole arm is re-read
+                # every step rather than cached from startup: torque is
+                # off on the joints we are not driving, so they sag, and
+                # a stale pose would gate an arm that is not the one on
+                # the bench.
+                if gate is not None:
+                    here = {i: bus.read_position(i) for i in gate_ids}
+                    verdict = gate.check(here, {args.servo_id: clamped})
+                    if verdict.refused:
+                        if not args.force:
+                            # `target` is deliberately NOT updated: a
+                            # refused step leaves the joint exactly where
+                            # it was, not part-way.
+                            print(f"\n{verdict.detail}"
+                                  f"\n  not moving — press [ for a smaller "
+                                  f"step, or re-run with --force")
+                            continue
+                        print(f"\nFORCED past the gate: {verdict.detail}",
+                              file=sys.stderr)
+
                 target = clamped
                 bus.move_to(args.servo_id, target,
                             speed=JOG_SPEED, acceleration=JOG_ACCELERATION)
@@ -227,7 +305,124 @@ def run() -> int:
             bus.safe_torque_off([args.servo_id])
 
 
+def _selftest() -> int:
+    """Prove a refused step never reaches the bus.
+
+    jog is one interactive loop around a live serial port, so this fakes
+    both ends — the bus and the keyboard — and asserts on what the fake
+    bus was ASKED to do. Testing the verdict alone would not do: the
+    whole failure mode being guarded against is a gate that computes the
+    right answer and then commands the move anyway.
+    """
+    import sys as _sys
+    from unittest import mock
+
+    from sim.twin import Twin
+
+    fails = []
+
+    def check(name, cond, detail=""):
+        print(f"  {'ok  ' if cond else 'FAIL'} {name}"
+              f"{'  ' + detail if detail else ''}")
+        if not cond:
+            fails.append(name)
+
+    if not Path("calibration.json").exists():
+        print("  no calibration.json here — cannot exercise the gate")
+        return 1
+
+    cals = Twin("calibration.json").cals
+    rest = {i: c.rest for i, c in cals.items()}
+    from hardware.bench.exercise import sweep_window
+    _, hi2 = sweep_window(cals[2], 70)          # the run-1 collision
+
+    class FakeBus:
+        """Answers like the arm parked at its calibrated rest."""
+
+        port_name = "fake"
+
+        def __init__(self, *a, **k):
+            self.moves = []
+            self.pos = dict(rest)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def ping(self, i):
+            return 1
+
+        def set_torque(self, i, on):
+            pass
+
+        def read_position(self, i):
+            return self.pos[i]
+
+        def move_to(self, i, tick, **k):
+            self.moves.append((i, tick))
+            self.pos[i] = tick
+
+        def safe_torque_off(self, ids):
+            pass
+
+    def drive(argv, keys):
+        """Run jog with a scripted keyboard, return the fake bus."""
+        bus = FakeBus()
+        it = iter(keys)
+        with mock.patch.object(_sys, "argv", ["jog", *argv]), \
+                mock.patch(f"{__name__}.FeetechBus", lambda *a, **k: bus), \
+                mock.patch(f"{__name__}.read_key",
+                           lambda timeout=None: next(it, "q")):
+            run()
+        return bus
+
+    # Jogging j2 from rest toward the sweep end is the collision. Use a
+    # step big enough to reach it in one press.
+    step = hi2 - rest[2]
+
+    print("a refused step must not reach the bus")
+    bus = drive(["--id", "2", "--step", str(step)], ["t", "+", "q"])
+    # The 't' key writes a hold-in-place goal at the CURRENT position;
+    # that is not the jog step, so filter to moves that actually go
+    # somewhere new.
+    stepped = [m for m in bus.moves if m[1] != rest[2]]
+    check("the gate refused and nothing new was commanded", not stepped,
+          f"moves={bus.moves}")
+    check("the joint is still at rest", bus.pos[2] == rest[2],
+          f"{bus.pos[2]} vs rest {rest[2]}")
+
+    print("\n--force must get through, because jog is a testing tool")
+    bus = drive(["--id", "2", "--step", str(step), "--force"],
+                ["t", "+", "q"])
+    stepped = [m for m in bus.moves if m[1] != rest[2]]
+    check("the forced step WAS commanded", bool(stepped), f"{stepped}")
+
+    print("\n--no-gate leaves the old behaviour intact")
+    bus = drive(["--id", "2", "--step", str(step), "--no-gate"],
+                ["t", "+", "q"])
+    stepped = [m for m in bus.moves if m[1] != rest[2]]
+    check("the ungated step WAS commanded", bool(stepped), f"{stepped}")
+
+    print("\na safe step is still allowed with the gate on")
+    bus = drive(["--id", "1", "--step", "40"], ["t", "+", "q"])
+    stepped = [m for m in bus.moves if m[1] != rest[1]]
+    check("a small pan step went through", bool(stepped), f"{stepped}")
+
+    print()
+    if fails:
+        print(f"FAILED: {len(fails)}")
+        for f in fails:
+            print(f"  - {f}")
+        return 1
+    print("jog gate OK")
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "selftest":
+        return _selftest()
     return run_tool(run)
 
 

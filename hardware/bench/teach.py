@@ -124,6 +124,54 @@ def approach_start_pose(bus: FeetechBus, ids: list[int],
                           "pose — torque has been cut")
 
 
+def gate_recording(bus: FeetechBus, ids: list[int], frames: list[list[int]],
+                   current: list[int], no_gate: bool) -> str:
+    """Pre-flight the WHOLE recording before the confirm prompt (#699).
+
+    Replay used to be ungated. A recording is *usually* safe because Kyle
+    moved the arm through it by hand — but "usually" leans on three
+    assumptions that are not checked anywhere: that the file has not been
+    edited, that replay starts from the pose it was recorded from, and
+    that the APPROACH to frame 0 (a move nobody ever recorded, computed
+    from wherever the arm happens to be sitting) is itself safe. That
+    approach move is the one most likely to collide and the one least
+    likely to have been thought about.
+
+    Gating here rather than per-frame because the entire trajectory is
+    known in advance, so the operator can be told before committing —
+    the same reason `exercise` pre-flights.
+    """
+    if no_gate:
+        return ("collision gate SKIPPED (--no-gate) — this recording was "
+                "NOT checked")
+    from .calibrate import JOINT_NAMES
+    from .posegate import PoseGate
+
+    gate = PoseGate(sorted(JOINT_NAMES))
+    if not gate.active:
+        return gate.banner()
+    absent = [i for i in gate.ids if bus.ping(i) is None]
+    if absent:
+        return (f"collision gate INACTIVE — joint(s) {absent} did not "
+                f"answer, so the arm's pose cannot be read. This recording "
+                f"was NOT checked.")
+
+    # Joints the recording does not drive still decide whether the ones it
+    # does may move, so they are read and held at their present position.
+    here = {i: bus.read_position(i) for i in gate.ids}
+    here.update(dict(zip(ids, current)))
+
+    poses = [dict(here)]
+    for frame in frames:
+        poses.append({**here, **dict(zip(ids, frame))})
+    verdict = gate.check_sequence(poses, label="replay")
+    if verdict.allowed:
+        return (f"collision gate CLEAR — {verdict.poses_checked} poses "
+                f"checked, including the approach to frame 0 (the bench "
+                f"and anything on it are NOT modelled)")
+    return verdict.detail
+
+
 def replay(args: argparse.Namespace) -> int:
     ids, hz, frames = load_recording(Path(args.infile))
     if not 0.05 <= args.speed <= 1.0:
@@ -141,6 +189,16 @@ def replay(args: argparse.Namespace) -> int:
               f"{args.speed:.0%} speed ({len(frames) / hz / args.speed:.1f}s)")
         print(f"largest joint move to reach the start pose: "
               f"{span_deg(drift):.1f} deg ({drift} ticks)")
+
+        verdict = gate_recording(bus, ids, frames, current, args.no_gate)
+        print(verdict)
+        if verdict.startswith("REFUSED"):
+            if not args.force:
+                print("not replaying — re-run with --force to override")
+                return 1
+            print("FORCED past the gate — the arm can hit itself",
+                  file=sys.stderr)
+
         if not args.yes and not confirm("clear the workspace, then type y to run: "):
             print("aborted")
             return 1
@@ -190,12 +248,78 @@ def run() -> int:
                        help="speed factor 0.05-1.0 (default 0.25)")
     p_rep.add_argument("--port", default=None, help="serial port override")
     p_rep.add_argument("--yes", action="store_true", help="skip confirmation")
+    p_rep.add_argument("--force", action="store_true",
+                       help="replay a recording the collision gate refuses "
+                            "(logged; the arm can hit itself)")
+    p_rep.add_argument("--no-gate", action="store_true",
+                       help="skip the collision gate entirely")
 
     args = parser.parse_args()
     return record(args) if args.command == "record" else replay(args)
 
 
+def _selftest() -> int:
+    """The gate must refuse a colliding recording and clear a safe one."""
+    from sim.twin import Twin
+
+    fails = []
+
+    def check(name, cond, detail=""):
+        print(f"  {'ok  ' if cond else 'FAIL'} {name}"
+              f"{'  ' + detail if detail else ''}")
+        if not cond:
+            fails.append(name)
+
+    if not Path("calibration.json").exists():
+        print("  no calibration.json here — cannot exercise the gate")
+        return 1
+
+    cals = Twin("calibration.json").cals
+    rest = {i: c.rest for i, c in cals.items()}
+    ids = sorted(rest)
+
+    class FakeBus:
+        def ping(self, i):
+            return 1
+
+        def read_position(self, i):
+            return rest[i]
+
+    bus = FakeBus()
+
+    def frames_for(seq):
+        return [[p.get(i, rest[i]) for i in ids] for p in seq]
+
+    print("a safe recording clears")
+    safe = frames_for([rest, {**rest, 1: rest[1] + 60}, rest])
+    v = gate_recording(bus, ids, safe, [rest[i] for i in ids], False)
+    check("small pan wiggle is CLEAR", v.startswith("collision gate CLEAR"), v)
+
+    print("\na colliding recording is refused")
+    from hardware.bench.exercise import sweep_window
+    _, hi2 = sweep_window(cals[2], 70)
+    bad = frames_for([rest, {**rest, 2: hi2}])
+    v = gate_recording(bus, ids, bad, [rest[i] for i in ids], False)
+    check("the run-1 sweep is REFUSED", v.startswith("REFUSED"), v)
+    check("...and it names the colliding links", "<->" in v)
+
+    print("\n--no-gate says so rather than passing quietly")
+    v = gate_recording(bus, ids, bad, [rest[i] for i in ids], True)
+    check("skipped gate announces itself", "SKIPPED" in v and "NOT" in v, v)
+
+    print()
+    if fails:
+        print(f"FAILED: {len(fails)}")
+        for f in fails:
+            print(f"  - {f}")
+        return 1
+    print("teach gate OK")
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "selftest":
+        return _selftest()
     return run_tool(run)
 
 
