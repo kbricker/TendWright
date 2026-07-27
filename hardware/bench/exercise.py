@@ -212,6 +212,10 @@ def run() -> int:
     parser.add_argument("--no-gate", action="store_true",
                         help="skip the digital-twin collision gate "
                              "(sim.twin) — bench emergencies only")
+    parser.add_argument("--trace", metavar="FILE",
+                        help="record the arm's ACTUAL path to CSV, then "
+                             "compare it with `python -m sim.trace FILE` "
+                             "(plan #660 acceptance test)")
     parser.add_argument("--yes", action="store_true",
                         help="skip the confirmation prompt (never the "
                              "preflight checks)")
@@ -343,6 +347,15 @@ def run() -> int:
         # minutes — re-vet after it, right before anything energizes.
         check_start_pose(bus, cals, ids)
 
+        # Built BEFORE the try, so the finally that flushes it can never
+        # hit an unbound name on an early failure.
+        trace = None
+        if args.trace:
+            from sim.trace import Trace
+            trace = Trace(args.trace)
+            print(f"tracing the arm's actual path to {args.trace}")
+        sink = trace.sample if trace is not None else None
+
         try:
             # Wake without lurch, one servo at a time: pre-load the goal
             # (and speed/accel) to the CURRENT position while still torque
@@ -357,7 +370,10 @@ def run() -> int:
             for i in ids:
                 bus.move_to(i, rest[i], speed=speed,
                             acceleration=ACCELERATION)
-            wait_settle(bus, rest, speed, "rest", poll_key=read_key)
+            if trace is not None:
+                trace.phase("rest", edge=1)
+            wait_settle(bus, rest, speed, "rest", poll_key=read_key,
+                        sample_sink=sink)
 
             for n, i in enumerate(sweep_ids, start=1):
                 lo, hi = windows[i]
@@ -389,8 +405,10 @@ def run() -> int:
                               f"press it into the table")
                         bus.move_to(j, pose, speed=speed,
                                     acceleration=ACCELERATION)
+                    if trace is not None:
+                        trace.phase(f"j{i} clearance")
                     wait_settle(bus, hold, speed, "clearance",
-                                poll_key=read_key)
+                                poll_key=read_key, sample_sink=sink)
                     # ENTRY GUARD: the sweep is unreachable until the
                     # encoders confirm the clearance actually happened.
                     check_holds(bus, guard_holds, ENTRY_PHASE, guard_why)
@@ -402,16 +420,21 @@ def run() -> int:
                     bus.move_to(i, clamp_goal(cals[i], target),
                                 speed=speed, acceleration=ACCELERATION)
                     goals = {**hold, i: clamp_goal(cals[i], target)}
+                    if trace is not None:
+                        trace.phase(f"j{i} {label}")
                     wait_settle(bus, goals, speed, f"{name} {label}",
-                                poll_key=read_key, invariant=invariant)
+                                poll_key=read_key, invariant=invariant,
+                                sample_sink=sink)
                 if clearance:
                     for j in clearance:
                         print(f"  refolding joint {j} ({cals[j].name}) "
                               f"to rest")
                         bus.move_to(j, rest[j], speed=speed,
                                     acceleration=ACCELERATION)
+                    if trace is not None:
+                        trace.phase(f"j{i} refold")
                     wait_settle(bus, rest, speed, "refold",
-                                poll_key=read_key)
+                                poll_key=read_key, sample_sink=sink)
 
             print("\nroutine complete — arm at rest, cutting torque")
             return 0
@@ -444,6 +467,17 @@ def run() -> int:
             raise
         finally:
             bus.safe_torque_off(ids)
+            # Written on EVERY exit path — an aborted, e-stopped or
+            # obstructed run is exactly when the trace is most worth
+            # having. Torque off comes FIRST: the arm being safe is
+            # never delayed by bookkeeping.
+            if trace is not None:
+                written = trace.close()
+                if written is not None:
+                    print(f"trace: {len(trace)} samples -> {written}")
+                    print(f"  compare: uv run python -m sim.trace {written}")
+                elif trace.error:
+                    print(f"trace: {trace.error}", file=sys.stderr)
 
 
 def main() -> int:

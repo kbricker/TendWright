@@ -3,7 +3,7 @@
 Closing out the tickets that have been waiting on hardware. Everything
 here runs on **cell1** unless it says otherwise.
 
-Written 2026-07-27. Deployed and verified on cell1 at `4b26fef` — every
+Written 2026-07-27. Deployed and verified on cell1 — every
 no-hardware selftest passes there already (see Phase 0).
 
 ---
@@ -203,8 +203,10 @@ the routine's *motion* takes.
 ### 3b. The run
 
 ```bash
-uv run python -m hardware.bench.exercise
+uv run python -m hardware.bench.exercise --trace run1.csv
 ```
+
+(See 3c — always pass `--trace`; it costs nothing and it is the point.)
 
 It will pre-flight (gate + pose check), print the plan, and wait for
 `y`. Watch for:
@@ -231,18 +233,59 @@ It will pre-flight (gate + pose check), print the plan, and wait for
 test it, arm ends torqued-off at rest, and the elapsed time is in the
 right neighbourhood.
 
-### 3c. The tight check — needs a small tool I haven't built
+### 3c. The tight check — record the run
 
-The loose stopwatch test cannot tell you whether the arm *tracked* the
-profile, only whether it finished in roughly the right time. The real
-test records encoder positions throughout the run and compares them
-against the frames the sim showed at the same moments.
+**Do this run with `--trace`.** It costs nothing and it is the whole
+point of the session:
 
-That is #660's acceptance item (`fa38d5ae`) and it needs a `--trace`
-option on `exercise` that logs `(t, per-joint position)` to CSV, plus an
-offline comparison. **Say the word and I'll build it before the
-session** — it is small, and it is the difference between "the sim is
-faithful to the arm's intent" and "the sim is faithful to the arm."
+```bash
+uv run python -m hardware.bench.exercise --trace run1.csv
+```
+
+It records where every joint ACTUALLY was, ~20 times a second, from the
+same encoder reads the settle test already performs. Nothing about the
+run changes — the recorder only watches, and it is written on **every**
+exit path, so an e-stopped or obstructed run still leaves its trace.
+That is when it is most worth having.
+
+Then, anywhere (desk is fine):
+
+```bash
+uv run python -m sim.trace run1.csv
+```
+
+It lays the recorded run over the sim's own prediction, phase by phase,
+and prints per phase: real duration, predicted duration, settle
+overhead, and the worst deviation from the sim with the joint
+responsible.
+
+**Alignment is per phase, not wall-clock**, because the clip's duration
+counts motion only while the real routine also waits to settle. Each
+phase is aligned at its own start and compared over the sim's predicted
+window; the settle tail is reported separately as overhead rather than
+counted as error.
+
+**How to read the number** (this is in the tool's output too):
+
+- **A few degrees is expected.** The sim plays the *commanded*
+  trapezoid; a real joint lags it under gravity. The number is the size
+  of the gap between intent and plant — that is what we are measuring,
+  not a defect to be alarmed by.
+- **Every joint off by a similar factor** → the servo register
+  semantics are wrong (speed = ticks/s, acceleration = ×100 ticks/s²).
+  That is the single most likely thing to be wrong, and this is the test
+  that finds it.
+- **One joint deviating** → that joint: load, friction, or something
+  specific to its calibration.
+- **Large `settle s`** → the profile is optimistic about how fast the
+  plant converges.
+
+The comparison was verified against synthetic runs with a known
+injected lag: 0 ticks reads 0.0°, 3 ticks reads 0.3°, 40 ticks reads
+3.6° — accurate to within one tick, so the number it prints is the arm's
+behaviour and not the tool's.
+
+**Send me `run1.csv`** (or just the summary table it prints).
 
 > **Advances #660.** The plan stays open regardless — the pose library,
 > clip runner and FSM port are still to come.
@@ -255,8 +298,9 @@ Whatever you have — but these three specifically:
 
 1. **The `calibrate show` output**, and whether the poses matched.
 2. **The five link measurements** from Phase 2.
-3. **The elapsed time** of the exercise run, and anything that looked
-   wrong during it.
+3. **`run1.csv`** from the traced run — or just the summary table that
+   `uv run python -m sim.trace run1.csv` prints — plus anything that
+   looked wrong while it ran.
 
 If something fails, the useful thing is *what you saw*, not a
 diagnosis — I have the models and can chase the cause from a symptom.

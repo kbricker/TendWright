@@ -51,6 +51,7 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
                                  "for this pose or speed; clear the "
                                  "workspace and re-run",
                 invariant: Callable[[], None] | None = None,
+                sample_sink: Callable[[float, dict[int, int]], None] | None = None,
                 ) -> None:
     """Poll until every joint in targets has arrived at its target.
 
@@ -67,6 +68,11 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
     outraced by a joint settling on the same sample, and a raising
     invariant halts every joint before propagating (as the deadline
     path does). Torque state after the raise is the CALLER's affair.
+
+    sample_sink (when given) receives (monotonic time, {id: position})
+    once per poll — the arm's ACTUAL path, recorded from the same reads
+    the settle test already performs. It observes only: it must never
+    raise, and nothing here reacts to it (plan #660's trace).
 
     poll_key (when given) is called between samples with a timeout; any
     non-None return raises EStop — the caller owns the halt/hold response.
@@ -110,6 +116,8 @@ def wait_settle(bus: FeetechBus, targets: dict[int, int], speed: int,
             prev[i] = pos
             if still[i] < needed:
                 done = False
+        if sample_sink is not None:
+            sample_sink(time.monotonic(), dict(prev))
         print(f"\r  {label}: worst error {span_deg(worst):5.1f} deg "
               f"({worst}t)   ", end="", flush=True)
         if done:
