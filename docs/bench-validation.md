@@ -13,7 +13,7 @@ no-hardware selftest passes there already (see Phase 0).
 | Phase | Ticket | The question it answers | Motion? |
 |---|---|---|---|
 | 1 | **#647** joint semantic frames | Does the degree readout match the arm you can see? | none |
-| 2 | **#670** SO-101 model swap | Is the model the *right arm*? | none |
+| 2 | **#670** SO-101 model swap | Is the model the *right arm*? | **answered — no bench work** |
 | 3 | **#660** motion rig | Does the arm move the way the sim said it would? | yes |
 
 Phase 3 also re-runs **#643 / #648 / #649** (exercise, twin gate, guards),
@@ -71,9 +71,10 @@ uv run python -m sim.twin selftest
 uv run python -m sim.twin validate     # must predict BOTH bench collisions
 uv run python -m sim.twin frames
 uv run python -m hardware.bench.camserve --selftest
+uv run python -m sim.meshcheck selftest       # printed STLs vs the model
 ```
 
-All eight report OK. `sim.twin validate` is the important one — it is
+All report OK. `sim.twin validate` is the important one — it is
 the model asserting it still predicts the two collisions the bench
 actually had.
 
@@ -129,34 +130,55 @@ no geometric reference to check themselves against.
 
 ## Phase 2 — is this the right arm? (#670)
 
-**No motion. Calipers.**
+**Nothing to do at the bench. This is already answered.**
 
-Every software test so far only proves the model agrees with *itself*.
-Nothing in the repo can catch "we vendored the wrong robot" — only a
-tape measure can.
+This phase used to ask you for calipers, on the reasoning that no
+software test can catch "we vendored the wrong robot" because every test
+only proves the model agrees with itself. That reasoning was right, but
+the conclusion was wrong: you had independent evidence on disk the whole
+time. `hardware/so101-print/individual/` holds **the STLs you actually
+sent to the printer** — sourced separately from the MJCF, and ground
+truth for the parts physically on the bench.
 
 ```bash
-uv run python -m sim.rig spec
+uv run python -m sim.meshcheck            # run it yourself if you like
 ```
 
-Compare against the physical arm, centre of joint to centre of joint:
+All **11** printed parts match the model's meshes. The two files are not
+copies of each other — the vendored meshes carry 2–5× the triangles, sit
+in different local frames, and are in metres rather than millimetres —
+so the comparison uses shape invariants (volume, surface area,
+covariance eigenvalues) reduced to dimensionless ratios. The scale factor
+is *derived*, not assumed: it comes out at 0.00100 on every part, which
+independently confirms the mm→m unit convention.
 
-| span | model says | measured | ok? |
-|---|---|---|---|
-| m1 → m2 | **64.8 mm** | | |
-| m2 → m3 | **116.0 mm** | | |
-| m3 → m4 | **135.0 mm** | | |
-| m4 → m5 | **63.7 mm** | | |
-| m5 → m6 | **36.2 mm** | | |
-| m1 centre above the mounting plane | **62.4 mm** | | |
+| | worst disagreement |
+|---|---|
+| printed vs vendored **SO-101** | **0.09%** |
+| printed vs vendored **SO-100** (wrong arm) | **3.88%** |
 
-**The two that matter most are m2→m3 (116 mm) and m3→m4 (135 mm)** —
-the upper arm and forearm. They dominate where the tool ends up, and
-they were *identical* between the SO-100 and SO-101 models, so if they
-are wrong, both models were wrong and the whole gate is built on sand.
+That second row is the important one. The old SO-100 package is still
+vendored, so the same tool can be pointed at the wrong robot — and it
+**rejects all six** shared parts. True and false populations are
+separated by **43×**, with the 2% threshold sitting in the gap. This is
+not "the check passed"; it's a check demonstrated to fail when it should.
 
-**Pass:** within a few millimetres. Joint centres are hard to eyeball,
-so ±5 mm is a reasonable bar; a 20 mm miss is a real finding.
+**The link offsets** are a separate question — they live in the MJCF body
+`pos` attributes, not in any mesh, and a correct part can be bolted on at
+a wrong distance. `uv run python -m sim.meshcheck spans` checks the
+*assembly* instead: adjacent links bolt together, so their placed meshes
+must touch, and a wrong offset floats them apart. All six joints fit
+within **0.35 mm**.
+
+That check is honestly coarse — measured by bisection, a servo nests deep
+enough in its holder that an offset must err by ~28 mm outward before any
+gap opens, and an inward error never shows at all. So it retires "these
+offsets belong to a different arm" without claiming millimetre accuracy.
+
+**If you want the calipers anyway**, the two worth measuring are
+m2→m3 (**116.0 mm**) and m3→m4 (**135.0 mm**) — they dominate where the
+tool ends up and were identical between the SO-100 and SO-101 models.
+But this is now optional confirmation, not the gate.
 
 Optional second check — a distinctive pose. Jog m2 to tick **1780**,
 m3 to **1292**, m4 to **2158**. All three read 0° and the arm should be
@@ -164,9 +186,12 @@ m3 to **1292**, m4 to **2158**. All three read 0° and the arm should be
 That is the frame convention made visible: if it isn't straight, a zero
 is wrong.
 
-> **Closes #670** if the lengths check out. The old SO-100 model is
-> still vendored (unused) specifically so reverting stays cheap until
-> this passes — once it does, tell me and I'll delete it.
+> **#670 is answered.** One open decision, not a bench task: the SO-100
+> package was kept only so reverting stayed cheap, and the plan says to
+> delete it once this passed. It now has a second job — it is the
+> negative control that gives the 43× separation above. Deleting it
+> makes that claim unverifiable. Recommendation: keep the six STLs
+> `meshcheck` actually uses and delete the rest of the package.
 
 ---
 
