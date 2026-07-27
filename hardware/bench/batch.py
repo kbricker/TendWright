@@ -5,7 +5,7 @@ conditions, leave a trace and camera stills for each, and stop the moment
 anything fails.
 
     uv run python -m hardware.bench.batch --accel 5,15,30,60 --out runs/
-    uv run python -m hardware.bench.batch --repeat 3 --out runs/
+    uv run python -m hardware.bench.batch --ids 4 --repeat 3 --out runs/                                           --accel 3,5,10,15,25,40,60
     uv run python -m hardware.bench.batch --accel 5,15 --repeat 2 --dry-run
 
 THE NUMBERS DECIDE; THE PICTURES EXPLAIN. Every run's pass/fail comes
@@ -37,7 +37,7 @@ make deliberately, not a consequence of a runner existing. The mitigations
 here — stop on first failure, health check between runs, hard caps — are
 real but they are not a person.
 
-Usage: batch [--speed LIST] [--accel LIST] [--span LIST] [--repeat N]
+Usage: batch [--ids SETS] [--speed LIST] [--accel LIST] [--span LIST] [--repeat N]
              [--out DIR] [--camera-url URL] [--max-runs N] [--max-minutes N]
              [--dry-run] [--yes]
 """
@@ -72,16 +72,36 @@ def _ints(text: str) -> list[int]:
     return [int(x) for x in text.split(",") if x.strip()]
 
 
+def _id_sets(text: str | None) -> list[str | None]:
+    """Semicolon-separated joint sets; None means "every calibrated joint",
+    which is the tool's own default and must stay distinguishable from an
+    explicit list."""
+    if not text:
+        return [None]
+    return [part.strip() for part in text.split(";") if part.strip()]
+
+
 def conditions(args) -> list[dict]:
     """The matrix, expanded. Repeats are ADJACENT so a drifting arm shows
     up as a trend within a condition rather than being smeared across the
-    whole batch."""
+    whole batch.
+
+    `ids` is a semicolon-separated list of joint SETS, because the useful
+    unit is "which joints sweep", not "which joints exist":
+
+        --ids 4          only the wrist  (~20 s a run, not ~100)
+        --ids 4;2,3      two sets, run separately
+
+    Narrowing to one joint is what makes a real experiment possible: five
+    times the conditions in the same wall-clock, with the joint under
+    investigation isolated instead of buried in five other sweeps."""
     out = []
-    for speed, accel, span in itertools.product(
-            _floats(args.speed), _ints(args.accel), _ints(args.span)):
+    for ids, speed, accel, span in itertools.product(
+            _id_sets(args.ids), _floats(args.speed), _ints(args.accel),
+            _ints(args.span)):
         for rep in range(args.repeat):
-            out.append({"speed": speed, "accel": accel, "span": span,
-                        "rep": rep + 1})
+            out.append({"ids": ids, "speed": speed, "accel": accel,
+                        "span": span, "rep": rep + 1})
     return out
 
 
@@ -156,6 +176,11 @@ def run() -> int:
         prog="python -m hardware.bench.batch",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--ids", default=None,
+                        help="joint SETS to sweep, semicolon-separated "
+                             "(e.g. '4' or '4;2,3'). Default: every "
+                             "calibrated joint. Narrowing to one joint "
+                             "makes runs ~5x shorter and isolates it")
     parser.add_argument("--speed", default="1.0", help="comma list (default 1.0)")
     parser.add_argument("--accel", default="15", help="comma list (default 15)")
     parser.add_argument("--span", default="70", help="comma list (default 70)")
@@ -191,8 +216,9 @@ def run() -> int:
 
     print(f"batch: {len(plan)} run(s)")
     for n, c in enumerate(plan, 1):
-        print(f"  {n:>2}. speed {c['speed']} accel {c['accel']} "
-              f"span {c['span']}  (rep {c['rep']}/{args.repeat})")
+        print(f"  {n:>2}. ids {c['ids'] or 'all':<8} speed {c['speed']} "
+              f"accel {c['accel']:>2} span {c['span']}  "
+              f"(rep {c['rep']}/{args.repeat})")
     print(f"  budget: {budget_s // 60} min, per-run timeout "
           f"{RUN_TIMEOUT_S // 60} min")
     print(f"  camera: {args.camera_url or 'none — traces only'}")
@@ -230,7 +256,8 @@ def run() -> int:
             print(f"\nbudget of {budget_s // 60} min reached — stopping "
                   f"after {len(rows)} run(s)")
             break
-        tag = f"run{n:02d}-sp{c['speed']}-ac{c['accel']}-sn{c['span']}"
+        tag = (f"run{n:02d}-j{(c['ids'] or 'all').replace(',', '')}"
+               f"-sp{c['speed']}-ac{c['accel']}-sn{c['span']}")
         print(f"\n=== [{n}/{len(plan)}] {tag}")
 
         ok, why = health(args.cal, args.port)
@@ -248,6 +275,8 @@ def run() -> int:
                "--trace", str(traces) + "/", "--speed", str(c["speed"]),
                "--accel", str(c["accel"]), "--span", str(c["span"]),
                "--cal", args.cal, "--yes"]
+        if c["ids"]:
+            cmd += ["--ids", c["ids"]]
         if args.port:
             cmd += ["--port", args.port]
         t0 = time.monotonic()
@@ -306,7 +335,7 @@ def _selftest() -> None:
         print(f"  [{'ok ' if ok else 'FAIL'}] {label}")
 
     class A:
-        speed, accel, span, repeat = "1.0", "5,15", "70", 2
+        ids, speed, accel, span, repeat = None, "1.0", "5,15", "70", 2
 
     plan = conditions(A())
     want("matrix expands over every axis", len(plan) == 4)
@@ -315,12 +344,19 @@ def _selftest() -> None:
          [c["accel"] for c in plan] == [5, 5, 15, 15])
 
     class B(A):
-        speed, accel, span, repeat = "0.5,1.0", "5,15,30", "50,70", 3
+        ids, speed, accel, span, repeat = None, "0.5,1.0", "5,15,30", "50,70", 3
+
+    class C(A):
+        ids, speed, accel, span, repeat = "4;2,3", "1.0", "5,15", "70", 1
 
     want("a wide matrix is large enough to need the cap",
          len(conditions(B())) == 36)
     want("the hard cap is below what a careless matrix reaches",
          MAX_RUNS_CAP < 2 * len(conditions(B())))
+    want("joint SETS expand as sets, not as individual joints",
+         [c["ids"] for c in conditions(C())] == ["4", "4", "2,3", "2,3"])
+    want("no --ids means the tool's own default, kept distinguishable "
+         "from an explicit list", conditions(A())[0]["ids"] is None)
     want("camera capture with no url is skipped, not an error",
          capture(None, "x").get("skipped") is not None)
     want("camera capture against a dead url is an ERROR the manifest "
