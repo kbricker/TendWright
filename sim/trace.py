@@ -112,14 +112,69 @@ def load(path: Path) -> list[dict]:
     return out
 
 
+ALIGN_TOL_TICKS = 60   # generous: settle tolerance is 25, plus sag
+
+
+def build_reference(rows: list[dict], cals, span: int):
+    """The clip the run was actually executing, INCLUDING its start pose.
+
+    The start pose matters and getting it wrong is not subtle: the real
+    routine begins with a wake -> rest move, so its first recorded phase
+    is that move. A clip built without a start pose has no such edge, and
+    every phase then lines up against the wrong one. That shifted the
+    whole comparison by one edge and reported a good run as 164 deg out
+    (2026-07-27) — the arm was fine; the tool was reading the wrong row.
+
+    The start pose is recoverable from the trace itself: the first
+    sample IS where the arm was when the run began.
+    """
+    from hardware.bench.exercise import (SPAN_MAX, SWEEP_ORDER,
+                                         SWEEP_SPAN_CAPS, clamp_goal,
+                                         exercise_clip, sweep_window)
+    from sim.clip import MotionProfile
+    from hardware.bench.exercise import ACCELERATION, SPEED_BASE
+
+    sweep_ids = [i for i in SWEEP_ORDER if i in cals]
+    rest = {i: clamp_goal(cals[i], cals[i].rest) for i in sorted(cals)}
+    windows = {i: sweep_window(cals[i],
+                               min(span, SWEEP_SPAN_CAPS.get(i, SPAN_MAX)))
+               for i in sweep_ids}
+    return exercise_clip(cals, rest, windows, sweep_ids, dict(rows[0]["pos"]),
+                         MotionProfile(speed=SPEED_BASE,
+                                       acceleration=ACCELERATION))
+
+
+def check_alignment(by_edge: dict, edges: list) -> list[str]:
+    """Does each recorded phase actually END where its edge says it should?
+
+    An alignment error is silent and catastrophic — it produces a full
+    table of confident, meaningless numbers. So it is CHECKED, not
+    assumed: every phase's final sample must sit near its edge's target
+    pose. This is the test that would have caught the off-by-one
+    immediately instead of blaming the arm."""
+    bad = []
+    for idx, samples in sorted(by_edge.items()):
+        if not (1 <= idx <= len(edges)):
+            bad.append(f"phase {idx} has no matching edge")
+            continue
+        target = edges[idx - 1][1].ticks
+        final = samples[-1]["pos"]
+        worst = max((abs(final[i] - t) for i, t in target.items()
+                     if i in final), default=0)
+        if worst > ALIGN_TOL_TICKS:
+            bad.append(f"phase {idx} ({samples[0]['phase']}) ended "
+                       f"{worst} ticks from where edge {idx} targets")
+    return bad
+
+
 def compare(path: Path, span: int = 70) -> int:
-    """Lay the recorded run over the sim's own frames, per phase."""
+    """Lay the recorded run over the sim's own prediction, per phase."""
     from sim.clip import edge_duration
-    from sim.twin import Twin, exercise_clip_for
+    from sim.twin import Twin
 
     rows = load(path)
     twin = Twin()
-    clip = exercise_clip_for(twin.cals, span)
+    clip = build_reference(rows, twin.cals, span)
     edges = clip.edges()
 
     by_edge: dict[int, list[dict]] = {}
@@ -127,12 +182,27 @@ def compare(path: Path, span: int = 70) -> int:
         by_edge.setdefault(r["edge"], []).append(r)
 
     print(f"{len(rows)} samples over {rows[-1]['t']:.1f} s, "
-          f"{len(by_edge)} phases recorded; clip has {len(edges)} edges")
-    if len(by_edge) != len(edges):
-        print("  NOTE: phase count differs from the clip's edge count — the "
-              "run may have been aborted, or --ids/--span differed from the "
-              "defaults compared here. Per-phase numbers below are still "
-              "valid; the totals are not comparable.")
+          f"{len(by_edge)} phases recorded; reference clip has "
+          f"{len(edges)} edges")
+
+    misaligned = check_alignment(by_edge, edges)
+    if len(misaligned) > max(1, len(by_edge) // 4):
+        print("\nREFUSING TO COMPARE — the recorded run and the reference "
+              "clip do not line up:")
+        for m in misaligned[:6]:
+            print(f"  {m}")
+        if len(misaligned) > 6:
+            print(f"  ... and {len(misaligned) - 6} more")
+        print("\nEvery phase must end near its edge's target pose. When "
+              "they do not, the\ncomparison would print a full table of "
+              "confident, meaningless numbers.\nLikely causes: the run "
+              "used --ids or a --span other than "
+              f"{span}, or it was\naborted partway. Re-run the comparison "
+              "with the same --span the arm used.")
+        return 1
+    if misaligned:
+        print(f"  note: {len(misaligned)} phase(s) ended away from target "
+              f"(within tolerance overall): {misaligned[0]}")
     print()
     print(f"{'phase':<22} {'real s':>7} {'sim s':>7} {'settle s':>8} "
           f"{'worst dev':>10}  joint")
