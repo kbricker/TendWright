@@ -501,6 +501,24 @@ class Twin:
         clamped = min(hi, max(lo, q))
         return clamped, abs(q - clamped) * 180.0 / math.pi
 
+    def tick_of(self, i: int, qpos: float) -> int:
+        """The servo tick a model qpos corresponds to — inverse of
+        `qpos_of`, for the one direction that did not exist until IK.
+
+        Everything until now flowed ticks -> qpos: the arm is the source
+        of truth and the model follows it. A solver runs the other way,
+        producing joint angles nothing has ever measured, and they have
+        to become ticks before they can be commanded. Rounding to the
+        nearest tick is a real quantisation (0.088 deg), so a round-trip
+        through here is not the identity — it is the identity to within
+        one tick, which the selftest pins rather than assumes.
+        """
+        a, b = self._lin[i]
+        x = (qpos - a) / b
+        if JOINT_MAPS[i].anchor == "min":
+            return int(round(x))          # gripper: frame_x IS ticks
+        return self.cals[i].frame.tick(x)
+
     def contacts_at(self, pose: dict[int, int], step: int = 0,
                     adjudicate_nesting: bool = True,
                     ) -> tuple[list[PredictedContact], dict[int, float], int]:
