@@ -9,10 +9,19 @@ pre-flight gate; contacts are predicted, not discovered.
 The model is the SO-101 as of plan #670. It previously ran on
 Menagerie's SO-ARM100 — a different arm, accepted as close enough
 during #648. That package is still vendored at
-sim/assets/menagerie/trs_so_arm100/ and is NOT used by anything: it is
-kept only until Kyle confirms the SO-101 against the real arm at the
-bench, because until then reverting is a live possibility. Delete it
-once that check passes.
+sim/assets/menagerie/trs_so_arm100/ and NOTHING LOADS IT as a model.
+It is retained on purpose, with a job: it is the negative control for
+`sim.meshcheck`. The question #670 exists to settle is "is this even
+the right arm", and the only way to show a check can answer that is to
+aim it at the wrong arm — which rejects all six shared parts and gives
+the 43x margin the mesh comparison's threshold sits inside. Delete the
+package and that claim becomes unverifiable.
+
+Its two loadable XMLs are renamed `*.WRONG-ARM-DO-NOT-LOAD.xml` so
+loading one by accident fails outright instead of quietly producing
+collision predictions for a robot we do not own. `sim.meshcheck
+selftest` asserts that convention holds, and asserts this module's
+MODEL_XML is not inside that directory.
 
 What the swap did and did not change is worth knowing:
   - the derived clearance envelope came out IDENTICAL (m2 span 40%,

@@ -720,6 +720,27 @@ def selftest() -> int:
           f"INWARD error stays invisible (worst gap "
           f"{max(buried.values()):.2f} mm) — overlap reads as contact")
 
+    print("\nthe wrong arm stays quarantined")
+    # Kyle's call 2026-07-27: keep the SO-100 package, but marked so it
+    # cannot be mistaken for the live model. Enforced here rather than
+    # left to the README, because a naming convention nothing checks is
+    # a naming convention that lasts until the next person renames a
+    # file. Loading that package as a model would produce collision
+    # predictions for a robot we do not own — silently, and about safety.
+    from sim.twin import MODEL_XML
+    live = Path(MODEL_XML).resolve()
+    check("the live model is NOT the SO-100 package",
+          SO100.resolve().parent not in live.parents,
+          str(live.relative_to(REPO)))
+    if SO100.exists():
+        loadable = [p.name for p in SO100.parent.glob("*.xml")
+                    if "DO-NOT-LOAD" not in p.name]
+        check("every SO-100 XML is marked DO-NOT-LOAD", not loadable,
+              f"unmarked: {loadable}" if loadable else
+              f"{len(list(SO100.parent.glob('*.xml')))} marked")
+        check("the DO-NOT-USE notice is present",
+              (SO100.parent / "DO-NOT-USE.md").exists())
+
     print("\nbookkeeping")
     stray_p, stray_v = unlisted_files()
     check("every printed STL is paired or excused", not stray_p, str(stray_p))
