@@ -186,12 +186,14 @@ m3 to **1292**, m4 to **2158**. All three read 0° and the arm should be
 That is the frame convention made visible: if it isn't straight, a zero
 is wrong.
 
-> **#670 is answered.** One open decision, not a bench task: the SO-100
-> package was kept only so reverting stayed cheap, and the plan says to
-> delete it once this passed. It now has a second job — it is the
-> negative control that gives the 43× separation above. Deleting it
-> makes that claim unverifiable. Recommendation: keep the six STLs
-> `meshcheck` actually uses and delete the rest of the package.
+> **#670 is answered.** The SO-100 package stays vendored rather than
+> being deleted — it is the negative control that produces the 43×
+> separation above, so deleting it would make that claim unverifiable.
+> It is quarantined instead: a `DO-NOT-USE.md` at the package root, both
+> loadable XMLs renamed `*.WRONG-ARM-DO-NOT-LOAD.xml` so loading one
+> fails outright instead of quietly predicting collisions for a robot we
+> don't own, and a selftest that asserts all of it. Verified failing
+> before it was trusted.
 
 ---
 
