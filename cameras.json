@@ -1,17 +1,29 @@
 {
   "version": 1,
   "_comment": "Camera bus registry. Generate entries with `uv run python -m hardware.bench.cameras discover` on cell1 (plug the camera in first), then fill in name + location. path MUST be a /dev/v4l/by-path entry — it encodes the physical hub port, which is what stays stable across reboots (the ELP boards all share one USB serial). solo = full-res view + interval stills; tile = the reduced profile the 3x3 view uses. still_interval_s 0 disables interval capture for that camera.",
+  "_rewired_2026_07_27": "Kyle moved the cameras onto a powered hub and added a second, so BOTH paths changed — that is by-path working as designed, not a fault: identity is physical location, so re-cabling is a new identity. `cameras check` reported the old bench entry MISSING and both live cameras UNKNOWN, which is exactly the signal to re-register. Which camera was which was settled by capturing a frame from each and LOOKING, not inferred from port numbers: hub port 3.4 sees the arm from above, hub port 3.3 sees the bench from table level.",
   "cameras": [
     {
       "name": "bench",
       "location": "wall bracket, 60 deg down over the arm",
-      "path": "/dev/v4l/by-path/pci-0000:05:00.4-usb-0:1:1.0-video-index0",
+      "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.4:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 360, "fps": 10},
       "tags": true,
       "still_interval_s": 0,
       "still_keep": 200,
-      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Path captured 2026-07-25 plugged DIRECTLY into cell1 root port 1 — it changes when the camera moves onto a hub port, which is the point: identity is location."
+      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Was on root port 1 direct (path captured 2026-07-25); moved to root port 2, hub port 4 on 2026-07-27. Re-identified by its first frame: it looks down on the arm with the gripper and the table tags in view."
+    },
+    {
+      "name": "side",
+      "location": "PROVISIONAL — table level, looking across the bench toward the arm",
+      "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.3:1.0-video-index0",
+      "solo": {"width": 1920, "height": 1080, "fps": 30},
+      "tile": {"width": 640, "height": 360, "fps": 10},
+      "tags": true,
+      "still_interval_s": 0,
+      "still_keep": 200,
+      "notes": "Second camera, added 2026-07-27, root port 2 hub port 3. NAME AND LOCATION ARE PROVISIONAL — taken from what its first frame showed (a low view across the bench with table tags in frame), not from Kyle. Rename once he says what it is for. Worth keeping a low angle regardless: the overhead camera cannot see HEIGHT above the table and this one can, which is what a grasp approach needs."
     }
   ]
 }
