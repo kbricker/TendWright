@@ -51,6 +51,11 @@ from .term import flush_input, read_key, require_interactive
 SPEED_BASE = 200  # servo speed units at --speed 1.0 (gentler than jog's 300)
 SPEED_CAP = 400  # servo-side ceiling regardless of --speed
 ACCELERATION = 15
+# Ceiling on --accel. Higher means the internal profile generator hands
+# over to the position loop sooner, which is exactly the regime where a
+# gravity-assisted joint runs away (plan #674). Not a tuning knob to
+# open wide.
+ACCEL_CAP = 60
 SPAN_MIN, SPAN_MAX = 10, 90  # sweep % of calibrated span; >=5% end margin
 SPAN_DEFAULT = 70
 PREFLIGHT_RANGE_MARGIN = 25  # start-pose slack outside [min,max]
@@ -212,7 +217,13 @@ def run() -> int:
     parser.add_argument("--no-gate", action="store_true",
                         help="skip the digital-twin collision gate "
                              "(sim.twin) — bench emergencies only")
-    parser.add_argument("--trace", metavar="FILE",
+    parser.add_argument("--accel", type=int, default=ACCELERATION,
+                        metavar="N",
+                        help=f"servo acceleration register, 1-{ACCEL_CAP} "
+                             f"(default {ACCELERATION}; x100 ticks/s^2). "
+                             f"The cheapest lever on a joint that overhauls "
+                             f"under gravity - see plan #674")
+    parser.add_argument("--trace", metavar="FILE_OR_DIR",
                         help="record the arm's ACTUAL path to CSV, then "
                              "compare it with `python -m sim.trace FILE` "
                              "(plan #660 acceptance test)")
@@ -227,6 +238,11 @@ def run() -> int:
                          "its calibrated end stops")
     if not 0.1 <= args.speed <= 2.0:
         raise BenchError("--speed must be between 0.1 and 2.0")
+    if not 1 <= args.accel <= ACCEL_CAP:
+        raise BenchError(f"--accel must be 1-{ACCEL_CAP}",
+                         "acceleration is REG_ACCELERATION, in units of "
+                         "100 ticks/s^2")
+    accel = args.accel
     speed = min(SPEED_CAP, round(SPEED_BASE * args.speed))
 
     require_interactive()  # the e-stop key is the safety channel
@@ -322,7 +338,7 @@ def run() -> int:
                     "run `uv sync` for mujoco, or --no-gate to skip "
                     "(bench emergencies only)") from exc
             start = {i: bus.read_position(i) for i in ids}
-            profile = MotionProfile(speed=speed, acceleration=ACCELERATION)
+            profile = MotionProfile(speed=speed, acceleration=accel)
             report = Twin(cal_path).check_clip(
                 exercise_clip(cals, rest, windows, sweep_ids, start, profile),
                 # pose 0 is the arm's measured slump, not a plan
@@ -351,9 +367,22 @@ def run() -> int:
         # hit an unbound name on an early failure.
         trace = None
         if args.trace:
+            import time as _time
+
             from sim.trace import Trace
-            trace = Trace(args.trace)
-            print(f"tracing the arm's actual path to {args.trace}")
+            dest = Path(args.trace)
+            # A directory means "a batch": auto-name so repeated runs
+            # accumulate instead of overwriting each other. Losing run 4
+            # of 6 because it reused a filename is a wasted bench trip.
+            if dest.is_dir() or args.trace.endswith(("/", "\\")):
+                stamp = _time.strftime("%Y%m%d-%H%M%S")
+                dest = dest / (f"run-{stamp}-sp{speed}-ac{accel}"
+                               f"-sn{args.span}.csv")
+            trace = Trace(dest, meta={
+                "speed": speed, "accel": accel, "span": args.span,
+                "ids": sweep_ids, "cal": str(cal_path),
+            })
+            print(f"tracing the arm's actual path to {dest}")
         sink = trace.sample if trace is not None else None
 
         try:
@@ -363,13 +392,13 @@ def run() -> int:
             print("\nwaking (torque on, holding in place)...")
             for i in ids:
                 bus.move_to(i, clamp_goal(cals[i], bus.read_position(i)),
-                            speed=speed, acceleration=ACCELERATION)
+                            speed=speed, acceleration=accel)
                 bus.set_torque(i, True)
 
             print("moving to the rest pose...")
             for i in ids:
                 bus.move_to(i, rest[i], speed=speed,
-                            acceleration=ACCELERATION)
+                            acceleration=accel)
             if trace is not None:
                 trace.phase("rest", edge=1)
             wait_settle(bus, rest, speed, "rest", poll_key=read_key,
@@ -404,7 +433,7 @@ def run() -> int:
                               f"clear of the fold) so joint {i} can't "
                               f"press it into the table")
                         bus.move_to(j, pose, speed=speed,
-                                    acceleration=ACCELERATION)
+                                    acceleration=accel)
                     if trace is not None:
                         trace.phase(f"j{i} clearance")
                     wait_settle(bus, hold, speed, "clearance",
@@ -418,7 +447,7 @@ def run() -> int:
                 for label, target in (("low", lo), ("high", hi),
                                       ("rest", rest[i])):
                     bus.move_to(i, clamp_goal(cals[i], target),
-                                speed=speed, acceleration=ACCELERATION)
+                                speed=speed, acceleration=accel)
                     goals = {**hold, i: clamp_goal(cals[i], target)}
                     if trace is not None:
                         trace.phase(f"j{i} {label}")
@@ -430,7 +459,7 @@ def run() -> int:
                         print(f"  refolding joint {j} ({cals[j].name}) "
                               f"to rest")
                         bus.move_to(j, rest[j], speed=speed,
-                                    acceleration=ACCELERATION)
+                                    acceleration=accel)
                     if trace is not None:
                         trace.phase(f"j{i} refold")
                     wait_settle(bus, rest, speed, "refold",

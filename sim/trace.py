@@ -32,6 +32,7 @@ joint deviating points at that joint.
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -49,7 +50,13 @@ class Trace:
     recorder that can abort a moving arm is a hazard, not a diagnostic.
     """
 
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, meta: dict | None = None):
+        # A batch of runs is uninterpretable unless each file says what
+        # produced it. The profile is written INTO the trace so the
+        # comparison uses the run's own speed/accel rather than assuming
+        # the defaults — comparing a --speed 0.5 run against the default
+        # reference would look exactly like a broken arm.
+        self.meta = dict(meta or {})
         self.path = Path(path)
         self._phase = "start"
         self._edge = 0
@@ -80,6 +87,8 @@ class Trace:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("w", newline="") as fh:
+                if self.meta:
+                    fh.write("#" + json.dumps(self.meta) + "\n")
                 w = csv.DictWriter(fh, fieldnames=FIELDS)
                 w.writeheader()
                 w.writerows(self._rows)
@@ -93,10 +102,17 @@ class Trace:
 
 
 # ------------------------------------------------------------ compare
-def load(path: Path) -> list[dict]:
+def load(path: Path) -> tuple[list[dict], dict]:
+    """(samples, meta). meta carries the profile the run actually used."""
+    meta: dict = {}
     try:
-        with Path(path).open(newline="") as fh:
-            rows = list(csv.DictReader(fh))
+        text = Path(path).read_text().splitlines()
+        while text and text[0].startswith("#"):
+            try:
+                meta.update(json.loads(text.pop(0)[1:]))
+            except json.JSONDecodeError:
+                pass
+        rows = list(csv.DictReader(text))
     except OSError as exc:
         raise BenchError(f"could not read {path}: {exc}",
                          "run exercise with --trace FILE first") from exc
@@ -109,13 +125,13 @@ def load(path: Path) -> list[dict]:
                "pos": {i: int(r[f"j{i}"]) for i in range(1, 7)
                        if r.get(f"j{i}") not in (None, "")}}
         out.append(rec)
-    return out
+    return out, meta
 
 
 ALIGN_TOL_TICKS = 60   # generous: settle tolerance is 25, plus sag
 
 
-def build_reference(rows: list[dict], cals, span: int):
+def build_reference(rows: list[dict], cals, span: int, meta: dict | None = None):
     """The clip the run was actually executing, INCLUDING its start pose.
 
     The start pose matters and getting it wrong is not subtle: the real
@@ -127,6 +143,11 @@ def build_reference(rows: list[dict], cals, span: int):
 
     The start pose is recoverable from the trace itself: the first
     sample IS where the arm was when the run began.
+
+    The PROFILE and SPAN come from the trace's own metadata when it has
+    any, not from the defaults. Comparing a --speed 0.5 run against the
+    default reference would show every phase running "slow" by exactly
+    the factor the operator chose — indistinguishable from a broken arm.
     """
     from hardware.bench.exercise import (SPAN_MAX, SWEEP_ORDER,
                                          SWEEP_SPAN_CAPS, clamp_goal,
@@ -134,14 +155,19 @@ def build_reference(rows: list[dict], cals, span: int):
     from sim.clip import MotionProfile
     from hardware.bench.exercise import ACCELERATION, SPEED_BASE
 
-    sweep_ids = [i for i in SWEEP_ORDER if i in cals]
+    meta = meta or {}
+    span = int(meta.get("span", span))
+    ids = meta.get("ids")
+    sweep_ids = [i for i in SWEEP_ORDER
+                 if i in cals and (ids is None or i in ids)]
     rest = {i: clamp_goal(cals[i], cals[i].rest) for i in sorted(cals)}
     windows = {i: sweep_window(cals[i],
                                min(span, SWEEP_SPAN_CAPS.get(i, SPAN_MAX)))
                for i in sweep_ids}
-    return exercise_clip(cals, rest, windows, sweep_ids, dict(rows[0]["pos"]),
-                         MotionProfile(speed=SPEED_BASE,
-                                       acceleration=ACCELERATION))
+    profile = MotionProfile(speed=int(meta.get("speed", SPEED_BASE)),
+                            acceleration=int(meta.get("accel", ACCELERATION)))
+    return exercise_clip(cals, rest, windows, sweep_ids,
+                         dict(rows[0]["pos"]), profile)
 
 
 def check_alignment(by_edge: dict, edges: list) -> list[str]:
@@ -172,9 +198,9 @@ def compare(path: Path, span: int = 70) -> int:
     from sim.clip import edge_duration
     from sim.twin import Twin
 
-    rows = load(path)
+    rows, meta = load(path)
     twin = Twin()
-    clip = build_reference(rows, twin.cals, span)
+    clip = build_reference(rows, twin.cals, span, meta)
     edges = clip.edges()
 
     by_edge: dict[int, list[dict]] = {}
@@ -184,6 +210,16 @@ def compare(path: Path, span: int = 70) -> int:
     print(f"{len(rows)} samples over {rows[-1]['t']:.1f} s, "
           f"{len(by_edge)} phases recorded; reference clip has "
           f"{len(edges)} edges")
+    if meta:
+        print(f"  run profile (from the trace): speed "
+              f"{clip.profile.speed} ticks/s, acceleration "
+              f"{clip.profile.acceleration}, span {meta.get('span', span)}%"
+              + (f", ids {meta['ids']}" if meta.get("ids") else ""))
+    else:
+        print("  NOTE: this trace carries no profile metadata (recorded "
+              "before that existed).\n  Comparing against the DEFAULTS — if "
+              "the run used --speed/--span/--accel, the numbers\n  below "
+              "will be wrong in exactly the way a broken arm looks.")
 
     misaligned = check_alignment(by_edge, edges)
     if len(misaligned) > max(1, len(by_edge) // 4):
