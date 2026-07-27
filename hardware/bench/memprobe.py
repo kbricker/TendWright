@@ -62,6 +62,21 @@ TOP_SITES = 12
 # Live object types reported per sample.
 TOP_TYPES = 12
 
+# Run the gc type histogram only every Nth sample.
+#
+# `gc.get_objects()` walks every tracked object in the process and
+# stalls it while it does — measured as a ~175 ms pause on camserve,
+# which is visible as a 2-second dip in the fps readout because the
+# sliding window is 30 frames. Kyle noticed it as "the FPS is jumping
+# around", and he was right.
+#
+# The tracemalloc half is cheap per sample and is also the half that
+# matters for #704 (it sees `bytes`; the histogram structurally cannot).
+# So the expensive half was buying the weaker signal every time. It now
+# runs occasionally — often enough to catch a leak of retained wrappers,
+# rarely enough that the stream stays smooth.
+TYPES_EVERY = 10
+
 
 def rss_mb() -> float:
     """Resident set size in MB, or 0.0 where it cannot be read.
@@ -90,12 +105,17 @@ def type_histogram() -> Counter:
     return counts
 
 
-def sample(baseline, prev_types: Counter | None) -> tuple[str, object, Counter]:
-    """One report: RSS, the biggest growth sites, and type-count deltas."""
+def sample(baseline, prev_types: Counter | None,
+           with_types: bool = True) -> tuple[str, object, Counter | None]:
+    """One report: RSS, the biggest growth sites, and type-count deltas.
+
+    `with_types=False` skips the gc walk, which is the expensive part —
+    see TYPES_EVERY.
+    """
     import tracemalloc
 
     snap = tracemalloc.take_snapshot()
-    types = type_histogram()
+    types = type_histogram() if with_types else None
     lines = [f"--- {time.strftime('%Y-%m-%d %H:%M:%S')}  "
              f"RSS {rss_mb():.0f} MB  "
              f"tracemalloc {tracemalloc.get_traced_memory()[0] / 1e6:.0f} MB "
@@ -110,7 +130,7 @@ def sample(baseline, prev_types: Counter | None) -> tuple[str, object, Counter]:
                      f"{stat.count_diff:+8d} blocks  "
                      f"{Path(frame.filename).name}:{frame.lineno}")
 
-    if prev_types is not None:
+    if types is not None and prev_types is not None:
         grown = sorted(((types[k] - prev_types.get(k, 0), k) for k in types),
                        reverse=True)[:TOP_TYPES]
         lines.append("  live objects, change since the previous sample:")
@@ -137,9 +157,16 @@ def probe_loop(stop: threading.Event, out: Path, interval_s: float) -> None:
                  f", baseline RSS {rss_mb():.0f} MB, "
                  f"interval {interval_s:.0f}s ===\n")
         fh.flush()
+        n = 0
         while not stop.wait(interval_s):
+            n += 1
+            # The first sample carries a histogram so a leak already in
+            # progress is visible immediately; after that it is periodic.
+            want_types = (n == 1) or (n % TYPES_EVERY == 0)
             try:
-                text, _, prev = sample(baseline, prev)
+                text, _, types = sample(baseline, prev, with_types=want_types)
+                if types is not None:
+                    prev = types
             except Exception as exc:            # never take the server down
                 text = f"--- memprobe sample failed: {exc!r} ---"
             fh.write(text + "\n")
