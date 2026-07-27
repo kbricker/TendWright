@@ -1001,6 +1001,34 @@ def cmd_selftest(twin: Twin) -> int:
          len(slow_frames) > len(frames), True)
     want("...but still end on the same pose",
          slow_frames[-1] == frames[-1], True)
+
+    # The sample rate is a SAFETY parameter, not a smoothness setting: a
+    # link that moves further between two samples than the contact
+    # margin can pass a thin obstacle that sits between them. Assert the
+    # property so DEFAULT_HZ cannot be lowered (or a clip made faster)
+    # without this failing.
+    def worst_step_mm(fr: list[dict[int, int]]) -> float:
+        bid = mujoco.mj_name2id(twin.model, mujoco.mjtObj.mjOBJ_BODY,
+                                TOOL_BODY)
+        pts = []
+        for f in fr:
+            twin.data.qpos[:] = twin._rest_qpos
+            for i, tk in f.items():
+                twin.data.qpos[twin._adr[i]] = twin.qpos_of(i, tk)[0]
+            mujoco.mj_forward(twin.model, twin.data)
+            pts.append(twin.data.xpos[bid].copy())
+        return max((float(np.linalg.norm(b - a)) * 1000.0
+                    for a, b in zip(pts, pts[1:])), default=0.0)
+
+    margin_mm = CONTACT_MARGIN_M * 1000.0
+    step = worst_step_mm(frames)
+    want(f"sampling is fine enough not to tunnel: worst tool step "
+         f"{step:.2f} mm vs {margin_mm:.0f} mm margin (want 2x headroom)",
+         step < margin_mm / 2.0, True)
+    coarse = worst_step_mm(sample_clip(clip, 10.0))
+    want(f"...and a deliberately coarse rate DOES breach it "
+         f"({coarse:.2f} mm at 10 Hz), so the check can fail",
+         coarse > margin_mm, True)
     print("twin selftest " + ("OK" if not fails else f"FAILED: {fails}"))
     return 1 if fails else 0
 

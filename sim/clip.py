@@ -60,9 +60,29 @@ POSES_JSON = Path(__file__).resolve().parent.parent / "poses.json"
 # REG_ACCELERATION counts in hundreds of ticks/s^2 (STS3215).
 ACCEL_UNIT_TICKS_S2 = 100.0
 
-# Playback/gating sample rate. Fine enough that a joint at the fastest
-# speed the bench tools allow moves well under a tick between frames, so
-# sampling never tunnels a link through an obstacle.
+# Playback/gating sample rate.
+#
+# The bound that matters is not "frames look smooth" — it is that a link
+# must not move further between two samples than the gate's contact
+# margin, or a thin obstacle fits BETWEEN samples and the gate walks
+# past it. Measured on the exercise routine (tool travel per sample,
+# against a 5 mm margin):
+#
+#     100 Hz  10084 poses   worst 0.95 mm   5x headroom   <- here
+#      50 Hz   5045 poses   worst 1.90 mm   2.6x
+#      25 Hz   2531 poses   worst 3.79 mm   barely under
+#      10 Hz   1018 poses   worst 9.48 mm   TUNNELS
+#
+# For contrast the angle-stepped gate this replaced sampled every 2 deg,
+# about 23 ticks, roughly 12 mm of tool travel at full reach — over
+# TWICE the margin. Its smaller pose count was under-sampling, not
+# efficiency.
+#
+# 100 Hz costs 2.4 s to gate the whole routine, so the headroom is free.
+# `sim.twin selftest` asserts the property rather than trusting this
+# comment: it measures the worst step and fails if it approaches the
+# margin, and pairs that with a deliberately coarse rate that must
+# breach it.
 DEFAULT_HZ = 100.0
 
 
