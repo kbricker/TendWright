@@ -1909,16 +1909,23 @@ def load_cell(path: Path = CELL_JSON) -> Cell:
         arm_x=_num(arm, "x", where, required=False),
         arm_y=_num(arm, "y", where, required=False),
         arm_yaw_deg=_num(arm, "yaw_deg", where, required=False),
+        # A camera with no measured position is SKIPPED, not defaulted.
+        # It exists and streams (cameras.json knows about it) but nobody
+        # has measured where it is, and inventing a pose would draw a
+        # sight line that looks like evidence — and would make
+        # `sim.simcam` render a view no real camera has. Absent is
+        # honest; a plausible guess is not.
         cameras=tuple(
             Camera(name=c.get("name", "cam"), wall=c["wall"],
                    along=float(c["along"]), z=float(c["z"]),
-                   tilt_deg=float(c.get("tilt_deg", 60.0)),
+                   tilt_deg=float(c.get("tilt_deg") or 60.0),
                    standoff=(float(c["standoff"])
                              if c.get("standoff") is not None else None),
                    fovy_deg=(float(c["fovy_deg"])
                              if c.get("fovy_deg") is not None else None),
                    notes=c.get("notes", ""))
-            for c in (doc.get("cameras") or [])),
+            for c in (doc.get("cameras") or [])
+            if c.get("along") is not None and c.get("z") is not None),
         shadows=bool((doc.get("render") or {}).get("shadows", False)))
 
 

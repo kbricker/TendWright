@@ -1,5 +1,6 @@
 {
   "_scope": "THIS PROJECT's use of a bench: which bench, what stands on it and where. Separate from the bench file on purpose - see bench.json's _scope.",
+  "_PROVISIONAL_2026_07_27": "Kyle re-cabled the cell today (cameras onto a powered hub, a second camera added, and a longer arm control cable so it no longer crosses the work area) and said a full reorganisation is coming: 'for now all positions are provisional'. So EVERY position below is now UNVERIFIED, including ones that were measured, and `sim.simcam` renders from these numbers - it will show a view the real camera does not have until they are re-measured. Do not treat a simcam frame as predicting what the bench camera sees until this key is gone. What is NOT invalidated: camera INTRINSICS (a property of lens and sensor, not of position), the collision gate, IK, and the motion work - none of those depend on where anything sits.",
   "bench": "bench.json",
   "arm": {
     "x": 51.5,
@@ -15,7 +16,16 @@
       "z": 29.0,
       "tilt_deg": 60.0,
       "standoff": null,
-      "notes": "Aligned with the arm - same position along the return (x 51.5) - on the printed 60-degree wall bracket. LENS CENTRE 29 above the table top, MEASURED. `standoff` (how far the lens sits out from the wall face on the bracket) is NOT measured; the render uses a 2 in placeholder, which shifts the sight line but not its angle. Registry entry for the live camera is cameras.json - this is only where it is in space."
+      "notes": "STALE as of 2026-07-27 - see _PROVISIONAL_2026_07_27. Aligned with the arm - same position along the return (x 51.5) - on the printed 60-degree wall bracket. LENS CENTRE 29 above the table top, MEASURED (2026-07-26, before the re-cable). `standoff` (how far the lens sits out from the wall face on the bracket) is NOT measured; the render uses a 2 in placeholder, which shifts the sight line but not its angle. Registry entry for the live camera is cameras.json - this is only where it is in space."
+    },
+    {
+      "name": "side",
+      "wall": "side",
+      "along": null,
+      "z": null,
+      "tilt_deg": null,
+      "standoff": null,
+      "notes": "SECOND CAMERA, added 2026-07-27. Position deliberately NULL rather than guessed: it is registered and streaming (cameras.json, hub port 3) and its first frame shows a low view across the bench from table level, but nobody has measured where it is. Nulls here mean the sim will not draw it, which is the correct behaviour - an invented pose would render a sight line that looks like evidence. Fill in after the reorganisation. A low angle is worth keeping wherever it lands: the overhead camera cannot resolve HEIGHT above the table and this one can, which is what a grasp approach needs."
     }
   ],
   "render": {
