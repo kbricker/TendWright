@@ -40,12 +40,35 @@ rather than trusting either.
 from __future__ import annotations
 
 import math
+import os
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+
+def _pick_gl_backend() -> None:
+    """Choose an offscreen GL backend before MuJoCo initialises one.
+
+    cell1 is the deployment target and it is driven over ssh, where
+    there is no display and MuJoCo's default backend dies with
+    `gladLoadGL error`. EGL renders on the GPU without a window and
+    works there — verified on cell1, producing frames identical in mean
+    brightness to the desk's.
+
+    Set only when nothing is set: an explicit MUJOCO_GL always wins, and
+    on a machine that HAS a display the default is already right.
+    """
+    if os.environ.get("MUJOCO_GL"):
+        return
+    if sys.platform.startswith("linux") and not (
+            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        os.environ["MUJOCO_GL"] = "egl"
+
+
+_pick_gl_backend()
 
 # A tag geom is a thin slab rather than a plane: MuJoCo planes are
 # infinite/one-sided and awkward to texture, and a slab also reads
@@ -365,8 +388,22 @@ def selftest() -> int:
     print("\nthe camera is aimed where cell.json says it is")
     check("the bench camera exists in the model",
           "cam_bench" in cam0.camera_names(), str(cam0.camera_names()))
-    frame = cam0.render(width=640, height=360)
-    check("it renders something that is not a void",
+    backend = os.environ.get("MUJOCO_GL", "(default)")
+    try:
+        frame = cam0.render(width=640, height=360)
+    except Exception as exc:
+        # Loud, not skipped. Everything after this point is rendering,
+        # so a quiet pass here would report a working perception
+        # pipeline on a machine that cannot draw a single frame.
+        print(f"  FAIL offscreen rendering is unavailable (MUJOCO_GL="
+              f"{backend}): {type(exc).__name__}: {exc}")
+        print("       On a headless Linux box this module sets MUJOCO_GL=egl "
+              "automatically;")
+        print("       if that failed, EGL is missing. Every render check "
+              "below is UNTESTED.")
+        fails.append("offscreen rendering is unavailable")
+        return 1
+    check(f"it renders something that is not a void [MUJOCO_GL={backend}]",
           frame.shape == (360, 640, 3) and 20 < frame.mean() < 235,
           f"mean brightness {frame.mean():.1f}")
 
