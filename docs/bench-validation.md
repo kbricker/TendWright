@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-07-27 by [`bench-2026-07-27.md`](bench-2026-07-27.md).**
+> Phases 1 and 2 are done — #647 and #670 both closed without bench work
+> (the printed STLs answered the model question better than calipers
+> could). Phase 3's motion runs carry forward into the new doc. Kept for
+> the reasoning, not as instructions.
+
 # Bench validation session
 
 Closing out the tickets that have been waiting on hardware. Everything
