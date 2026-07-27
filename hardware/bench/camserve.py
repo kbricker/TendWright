@@ -482,6 +482,12 @@ def run() -> int:
     parser.add_argument("--no-stills", action="store_true",
                         help="viewer only — skip interval still capture")
     parser.add_argument("--stills-dir", default=STILLS_DIR_DEFAULT)
+    parser.add_argument("--debug-memory", metavar="FILE", default=None,
+                        help="periodically log where memory is going, to "
+                             "FILE (plan #704). Slows every allocation — "
+                             "diagnostic only, never leave it on")
+    parser.add_argument("--debug-memory-interval", type=float, default=300.0,
+                        help="seconds between memory samples (default 300)")
     args = parser.parse_args()
 
     specs = load_registry(args.registry)
@@ -516,11 +522,25 @@ def run() -> int:
     print(f"serving http://{host}:{args.listen}/  "
           f"(picker, /all tiles, /cam/<name>/, /status)")
     print("LAN only, no auth — never port-forward this. Ctrl+C to stop.")
+
+    mem_stop = None
+    if args.debug_memory:
+        from .memprobe import start as _mem_start
+        mem_path = Path(args.debug_memory)
+        mem_stop = _mem_start(mem_path, args.debug_memory_interval)
+        # Announced loudly on purpose: tracemalloc taxes every
+        # allocation, so a run left in this mode would look like a
+        # performance regression to whoever inherits it.
+        print(f"DEBUG MEMORY ON -> {mem_path} every "
+              f"{args.debug_memory_interval:.0f}s. This slows allocation; "
+              f"turn it off once #704 is understood.")
     try:
         while True:  # main thread parks here so Ctrl+C lands cleanly
             time.sleep(3600)
     finally:
         stop.set()
+        if mem_stop is not None:
+            mem_stop.set()
         for step in (mgr.shutdown, server.shutdown, server.server_close):
             try:
                 step()
