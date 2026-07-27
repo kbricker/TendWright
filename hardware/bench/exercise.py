@@ -43,7 +43,8 @@ from hardware.units import DEG_PER_TICK, fmt_ticks
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .calibrate import (JOINT_NAMES, JointCal, fold_direction,
                         load_calibration)
-from .guards import ENTRY_PHASE, MOTION_PHASE, check_holds, holds_for
+from .guards import (ENTRY_PHASE, MOTION_PHASE, StrainWatch,
+                     check_holds, holds_for)
 from .monitor import parse_ids
 from .motion import EStop, halt_all, wait_settle
 from .term import flush_input, read_key, require_interactive
@@ -365,6 +366,14 @@ def run() -> int:
 
         # Built BEFORE the try, so the finally that flushes it can never
         # hit an unbound name on an early failure.
+        # The automatic abort. The keypress e-stop needs a human; this
+        # does not — the servos report load, temperature and their own
+        # fault bits, and a joint pushing against something says so
+        # before anything breaks. Watched on EVERY move, not just the
+        # guarded sweep, because a collision does not care which phase
+        # the routine is in.
+        strain = StrainWatch(ids)
+
         trace = None
         if args.trace:
             import time as _time
@@ -402,7 +411,8 @@ def run() -> int:
             if trace is not None:
                 trace.phase("rest", edge=1)
             wait_settle(bus, rest, speed, "rest", poll_key=read_key,
-                        sample_sink=sink)
+                        sample_sink=sink,
+                        invariant=lambda: strain.check(bus))
 
             for n, i in enumerate(sweep_ids, start=1):
                 lo, hi = windows[i]
@@ -423,8 +433,12 @@ def run() -> int:
                                          for j in clearance})
                 guard_why = (f"joint {i} ({name}) sweeps only while these "
                              f"stay clear of the fold")
-                invariant = partial(check_holds, bus, guard_holds,
-                                    MOTION_PHASE, guard_why)
+                hold_invariant = partial(check_holds, bus, guard_holds,
+                                         MOTION_PHASE, guard_why)
+
+                def invariant(_h=hold_invariant):
+                    strain.check(bus)     # strain first: it is the one
+                    _h()                  # that means "stop right now"
 
                 if clearance:
                     for j, pose in clearance.items():
@@ -437,7 +451,8 @@ def run() -> int:
                     if trace is not None:
                         trace.phase(f"j{i} clearance")
                     wait_settle(bus, hold, speed, "clearance",
-                                poll_key=read_key, sample_sink=sink)
+                                poll_key=read_key, sample_sink=sink,
+                                invariant=lambda: strain.check(bus))
                     # ENTRY GUARD: the sweep is unreachable until the
                     # encoders confirm the clearance actually happened.
                     check_holds(bus, guard_holds, ENTRY_PHASE, guard_why)
@@ -463,7 +478,8 @@ def run() -> int:
                     if trace is not None:
                         trace.phase(f"j{i} refold")
                     wait_settle(bus, rest, speed, "refold",
-                                poll_key=read_key, sample_sink=sink)
+                                poll_key=read_key, sample_sink=sink,
+                                invariant=lambda: strain.check(bus))
 
             print("\nroutine complete — arm at rest, cutting torque")
             return 0

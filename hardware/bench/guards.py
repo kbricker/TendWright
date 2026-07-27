@@ -317,6 +317,184 @@ def _selftest_in_motion(cals, commanded, opening) -> None:
         raise AssertionError("arrival outraced the invariant")
 
 
+
+
+# --------------------------------------------------------- strain guard
+# Plan #676. The e-stop is a keypress, so it needs a human. THIS is the
+# abort that does not: the servo reports how hard it is working, and a
+# joint pushing against something says so before anything breaks.
+#
+# The failure this exists to pre-empt: the STS3215 has its own overload
+# protection, and that protection CUTS TORQUE. On an arm, a torque cut
+# is not a safe state — the arm goes limp and falls, from wherever it
+# was, at whatever angle. Stopping under control while the servo is
+# still holding is strictly better than being dropped by it.
+#
+# Every threshold is a REFUSAL point, not a target. They sit below the
+# servo's own trip points so we stop first.
+LOAD_TRIP_PCT = 55.0        # sustained load; brief peaks are normal
+LOAD_PEAK_PCT = 80.0        # instantaneous — stop now, do not wait
+TEMP_TRIP_C = 55            # STS3215 protects itself around 70
+TEMP_WARN_C = 45
+VOLTS_MIN = 6.0             # brown-out: a sagging rail drops the arm
+LOAD_TRIP_SAMPLES = 3       # consecutive, so one noisy read is not a stop
+
+
+class StrainViolation(BenchError):
+    """A servo reported it was working too hard, or complained outright."""
+
+
+class StrainWatch:
+    """Per-joint strain state across a move.
+
+    Sustained load needs consecutive samples because a single high read
+    during acceleration is normal and stopping on it would make the guard
+    useless — but a PEAK is acted on immediately, because by the time you
+    have three samples of 80% something is already jammed.
+    """
+
+    def __init__(self, ids: list[int]):
+        self.ids = list(ids)
+        self._hot: dict[int, int] = {i: 0 for i in ids}
+        self.worst: dict[int, dict] = {}
+        self.unreadable = False
+
+    def check(self, bus) -> None:
+        for i in self.ids:
+            try:
+                h = bus.read_health(i)
+            except BenchError:
+                # A health read that fails must not stop the arm on its
+                # own — the position reads that actually gate motion are
+                # still working, and a flaky diagnostic register is not a
+                # reason to abort a good run.
+                self.unreadable = True
+                continue
+            if not h["plausible"]:
+                self.unreadable = True
+                continue
+            prev = self.worst.get(i)
+            if prev is None or h["load_pct"] > prev["load_pct"]:
+                self.worst[i] = h
+            if h["faults"]:
+                raise StrainViolation(
+                    f"joint {i} reports {', '.join(h['faults'])}",
+                    "the servo is about to protect itself by cutting "
+                    "torque, which would drop the arm — power down and "
+                    "let it cool before re-running")
+            if h["volts"] < VOLTS_MIN:
+                raise StrainViolation(
+                    f"joint {i} sees {h['volts']:.1f} V (limit "
+                    f"{VOLTS_MIN})",
+                    "a sagging supply cuts torque and drops the arm; "
+                    "check the supply before re-running")
+            if h["temp_c"] >= TEMP_TRIP_C:
+                raise StrainViolation(
+                    f"joint {i} is at {h['temp_c']} C (limit "
+                    f"{TEMP_TRIP_C})",
+                    "let the arm cool; a batch of back-to-back runs "
+                    "heats the shoulder joints most")
+            if h["load_pct"] >= LOAD_PEAK_PCT:
+                raise StrainViolation(
+                    f"joint {i} hit {h['load_pct']:.0f}% load",
+                    "something is in the way, or the pose is beyond what "
+                    "this joint can hold — clear the workspace and check "
+                    "the arm before re-running")
+            if h["load_pct"] >= LOAD_TRIP_PCT:
+                self._hot[i] += 1
+                if self._hot[i] >= LOAD_TRIP_SAMPLES:
+                    raise StrainViolation(
+                        f"joint {i} held {h['load_pct']:.0f}% load for "
+                        f"{LOAD_TRIP_SAMPLES} samples",
+                        "sustained strain — the arm is pushing against "
+                        "something rather than moving freely")
+            else:
+                self._hot[i] = 0
+
+    def summary(self) -> str:
+        if not self.worst:
+            return ("strain: no readable health data — the servo status "
+                    "registers did not return plausible values, so strain "
+                    "did NOT gate this run")
+        peak = max(self.worst.values(), key=lambda h: h["load_pct"])
+        hot = max(self.worst.values(), key=lambda h: h["temp_c"])
+        note = " (some reads unusable)" if self.unreadable else ""
+        return (f"strain: peak load {peak['load_pct']:.0f}% on joint "
+                f"{peak['id']}, hottest {hot['temp_c']} C on joint "
+                f"{hot['id']}{note}")
+
+
+def _selftest_strain() -> None:
+    """The strain guard, against a fake servo. Every acceptance paired
+    with a refusal — a guard that only ever passes is decoration."""
+    fails: list[str] = []
+
+    def want(label: str, ok: bool) -> None:
+        if not ok:
+            fails.append(label)
+        print(f"  [{'ok ' if ok else 'FAIL'}] {label}")
+
+    class Fake:
+        def __init__(self, **over):
+            self.h = {"id": 1, "load_pct": 5.0, "current_ma": 100.0,
+                      "temp_c": 30, "volts": 7.4, "status": 0,
+                      "faults": [], "plausible": True}
+            self.h.update(over)
+
+        def read_health(self, i):
+            return {**self.h, "id": i}
+
+    def trips(bus, n=5):
+        w = StrainWatch([1])
+        try:
+            for _ in range(n):
+                w.check(bus)
+            return False, w
+        except StrainViolation:
+            return True, w
+
+    ok, w = trips(Fake())
+    want("a healthy servo does NOT trip", not ok)
+    want("...and its peak is still reported", "peak load" in w.summary())
+
+    want("an OVERLOAD fault bit trips immediately",
+         trips(Fake(faults=["OVERLOAD"], status=0x20))[0])
+    want("an OVERHEAT fault bit trips immediately",
+         trips(Fake(faults=["OVERHEAT"], status=0x04))[0])
+    want("a brown-out trips (a sagging rail drops the arm)",
+         trips(Fake(volts=5.0))[0])
+    want("over-temperature trips below the servo's own protection",
+         trips(Fake(temp_c=TEMP_TRIP_C))[0])
+    want("a load PEAK trips on the first sample",
+         trips(Fake(load_pct=LOAD_PEAK_PCT), n=1)[0])
+    want("sustained load trips only after several samples",
+         trips(Fake(load_pct=LOAD_TRIP_PCT), n=LOAD_TRIP_SAMPLES)[0]
+         and not trips(Fake(load_pct=LOAD_TRIP_PCT),
+                       n=LOAD_TRIP_SAMPLES - 1)[0])
+
+    # a brief spike must NOT stop a good run
+    w = StrainWatch([1])
+    hot, cool = Fake(load_pct=LOAD_TRIP_PCT), Fake(load_pct=5.0)
+    try:
+        for b in (hot, cool, hot, cool, hot, cool):
+            w.check(b)
+        want("alternating spikes do not trip (the counter resets)", True)
+    except StrainViolation:
+        want("alternating spikes do not trip (the counter resets)", False)
+
+    # implausible readings must DISABLE the guard, not trip it
+    ok, w = trips(Fake(plausible=False, load_pct=99.0, temp_c=200))
+    want("implausible readings never trip the guard — a misread register "
+         "must not stop a good arm", not ok)
+    want("...and the run says out loud that strain did not gate it",
+         "did NOT gate" in w.summary())
+
+    print("strain selftest " + ("OK" if not fails else f"FAILED: {fails}"))
+    if fails:
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
     _selftest()
+    _selftest_strain()
     sys.exit(0)

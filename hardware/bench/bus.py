@@ -33,8 +33,27 @@ REG_GOAL_POSITION = 42  # u16
 REG_GOAL_SPEED = 46  # u16
 REG_LOCK = 55  # 0 = EEPROM unlocked, 1 = locked
 REG_PRESENT_POSITION = 56  # u16
+REG_PRESENT_SPEED = 58  # u16, bit 15 = direction
+REG_PRESENT_LOAD = 60  # u16, bit 10 = direction, magnitude 0-1000 (0.1%)
 REG_PRESENT_VOLTAGE = 62  # units of 0.1 V
 REG_PRESENT_TEMPERATURE = 63  # deg C
+# Status byte: the servo's own complaint register. Bit meanings per the
+# Feetech STS series map. The servo acts on these itself by CUTTING
+# TORQUE - which on an arm means it goes limp and falls, so the point of
+# reading them is to stop under control BEFORE the servo protects itself.
+REG_STATUS = 65
+STATUS_VOLTAGE = 0x01
+STATUS_ANGLE = 0x02
+STATUS_OVERHEAT = 0x04
+STATUS_OVERELECTRIC = 0x08
+STATUS_OVERLOAD = 0x20
+STATUS_BITS = ((STATUS_VOLTAGE, "voltage out of range"),
+               (STATUS_ANGLE, "angle sensor error"),
+               (STATUS_OVERHEAT, "OVERHEAT"),
+               (STATUS_OVERELECTRIC, "over-current"),
+               (STATUS_OVERLOAD, "OVERLOAD"))
+REG_MOVING = 66
+REG_PRESENT_CURRENT = 69  # u16, units of 6.5 mA
 
 # Feetech IDs 0-253 are all valid (254 is broadcast); a servo can sit at 0.
 SCAN_IDS = list(range(0, 254))
@@ -196,6 +215,46 @@ class FeetechBus:
 
     def read_position(self, servo_id: int) -> int:
         return self.read_u16(servo_id, REG_PRESENT_POSITION, "read position")
+
+    def read_health(self, servo_id: int) -> dict:
+        """What the servo says about how hard it is working.
+
+        This is the signal an automatic abort needs: an e-stop that is a
+        keypress requires a human, but a servo straining is something the
+        code can see. Load, current and temperature rise BEFORE the
+        servo's own overload protection trips — and that protection cuts
+        torque, which on an arm means it goes limp and falls. Stopping
+        under control beforehand is strictly better than being dropped.
+
+        Values are returned RAW alongside a `plausible` flag rather than
+        being trusted blindly. The register addresses come from the
+        Feetech STS map, not from a datasheet we hold, so a reading is
+        only acted on when it is physically sensible — a guard that trips
+        on a misread register would be worse than no guard.
+        """
+        load_raw = self.read_u16(servo_id, REG_PRESENT_LOAD, "read load")
+        status = self.read_u8(servo_id, REG_STATUS, "read status")
+        temp = self.read_u8(servo_id, REG_PRESENT_TEMPERATURE, "read temp")
+        volts = self.read_u8(servo_id, REG_PRESENT_VOLTAGE, "read voltage")
+        current = self.read_u16(servo_id, REG_PRESENT_CURRENT, "read current")
+        # bit 10 is direction; the low bits are magnitude in 0.1%
+        load = (load_raw & 0x3FF) / 10.0
+        faults = [name for bit, name in STATUS_BITS if status & bit]
+        return {
+            "id": servo_id,
+            "load_pct": load,
+            "current_ma": current * 6.5,
+            "temp_c": temp,
+            "volts": volts / 10.0,
+            "status": status,
+            "faults": faults,
+            # Sanity envelope. A servo that is powered and alive reads a
+            # room-ish temperature and a battery-ish voltage; anything
+            # outside that means the register map is wrong for this
+            # firmware and its readings must not gate motion.
+            "plausible": (0 < temp < 100 and 40 < volts < 130
+                          and load <= 100.0),
+        }
 
     def set_torque(self, servo_id: int, enabled: bool) -> None:
         self.write_u8(
