@@ -699,6 +699,26 @@ def load_bench(path: Path = BENCH_JSON) -> Scene:
 
 WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 
+# Vertical field of view for the sim cameras (plan #606).
+#
+# PLACEHOLDER, and labelled as one because it is the exact shape of
+# defect this project keeps hitting: a number derived from a datasheet,
+# written into code as a literal, and then trusted as if measured.
+#
+# Derived for the ELP-USBFHD01M-L36 in cameras.json: 1/2.7" sensor,
+# nominal active area 5.37 x 3.02 mm at 16:9, 3.6 mm lens.
+#     fovy = 2 * atan(3.02 / 2 / 3.6) = 45.5 deg
+# Both the sensor size and the "3.6 mm" are nominal, and real lenses
+# miss their nominal focal length by several percent, so this is good
+# enough to frame a shot and NOT good enough to measure with.
+#
+# It is superseded the moment #606's intrinsics calibration runs: fovy
+# comes from the calibrated fy and image height as
+#     fovy = 2 * atan(height / 2 / fy)
+# at which point this constant should be replaced by the per-camera
+# `fovy_deg` read from cell.json, not edited here.
+DEFAULT_FOVY_DEG = 45.5
+
 # MuJoCo geom groups. The interactive viewer toggles these with the
 # number keys, so category = group lets the room be built up in detail
 # without the ductwork and ceiling burying the bench.
@@ -1119,6 +1139,30 @@ def build_spec(scene: Scene, shadows: bool = False,
             zaxis=[dx, dy, dz],
             rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_HIDDEN)
 
+        # A MuJoCo camera at the SAME pose, so the cell can be rendered
+        # from where the real camera actually looks (plan #606). It is
+        # added here, beside the sight line, rather than anywhere more
+        # convenient: both are derived from the same px/py/cam.z and
+        # dx/dy/dz, so the diagnostic and the render cannot drift apart.
+        # Placed anywhere else, someone would eventually fix one and not
+        # the other, and the picture would stop being evidence.
+        #
+        # MuJoCo cameras look along their own -z with +y up, so the axes
+        # are constructed rather than guessed — the same lesson the
+        # corner camera above records the hard way.
+        fwd = (dx, dy, dz)
+        rgt = (fwd[1], -fwd[0], 0.0)          # forward x world-up
+        rn = math.hypot(rgt[0], rgt[1]) or 1.0
+        rgt = (rgt[0] / rn, rgt[1] / rn, 0.0)
+        up = (rgt[1] * fwd[2] - rgt[2] * fwd[1],
+              rgt[2] * fwd[0] - rgt[0] * fwd[2],
+              rgt[0] * fwd[1] - rgt[1] * fwd[0])
+        spec.worldbody.add_camera(
+            name=f"cam_{cam.name}", pos=[px * m, py * m, cam.z * m],
+            xyaxes=[*rgt, *up],
+            fovy=cam.fovy_deg if cam.fovy_deg is not None
+            else DEFAULT_FOVY_DEG)
+
     # The ARM itself, attached from the vendored Menagerie model the twin
     # already uses - one source for the arm's geometry, so the picture and
     # the collision gate can never disagree about its shape.
@@ -1510,6 +1554,7 @@ class Camera:
     z: float                  # lens centre above the table top
     tilt_deg: float = 60.0
     standoff: float | None = None   # lens out from the wall FACE
+    fovy_deg: float | None = None   # None -> DEFAULT_FOVY_DEG
     notes: str = ""
 
 
@@ -1870,6 +1915,8 @@ def load_cell(path: Path = CELL_JSON) -> Cell:
                    tilt_deg=float(c.get("tilt_deg", 60.0)),
                    standoff=(float(c["standoff"])
                              if c.get("standoff") is not None else None),
+                   fovy_deg=(float(c["fovy_deg"])
+                             if c.get("fovy_deg") is not None else None),
                    notes=c.get("notes", ""))
             for c in (doc.get("cameras") or [])),
         shadows=bool((doc.get("render") or {}).get("shadows", False)))
