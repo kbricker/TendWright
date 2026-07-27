@@ -12,6 +12,23 @@ Serves (LAN only, NO auth — never port-forward this):
     http://cell1:8081/cam/<name>/snapshot   single current JPEG (curl-able)
     http://cell1:8081/status            JSON: every camera's state
 
+ON-DEMAND CAPTURE — snap and KEEP, on a trigger rather than a timer:
+
+    /cam/<name>/capture?label=pre-grasp     one camera
+    /capture?label=pre-grasp                every camera, as one SET
+    /capture?label=pre-grasp&cams=a,c       a named subset
+
+Answers with a manifest: the set id, what each camera produced, and how
+wide a window the set spans. Frames from one set share the set id in
+their filenames, so three cameras' views of the same moment stay
+correlated on disk without the manifest. A single camera is still a set
+of one, so a workflow step reads the same either way.
+
+A SET IS NOT AN INSTANT. Cameras on a shared uplink are grabbed one at
+a time on purpose, so a set spans `spread_ms`; every frame carries its
+own offset. Capture sets while the arm is STOPPED, or the frames are
+different moments and the manifest will say so.
+
 Cameras come from cameras.json (see `python -m hardware.bench.cameras`).
 Each one is opened ONLY while something is watching it — eight cameras
 share one USB2 uplink, so bandwidth is claimed on demand and released a
@@ -27,7 +44,7 @@ never affects the others. This tool never touches the servo bus (and
 never imports the servo SDK).
 
 Usage: camserve [--registry FILE] [--listen PORT] [--no-tags]
-                [--no-stills] [--stills-dir DIR]
+                [--no-stills] [--stills-dir DIR] [--selftest]
 """
 
 from __future__ import annotations
@@ -41,6 +58,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from hardware.errors import BenchError
 
@@ -56,6 +74,9 @@ STILLS_DIR_DEFAULT = "stills"
 # and one wedged camera blocking the whole schedule is worse than one
 # missed frame.
 STILL_TIMEOUT_S = 5.0
+# Set manifests are tiny; keep far more of them than frames so a
+# set's record outlives the images its per-camera rotation drops.
+MANIFEST_KEEP = 2000
 PAGE_CSS = (
     "body{margin:0;background:#111;color:#ddd;font:14px system-ui}"
     "a{color:#6cf;text-decoration:none}a:hover{text-decoration:underline}"
@@ -113,9 +134,19 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                         return self._stream(name, tile=True)
                     if rest == "snapshot":
                         return self._snapshot(name)
+                    if rest == "capture":
+                        return self._capture([name])
+                if path == "/capture":
+                    return self._capture(None)
                 self.send_error(404)
             except OSError:
                 pass  # client left mid-write — never fatal
+
+        # Capture is a side effect, so POST is the correct verb — but GET
+        # is accepted too, deliberately: on a home-LAN bench tool, being
+        # able to trigger a labelled grab from a browser bookmark or a
+        # bare `curl URL` is worth more than the purity.
+        do_POST = do_GET
 
         def _nav(self, here: str) -> str:
             links = [f"<a href='/cam/{n}/'>{html.escape(n)}</a>"
@@ -194,6 +225,35 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             self._send(json.dumps({"cameras": out}, indent=2).encode(),
                        "application/json")
 
+        def _capture(self, names: list[str] | None) -> None:
+            """Snap one camera, or every camera as one correlated set.
+
+                /cam/bench/capture?label=pre-grasp     one camera
+                /capture?label=pre-grasp               all of them
+                /capture?label=pre-grasp&cams=a,b      a named subset
+
+            Answers with the manifest, so the caller learns the set id,
+            what each camera produced, and how wide a window the set
+            actually spans. A single-camera capture is still a set of
+            one - same id scheme, same manifest - so a workflow step
+            reads the same either way and does not need two code paths.
+            """
+            query = parse_qs(urlparse(self.path).query)
+            label = (query.get("label") or [""])[0]
+            if names is None and query.get("cams"):
+                names = [n for n in query["cams"][0].split(",") if n]
+            try:
+                manifest = capture_set(mgr, stills_dir, names, label)
+            except BenchError as exc:
+                return self.send_error(503, str(exc))
+            body = json.dumps(manifest, indent=2).encode()
+            # 200 if anything was captured, 503 if nothing was: a caller
+            # that only checks the status code still cannot mistake a
+            # total failure for a success. Partial sets are 200 with
+            # complete=false, and gating callers must read that flag.
+            code = 200 if any(f["ok"] for f in manifest["frames"]) else 503
+            self._send(body, "application/json", code)
+
         def _snapshot(self, name: str) -> None:
             cam = mgr.get(name)
             try:
@@ -239,6 +299,118 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                 cam.release()
 
     return Handler
+
+
+# One set capture at a time, process-wide. Cameras on a shared USB
+# uplink are opened one after another on purpose (see stills_loop's
+# stagger); two overlapping sets would interleave those opens and put
+# every camera on the bus at once, which is the exact bandwidth
+# collision the staggering exists to avoid. A second request waits.
+_SET_LOCK = threading.Lock()
+_SET_LOCK_WAIT_S = 30.0
+
+
+def _safe_label(label: str) -> str:
+    """A label ends up in a filename, so keep it to safe characters and
+    bounded length. Empty after cleaning = no label, not a crash."""
+    keep = "".join(c if (c.isalnum() or c in "-_") else "-"
+                   for c in label.strip())[:48].strip("-")
+    return keep
+
+
+def capture_set(mgr: CameraManager, outdir: Path,
+                names: list[str] | None = None, label: str = "",
+                ) -> dict:
+    """Capture one still from each named camera as a correlated SET.
+
+    Returns a manifest describing what was actually captured. Also
+    written to disk next to the frames, so a set is self-describing
+    later without the caller having kept anything.
+
+    A SET IS NOT AN INSTANT, and the manifest is explicit about it.
+    Cameras sharing a USB uplink are grabbed one at a time by design, so
+    a three-camera set spans a window (`spread_ms`) rather than a moment.
+    Every frame carries its own offset from the set's start. If the arm
+    is moving, those are genuinely different moments and nothing here
+    can pretend otherwise — which is why the intended use is a set
+    captured while the arm is STOPPED at a keyframe.
+
+    Partial failure is reported, never hidden: `complete` is false if any
+    requested camera did not produce a frame. A caller gating on a set
+    (a #671 vision checkpoint) must treat incomplete as FAILED, not as
+    "use what we got".
+    """
+    wanted = list(names) if names else list(mgr.order)
+    unknown = [n for n in wanted if n not in mgr.cameras]
+    if unknown:
+        raise BenchError(f"no camera named {unknown[0]!r}",
+                         f"known cameras: {', '.join(mgr.order) or '(none)'}")
+    tag = _safe_label(label)
+    if not _SET_LOCK.acquire(timeout=_SET_LOCK_WAIT_S):
+        raise BenchError("another capture set is still running",
+                         "sets are serialized so cameras never all open at "
+                         "once on a shared uplink; retry shortly")
+    try:
+        set_id = time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"
+        t0 = time.monotonic()
+        frames: list[dict] = []
+        for name in wanted:
+            cam = mgr.get(name)
+            offset_ms = round((time.monotonic() - t0) * 1000)
+            entry: dict = {"camera": name, "t_offset_ms": offset_ms,
+                           "ok": False, "path": None, "bytes": 0,
+                           "error": None}
+            try:
+                jpeg = cam.grab(cam.spec.solo, timeout=STILL_TIMEOUT_S)
+            except BenchError as exc:
+                entry["error"] = str(exc)
+                frames.append(entry)
+                continue
+            stem = f"{set_id}_{name}" + (f"_{tag}" if tag else "")
+            cam_dir = outdir / name
+            try:
+                cam_dir.mkdir(parents=True, exist_ok=True)
+                path = cam_dir / f"{stem}.jpg"
+                path.write_bytes(jpeg)
+                _rotate(cam_dir, cam.spec.still_keep)
+            except OSError as exc:
+                entry["error"] = f"could not write: {exc}"
+                frames.append(entry)
+                continue
+            entry.update(ok=True, path=str(path), bytes=len(jpeg))
+            frames.append(entry)
+        spread = max((f["t_offset_ms"] for f in frames), default=0)
+        manifest = {
+            "set_id": set_id,
+            "label": tag,
+            "captured_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                          time.gmtime()),
+            "requested": wanted,
+            "complete": all(f["ok"] for f in frames) and bool(frames),
+            # the window the set spans - NOT an instant; see the docstring
+            "spread_ms": spread,
+            "frames": frames,
+        }
+        try:
+            sets_dir = outdir / "sets"
+            sets_dir.mkdir(parents=True, exist_ok=True)
+            (sets_dir / f"{set_id}.json").write_text(
+                json.dumps(manifest, indent=2))
+            _rotate_json(sets_dir, MANIFEST_KEEP)
+        except OSError as exc:
+            manifest["manifest_error"] = str(exc)
+        return manifest
+    finally:
+        _SET_LOCK.release()
+
+
+def _rotate_json(d: Path, keep: int) -> None:
+    docs = sorted(d.glob("*.json"))
+    for old in docs[:-keep] if len(docs) > keep else []:
+        try:
+            old.unlink()
+        except OSError:
+            pass
 
 
 def stills_loop(mgr: CameraManager, outdir: Path, stop: threading.Event,
@@ -358,7 +530,151 @@ def run() -> int:
 
 
 def main() -> int:
+    if "--selftest" in sys.argv:
+        _selftest()
+        return 0
     return run_tool(run)
+
+
+def _selftest() -> None:
+    """Capture sets end to end over REAL HTTP, against fake cameras.
+
+    No hardware, no servo bus. Every acceptance is paired with a
+    refusal, because a capture route that always says yes would pass a
+    happy-path test and still be useless as a checkpoint.
+    """
+    import shutil
+    import tempfile
+    import urllib.error
+    import urllib.request
+
+    import cv2
+    import numpy as np
+
+    from .cameras import CameraSpec, Profile
+
+    fails: list[str] = []
+
+    def want(label: str, ok: bool) -> None:
+        if not ok:
+            fails.append(label)
+        print(f"  [{'ok ' if ok else 'FAIL'}] {label}")
+
+    class FakeCap:
+        def __init__(self, path):
+            self.path, self.fail = str(path), "dead" in str(path)
+
+        def isOpened(self):
+            return not self.fail
+
+        def set(self, prop, value):
+            return True
+
+        def read(self):
+            time.sleep(0.01)
+            return True, np.zeros((8, 8, 3), np.uint8)
+
+        def release(self):
+            pass
+
+    big, small = Profile(320, 240, 10), Profile(80, 60, 5)
+    specs = [CameraSpec("a", "left", "/dev/fake/a", big, small, tags=False),
+             CameraSpec("b", "mid", "/dev/fake/b", big, small, tags=False),
+             CameraSpec("c", "right", "/dev/fake/c", big, small, tags=False)]
+    real_cap, cv2.VideoCapture = cv2.VideoCapture, FakeCap
+    tmp = Path(tempfile.mkdtemp(prefix="camserve-selftest-"))
+    srv = None
+    try:
+        mgr = CameraManager(specs, tags=False)
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mgr, tmp))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+
+        def get(url: str):
+            with urllib.request.urlopen(base + url, timeout=20) as r:
+                return r.status, json.loads(r.read())
+
+        # --- one camera, labelled
+        code, one = get("/cam/b/capture?label=pre-grasp")
+        want("a single camera captures on demand",
+             code == 200 and one["complete"] and len(one["frames"]) == 1)
+        want("...and is still a SET (same id scheme, one manifest), so a "
+             "caller needs no second code path",
+             bool(one["set_id"]) and one["frames"][0]["camera"] == "b")
+        want("...with the label in the filename",
+             "pre-grasp" in one["frames"][0]["path"])
+
+        # --- all cameras, correlated
+        code, allset = get("/capture?label=step3")
+        want("all cameras capture as one set",
+             code == 200 and allset["complete"]
+             and len(allset["frames"]) == 3)
+        want("...sharing ONE set id, which is what correlates them",
+             all(allset["set_id"] in f["path"] for f in allset["frames"]))
+        want("...each carrying its own offset, so the set is not claimed "
+             "to be an instant",
+             all("t_offset_ms" in f for f in allset["frames"])
+             and allset["spread_ms"] >= 0)
+        want("distinct sets get distinct ids",
+             allset["set_id"] != one["set_id"])
+
+        # --- a named subset
+        code, sub = get("/capture?cams=a,c&label=pair")
+        want("a named subset captures only those cameras",
+             [f["camera"] for f in sub["frames"]] == ["a", "c"])
+
+        # --- the manifest is on disk, and is the index
+        man = tmp / "sets" / f"{allset['set_id']}.json"
+        want("the set is self-describing on disk", man.exists())
+        want("...and the manifest names every frame's path",
+             json.loads(man.read_text())["frames"] == allset["frames"])
+
+        # --- REFUSALS (the half that makes the acceptances mean anything)
+        try:
+            get("/cam/nope/capture")
+            want("an unknown camera is refused", False)
+        except urllib.error.HTTPError as exc:
+            want("an unknown camera is refused", exc.code == 404)
+
+        dead = CameraSpec("d", "-", "/dev/fake/dead", big, small, tags=False)
+        mgr2 = CameraManager([specs[0], dead], tags=False)
+        srv2 = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mgr2, tmp))
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+        b2 = f"http://127.0.0.1:{srv2.server_address[1]}"
+        with urllib.request.urlopen(b2 + "/capture?label=partial",
+                                    timeout=20) as r:
+            partial = json.loads(r.read())
+        want("a set with ONE dead camera is marked incomplete, not passed "
+             "off as fine", partial["complete"] is False)
+        want("...while still keeping the frames that did work",
+             any(f["ok"] for f in partial["frames"]))
+        want("...and says WHICH camera failed and why",
+             any(f["error"] for f in partial["frames"] if not f["ok"]))
+        try:
+            urllib.request.urlopen(b2 + "/cam/d/capture", timeout=20)
+            want("a capture where NOTHING worked is an error status, so a "
+                 "caller checking only the code cannot mistake it", False)
+        except urllib.error.HTTPError as exc:
+            want("a capture where NOTHING worked is an error status, so a "
+                 "caller checking only the code cannot mistake it",
+                 exc.code == 503)
+        srv2.shutdown()
+
+        # --- labels reach filenames safely
+        code, nasty = get("/capture?cams=a&label=../../etc/passwd%20x")
+        want("a hostile label cannot escape the stills directory",
+             ".." not in nasty["frames"][0]["path"]
+             and Path(nasty["frames"][0]["path"]).resolve().is_relative_to(
+                 tmp.resolve()))
+    finally:
+        if srv is not None:
+            srv.shutdown()
+        cv2.VideoCapture = real_cap
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print("camserve selftest " + ("OK" if not fails else f"FAILED: {fails}"))
+    if fails:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
