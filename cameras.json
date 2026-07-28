@@ -5,7 +5,7 @@
   "cameras": [
     {
       "name": "bench",
-      "location": "wall bracket, 60 deg down over the arm",
+      "location": "UNMOUNTED as of 2026-07-28 - was a wall bracket 60 deg down over the arm, on the return; the arm has since moved to the main table, so that pose points at empty bench. Pose retired in cell.json; target in plan 713.9",
       "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.4:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 480, "fps": 10},
@@ -16,7 +16,7 @@
     },
     {
       "name": "side",
-      "location": "PROVISIONAL — table level, looking across the bench toward the arm",
+      "location": "UNMOUNTED, and the NAME IS STILL PROVISIONAL - was table level looking across the bench toward the arm. It has no stand at all (717.5); target in 713.9 is ~90 deg azimuth from the arm's reach axis, ~268 mm standoff, 100-200 mm above the table",
       "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.3:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 480, "fps": 10},
