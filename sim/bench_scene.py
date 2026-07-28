@@ -718,6 +718,21 @@ WALL_T = 1.0  # rendered wall thickness, datum units - cosmetic only
 # at which point this constant should be replaced by the per-camera
 # `fovy_deg` read from cell.json, not edited here.
 DEFAULT_FOVY_DEG = 45.5
+# The other two axes, from the same nominal sensor and under the same
+# placeholder warning. MuJoCo only wants the vertical, so these are here
+# for the coverage arithmetic rather than for rendering — #713.9 sizes
+# camera standoff from the HORIZONTAL angle, and until now the repo only
+# ever wrote down the vertical, which made every coverage figure a
+# rederivation from scratch.
+#     fovx = 2 * atan(5.37 / 2 / 3.6) = 73.4 deg
+#     fovd = 2 * atan(hypot(5.37, 3.02) / 2 / 3.6) = 81.1 deg
+# Worked example, so the next person does not redo it: covering the
+# arm's 752 mm-wide reach envelope across the long axis needs
+#     h = (752 / 2) / tan(73.4 / 2) = 504 mm
+# above the plane, giving 2.55 px/mm at 1920 wide and a 40 mm tag about
+# 102 px across.
+DEFAULT_FOVX_DEG = 73.4
+DEFAULT_FOVDIAG_DEG = 81.1
 
 # MuJoCo geom groups. The interactive viewer toggles these with the
 # number keys, so category = group lets the room be built up in detail

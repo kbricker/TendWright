@@ -386,8 +386,27 @@ def selftest() -> int:
           f"measured the m1 centre 62.4 mm above the mounting plane")
 
     print("\nthe camera is aimed where cell.json says it is")
-    check("the bench camera exists in the model",
-          "cam_bench" in cam0.camera_names(), str(cam0.camera_names()))
+    if "cam_bench" not in cam0.camera_names():
+        # NOT a failure. An unplaced camera is a legitimate, deliberate
+        # state — cell.json nulls a camera's pose rather than guessing
+        # it, because an invented pose renders a sight line that looks
+        # like evidence. Every check below is about where a camera is
+        # AIMED, so there is nothing to assert when none is placed.
+        #
+        # Announced loudly rather than skipped quietly, for the same
+        # reason the render failure below is loud: a selftest that says
+        # OK while its whole second half never ran is worse than one
+        # that fails. Currently the case after 2026-07-28, when the arm
+        # moved to the main table and both camera poses were retired.
+        print("  SKIP no camera is placed in cell.json, so there is no "
+              "aim to check.")
+        print("       This is the designed state, not a fault — poses are "
+              "nulled rather than")
+        print("       guessed. EVERY CAMERA CHECK BELOW IS UNTESTED until "
+              "one is measured.")
+        print(f"       cameras in the model: {cam0.camera_names()}")
+        print("\nsimcam selftest OK (camera aim + render checks SKIPPED)")
+        return 1 if fails else 0
     backend = os.environ.get("MUJOCO_GL", "(default)")
     try:
         frame = cam0.render(width=640, height=360)

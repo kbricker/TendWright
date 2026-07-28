@@ -1,31 +1,33 @@
 {
   "_scope": "THIS PROJECT's use of a bench: which bench, what stands on it and where. Separate from the bench file on purpose - see bench.json's _scope.",
-  "_PROVISIONAL_2026_07_27": "Kyle re-cabled the cell today (cameras onto a powered hub, a second camera added, and a longer arm control cable so it no longer crosses the work area) and said a full reorganisation is coming: 'for now all positions are provisional'. So EVERY position below is now UNVERIFIED, including ones that were measured, and `sim.simcam` renders from these numbers - it will show a view the real camera does not have until they are re-measured. Do not treat a simcam frame as predicting what the bench camera sees until this key is gone. What is NOT invalidated: camera INTRINSICS (a property of lens and sensor, not of position), the collision gate, IK, and the motion work - none of those depend on where anything sits.",
+  "_STATUS_2026_07_28": "THE ARM MOVED AND IS NOW CLAMPED DOWN. Kyle relocated it from the return to the MAIN TABLE and fixed it in place, which satisfies 716.4's first invariant: everything expressed in base coordinates is only valid while the base cannot shift. The arm position below is MEASURED and is the new datum to build the cell around. THE CAMERAS ARE NOT: both were nulled out on this date because they were positioned for the old layout on the return and the arm is now on a different table, so every previously-measured camera number describes a geometry that no longer exists. They are also physically offline. Nulls mean `sim.simcam` will not draw them, which is correct - an invented pose renders a sight line that looks like evidence. Camera targets are in plan 713.9; the side camera also has no mount at all yet (717.5). What is NOT invalidated by any of this: camera INTRINSICS (a property of lens and sensor, not of position), the collision gate, IK, and the motion work.",
   "bench": "bench.json",
   "arm": {
-    "x": 51.5,
-    "y": 20.25,
-    "yaw_deg": -90.0,
-    "_comment": "Arm base centre. x 51.5 = 24 on centre from the main table edge (x 27.5), measured along the return; y 20.25 puts it on the return's front edge. yaw -90: the arm is aligned with the table edge and REACHES TOWARD THE WALL (Kyle), which is the -y direction from the front edge to the side wall at y=0. Convention: 0 = reaches along +x, positive counter-clockwise from above, so -90 = reaches along -y. Pinned by _selftest_arm_frame, because a 90-degree error here looks plausible and silently rotates the entire cell about the arm. ASSUMPTION still open: 'on the front edge' taken as the base CENTRE on the edge line; if the base plate is flush with the edge, the centre is inboard by half the base."
+    "x": 25.25,
+    "y": 62.25,
+    "yaw_deg": 180.0,
+    "_comment": "Arm base centre, MEASURED 2026-07-28 by Kyle, clamped down. His words: 'on the main table, front edge, centered at 19.75 inches from the extent edge, the m1 center is 2.25in inset from the edge, arm is clamped down'. DERIVATION into this datum, written out because both axes had a plausible wrong reading: x = 27.5 - 2.25 = 25.25, where 27.5 is the main table's front edge (+x runs away from the back wall toward where you stand). y = 82 - 19.75 = 62.25, measured from the table's FREE far end. The other reading of 'the extent edge' - 19.75 from y=0 - is ruled out twice over: y=0 is the SIDE WALL, not an edge you can put a tape on, and at y=19.75 the return surface is contiguous at x=27.5, so there would be no 'front edge' to inset 2.25 from. Both of Kyle's phrases only parse together at y=62.25.",
+    "_yaw_is_inferred": "yaw 180 = reaches along -x, toward the back wall. INFERRED FROM GEOMETRY, NOT STATED BY KYLE - flagged because bench_scene warns that a yaw error 'looks plausible and silently rotates the entire cell about the arm'. The inference: the base sits 2.25 in in from the front edge, so -x is the only direction with 27.5 in of table in front of it; reaching +x would put the workspace in mid-air where a person stands. With the 376 mm reach the envelope spans x 10.4..40.1, y 47.4..77.1, so it stops 10.4 in short of the back wall and stays on the main table. Convention: 0 = reaches along +x, positive counter-clockwise from above. Pinned by _selftest_arm_frame.",
+    "_m1_height_unresolved": "Kyle measured the m1 centre at 2 in (50.8 mm) above the table top. THE MODEL DISAGREES BY 11.6 mm: simcam asserts the m1 centre is 62.4 mm (2.457 in) above the arm's mounting plane, and twin.py places that plane ON the table, so the two should be the same number. Deliberately NOT encoded anywhere, because silently adopting either one moves the whole twin relative to the bench. Most likely explanation is a different measuring reference - the bottom of the m1 servo body rather than its rotational centre - but that is a guess and needs one question answered, not a decision made for him. Nothing reads this key; it is a record of an open discrepancy."
   },
   "cameras": [
     {
       "name": "bench",
-      "wall": "side",
-      "along": 51.5,
-      "z": 29.0,
-      "tilt_deg": 60.0,
-      "standoff": null,
-      "notes": "STALE as of 2026-07-27 - see _PROVISIONAL_2026_07_27. Aligned with the arm - same position along the return (x 51.5) - on the printed 60-degree wall bracket. LENS CENTRE 29 above the table top, MEASURED (2026-07-26, before the re-cable). `standoff` (how far the lens sits out from the wall face on the bracket) is NOT measured; the render uses a 2 in placeholder, which shifts the sight line but not its angle. Registry entry for the live camera is cameras.json - this is only where it is in space."
-    },
-    {
-      "name": "side",
-      "wall": "side",
+      "wall": null,
       "along": null,
       "z": null,
       "tilt_deg": null,
       "standoff": null,
-      "notes": "SECOND CAMERA, added 2026-07-27. Position deliberately NULL rather than guessed: it is registered and streaming (cameras.json, hub port 3) and its first frame shows a low view across the bench from table level, but nobody has measured where it is. Nulls here mean the sim will not draw it, which is the correct behaviour - an invented pose would render a sight line that looks like evidence. Fill in after the reorganisation. A low angle is worth keeping wherever it lands: the overhead camera cannot resolve HEIGHT above the table and this one can, which is what a grasp approach needs."
+      "notes": "POSITION RETIRED 2026-07-28, not lost - see _STATUS_2026_07_28. It was on the SIDE wall at along 51.5, lens centre z 29.0 above the top, tilted 60 deg down, standoff never measured; the z was genuinely measured on 2026-07-26. Those numbers are kept here as history and must not be reinstated: they placed the camera relative to an arm that stood on the RETURN, and the arm is now on the main table roughly 42 in away, so the old pose points at empty bench. Nulled rather than adjusted because there is no arithmetic that turns a measurement of the old layout into a measurement of the new one. Re-measure after mounting; targets are in 713.9 (overhead: ~504 mm above the table, near-nadir, centred on the work zone - which is LOWER than the 29 in it was at). Registry entry for the live camera is cameras.json - this is only where it is in space."
+    },
+    {
+      "name": "side",
+      "wall": null,
+      "along": null,
+      "z": null,
+      "tilt_deg": null,
+      "standoff": null,
+      "notes": "SECOND CAMERA, added 2026-07-27. Position has never been measured and stays NULL - the sim will not draw it, which is correct behaviour rather than a gap: an invented pose renders a sight line that looks like evidence. NAME AND ROLE ARE STILL PROVISIONAL, taken from what its first frame showed rather than from Kyle. It has NO MOUNT AT ALL (717.5) and is currently offline. Target from 713.9: ~90 deg azimuth from the arm's reach axis, ~268 mm standoff, 100-200 mm above the table - never on the base side looking down the reach axis, where the arm blocks everything it reaches for. Worth keeping a low angle wherever it lands: the overhead camera cannot resolve HEIGHT above the table and this one can, which is what a grasp approach needs, and it is the only fixed viewpoint that still sees the target when the arm reaches over it."
     }
   ],
   "render": {
