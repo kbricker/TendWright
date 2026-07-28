@@ -4,9 +4,9 @@
     {
       "name": "cell1",
       "address": "192.168.86.202",
-      "mac": null,
+      "mac": "1c:83:41:30:ec:2d",
       "port": 22,
-      "note": "Minisforum UM350. NIC enp4s0, Realtek RTL8168 on r8169. MAC still uncaptured - run `ip link show enp4s0` at the machine (#617)."
+      "note": "Minisforum UM350. Captured 2026-07-28 from enp4s0, the NIC carrying 192.168.86.202. NOTE: the board has a SECOND Realtek NIC, enp3s0 at 1c:83:41:30:ec:2c - one digit apart, currently NO-CARRIER. If WoL is ever enabled on the wrong port this is why."
     }
   ]
 }
