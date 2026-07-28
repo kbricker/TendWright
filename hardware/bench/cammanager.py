@@ -102,6 +102,12 @@ class _Run:
         self.box = FrameBox()
         self.stop = threading.Event()
         self.thread: threading.Thread | None = None
+        # Whether this session is currently running tag detection. An
+        # Event rather than a bool because the capture thread reads it
+        # every iteration while subscribers set it from HTTP threads —
+        # so detection switches on and off LIVE, with no reopen. Starts
+        # clear; Camera._sync_tags_locked owns every write to it.
+        self.tags = threading.Event()
 
 
 class Camera:
@@ -118,6 +124,10 @@ class Camera:
         self.mode_note: str | None = None
         self._run_state: _Run | None = None
         self._subs = 0
+        # Subscribers who asked for detection, counted separately from
+        # _subs. Detection runs while this is above zero and stops when
+        # the last consumer of it leaves — the camera keeps streaming.
+        self._tag_subs = 0
         self._lock = threading.Lock()
         self._release_at = 0.0
         self._retired: list[threading.Thread] = []
@@ -128,7 +138,24 @@ class Camera:
         return run.profile if run else None
 
     # ------------------------------------------------------ subscription
-    def acquire(self, profile: Profile) -> _Run:
+    @property
+    def may_detect(self) -> bool:
+        """Whether detection is PERMITTED on this camera at all.
+
+        Two vetoes, both of which can only turn detection off, never on:
+        the server-wide `--no-tags` (no detector exists) and the
+        per-camera `tags:` in cameras.json. Nothing here turns detection
+        on — only an explicit request does that (see acquire).
+        """
+        return self._detector is not None and self.spec.tags
+
+    @property
+    def detecting(self) -> bool:
+        """Whether detection is running RIGHT NOW. For /status."""
+        run = self._run_state
+        return bool(run and run.tags.is_set())
+
+    def acquire(self, profile: Profile, tags: bool = False) -> _Run:
         """Register interest and return the session to read frames from.
 
         Callers hold the returned _Run, so a later restart cannot swap
@@ -139,16 +166,26 @@ class Camera:
         camera held open at tile resolution restarts it, because nobody
         should be served a downscale they did not ask for. That does end
         the tile viewers' current streams (they reload).
+
+        `tags` is the same rule applied to perception: the session runs
+        detection while ANY current subscriber asked for it. Unlike the
+        resolution rule it needs no restart — the capture loop re-reads
+        the flag every frame. **Whatever is passed here must be passed
+        back to release()**, or the count drifts and detection either
+        never stops or stops while someone still wants it.
         """
         retire: _Run | None = None
         with self._lock:
             self._subs += 1
+            if tags:
+                self._tag_subs += 1
             try:
                 run = self._run_state
                 if run is not None and run.thread is not None \
                         and run.thread.is_alive():
                     if _area(run.profile) >= _area(profile):
                         self._release_at = 0.0
+                        self._sync_tags_locked()
                         return run  # already open at least this large
                     retire = run
                 self._start_locked(profile)
@@ -156,18 +193,43 @@ class Camera:
             except BaseException:
                 # Never leak a subscription on a failed start — a leaked
                 # refcount pins the camera open (and its bandwidth) for
-                # the life of the process.
+                # the life of the process. The tag count leaks worse: it
+                # would pin DETECTION on with nobody watching.
                 self._subs = max(0, self._subs - 1)
+                if tags:
+                    self._tag_subs = max(0, self._tag_subs - 1)
                 raise
             finally:
                 if retire is not None:
                     self._retire_locked(retire)
 
-    def release(self) -> None:
+    def release(self, tags: bool = False) -> None:
+        """Drop a subscription. `tags` MUST match what acquire was given."""
         with self._lock:
             self._subs = max(0, self._subs - 1)
+            if tags:
+                self._tag_subs = max(0, self._tag_subs - 1)
+            self._sync_tags_locked()
             if self._subs == 0:
                 self._release_at = time.monotonic() + LINGER_S
+
+    def _sync_tags_locked(self) -> None:
+        """Point the live session's detect flag at the current demand.
+
+        Called from every path that changes `_tag_subs` OR replaces the
+        session, which is the part that is easy to miss: a solo viewer
+        arriving restarts the camera, and the NEW session must inherit
+        detection from a tag subscriber who is still attached to the
+        old one. Deriving the flag from the count in one place — rather
+        than setting it at each call site — is what makes that hold.
+        """
+        run = self._run_state
+        if run is None:
+            return
+        if self._tag_subs > 0 and self.may_detect:
+            run.tags.set()
+        else:
+            run.tags.clear()
 
     def reap(self) -> None:
         """Janitor: close idle cameras once their linger has expired, and
@@ -192,6 +254,10 @@ class Camera:
             target=self._run, args=(run,),
             name=f"cam-{self.spec.name}", daemon=True)
         self._run_state = run
+        # Before start, not after: a restart triggered by a solo viewer
+        # must not drop detection for a tag subscriber still attached to
+        # the session being retired.
+        self._sync_tags_locked()
         run.thread.start()
 
     def _retire_locked(self, run: _Run) -> None:
@@ -247,12 +313,15 @@ class Camera:
 
     def _run(self, run: _Run) -> None:
         cap = None
-        # Tag detection only at full resolution: a 3x3 grid of tiles
-        # cannot show tag IDs usefully, and detection is the one CPU-hot
-        # step — running it for eight tile streams would starve the
-        # capture threads that feed them.
-        detect = (self._detector is not None and self.spec.tags
-                  and run.profile == self.spec.solo)
+        # Detection is read from run.tags EVERY iteration, not decided
+        # once here. Kyle, 2026-07-28: "if the cameras are on, we get a
+        # live feed but there is no other software running like openCV
+        # brains ... until we are actually using those brains."
+        #
+        # So it costs nothing while nobody is consuming it, and it turns
+        # on the moment someone asks — no reopen, no dropped stream. It
+        # replaces a static `run.profile == self.spec.solo` test, which
+        # bound perception to the CAMERA when it belongs to the CONSUMER.
         # Software pacing. The device ignores CAP_PROP_FPS entirely (see
         # _record_negotiated), so the only thing that holds a camera to its
         # configured rate is this loop declining to read faster. Measured
@@ -270,7 +339,7 @@ class Camera:
             while not run.stop.is_set():
                 frame = read_frame(cap)
                 self.fps = counter.tick()
-                if detect:
+                if run.tags.is_set():
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     with _DETECT_LOCK:
                         dets = self._detector.detect(gray)
@@ -314,10 +383,19 @@ class Camera:
                 self.error = message
 
     # ------------------------------------------------------------ frames
-    def grab(self, profile: Profile, timeout: float = 8.0) -> bytes:
+    def grab(self, profile: Profile, timeout: float = 8.0,
+             tags: bool = False) -> bytes:
         """Open if needed, wait for one fresh frame, release. The whole
-        interval-stills path — bandwidth held only for the grab."""
-        run = self.acquire(profile)
+        interval-stills path — bandwidth held only for the grab.
+
+        `tags` defaults OFF, and that is a fix rather than a default:
+        before per-request opt-in, grab() ran at the solo profile and so
+        always got the overlay, meaning every interval still and every
+        capture set on disk had green tag boxes and an fps readout burned
+        into the pixels. Those frames are exactly what 713.8 wants for
+        intrinsics calibration, and drawn-on frames are not measurable.
+        """
+        run = self.acquire(profile, tags=tags)
         try:
             deadline = time.monotonic() + timeout
             seq = 0
@@ -334,7 +412,7 @@ class Camera:
                 "may be out of isochronous bandwidth (too many cameras "
                 "open at once)")
         finally:
-            self.release()
+            self.release(tags=tags)
 
 
 class CameraManager:
@@ -560,6 +638,101 @@ def _selftest() -> None:
         finally:
             threading.Thread.start = orig
         assert boom._subs == 0, f"leaked subscription: {boom._subs}"
+
+        # ---------------------------------------------------------- #713.6
+        # Perception is opt-in PER REQUEST. These assert on whether the
+        # detector was actually CALLED, not on the flag — a flag that is
+        # set while the loop ignores it would pass a weaker test and is
+        # exactly the failure mode worth catching.
+        class FakeDetector:
+            def __init__(self):
+                self.calls = 0
+
+            def detect(self, gray):
+                self.calls += 1
+                return []
+
+        def detects_climb(det, run, what, should=True):
+            """Did detection run over the next handful of frames?"""
+            before, seq = det.calls, 0
+            for _ in range(6):
+                seq, _jpeg = run.box.next_after(seq)
+            climbed = det.calls > before
+            assert climbed == should, what
+
+        det = FakeDetector()
+        tagged = Camera(CameraSpec("g", "-", "/dev/fake/g", big, small,
+                                   tags=True), det)
+
+        # 9a. THE HEADLINE: a plain viewer pays nothing for perception.
+        plain = tagged.acquire(small)
+        wait_for(lambda: plain.box.latest() is not None, "plain never ran")
+        detects_climb(det, plain, "detection ran for a viewer who never "
+                                  "asked for it — the whole point of 713.6",
+                      should=False)
+
+        # 9b. ...and asking turns it on, live, with no reopen. The plain
+        #     viewer's session object is the same one.
+        reopens = len(opens)
+        asked = tagged.acquire(small, tags=True)
+        assert asked is plain, "asking for tags needlessly restarted"
+        assert len(opens) == reopens, "asking for tags reopened the device"
+        detects_climb(det, plain, "detection did not start when requested")
+
+        # 9c. the last consumer of perception leaving stops it, WITHOUT
+        #     stopping the stream the plain viewer is still watching.
+        tagged.release(tags=True)
+        detects_climb(det, plain, "detection outlived the only subscriber "
+                                  "who wanted it", should=False)
+        assert plain.box.latest() is not None, "the plain stream died with it"
+
+        # 9d. THE TRAP. A tag subscriber sits on the tile session; a solo
+        #     viewer arrives and restarts the camera. The NEW session must
+        #     inherit detection — the old one is being retired underneath
+        #     a subscriber who is still attached and still wants it.
+        tagged.acquire(small, tags=True)
+        upgraded = tagged.acquire(big)
+        assert upgraded is not plain, "expected a restart at the larger size"
+        assert upgraded.tags.is_set(), \
+            "a restart dropped detection for a subscriber who still wanted it"
+        detects_climb(det, upgraded, "detection did not survive the restart")
+        tagged.release(tags=True)
+        for _ in range(3):
+            tagged.release()
+
+        # 9e. the vetoes still veto. cameras.json `tags: false` (and the
+        #     server-wide --no-tags, modelled by detector=None) can only
+        #     turn detection OFF — asking cannot override either.
+        vdet = FakeDetector()
+        vetoed = Camera(CameraSpec("v", "-", "/dev/fake/v", big, small,
+                                   tags=False), vdet)
+        assert not vetoed.may_detect, "per-camera veto ignored"
+        vrun = vetoed.acquire(small, tags=True)
+        wait_for(lambda: vrun.box.latest() is not None, "vetoed never ran")
+        detects_climb(vdet, vrun, "a vetoed camera detected anyway",
+                      should=False)
+        vetoed.release(tags=True)
+
+        # 9f. a failed start must not leak the TAG count either. A leaked
+        #     _subs pins bandwidth; a leaked _tag_subs pins the CPU-hot
+        #     detector on with nobody watching, which is worse.
+        boom2 = Camera(CameraSpec("b2", "-", "/dev/fake/b2", big, small,
+                                  tags=True), FakeDetector())
+        threading.Thread.start = explode
+        try:
+            boom2.acquire(big, tags=True)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("failed start was not raised")
+        finally:
+            threading.Thread.start = orig
+        assert boom2._tag_subs == 0, f"leaked tag sub: {boom2._tag_subs}"
+
+        # 9g. an unbalanced release cannot drive the count negative, which
+        #     would silently make the NEXT genuine request a no-op.
+        boom2.release(tags=True)
+        assert boom2._tag_subs == 0, "tag count went negative"
     finally:
         cv2.VideoCapture = real_cap
     print("cammanager selftest OK")

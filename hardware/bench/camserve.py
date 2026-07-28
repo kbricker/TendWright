@@ -35,6 +35,22 @@ share one USB2 uplink, so bandwidth is claimed on demand and released a
 few seconds after the last viewer leaves. Tiles subscribe at a reduced
 profile; the solo view gets full resolution.
 
+PERCEPTION IS OPT-IN, PER REQUEST. Streaming a camera costs capture and
+JPEG encode, nothing more. AprilTag detection is the one CPU-hot step
+(~35 ms/frame at 1080p) and runs only while some consumer has asked for
+it — add `?tags=1` to a stream, tile, or snapshot URL, or use the
+toggle on the solo page:
+
+    /cam/<name>/stream?tags=1           detection + overlay
+    /cam/<name>/stream                  raw frames, no detector at all
+
+`tags:` in cameras.json and `--no-tags` are VETOES: either can forbid
+detection on a camera, neither can turn it on. Silence means off.
+`/status` reports `detecting` (running right now) and `may_detect`
+(permitted at all). Interval stills and capture sets never detect —
+they are the frames calibration wants, and a drawn-on frame is not
+measurable.
+
 STILLS-FIRST: any camera with still_interval_s set has its full-res
 frames written to disk on that interval whether or not anyone is
 watching, with rotating retention. That runs without the viewer.
@@ -171,6 +187,19 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "<ul>" + "".join(rows) + "</ul></div>")
             self._send(_page("cameras", body), "text/html")
 
+        def _wants_tags(self) -> bool:
+            """Did this request ask for perception?
+
+            SILENCE MEANS NO. That is the whole point of #713.6 — the
+            brains belong to the consumer, not to the camera, so a
+            request that does not ask for them does not pay for them.
+            `tags:` in cameras.json and `--no-tags` are vetoes layered on
+            top (see Camera.may_detect); neither can turn detection on.
+            """
+            raw = (parse_qs(urlparse(self.path).query).get("tags")
+                   or [""])[0].strip().lower()
+            return raw in ("1", "true", "yes", "on")
+
         def _trouble(self, cam) -> str:
             """Why this camera has no picture, in words — a broken-image
             icon tells the operator nothing."""
@@ -184,12 +213,28 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
         def _solo_page(self, name: str) -> None:
             cam = mgr.get(name)
             trouble = self._trouble(cam)
+            tags = self._wants_tags()
+            src = f"/cam/{name}/stream" + ("?tags=1" if tags else "")
             view = (f"<div class='err'>{trouble}</div>" if trouble else
-                    f"<img src='/cam/{name}/stream' style='max-width:100vw'>")
+                    f"<img src='{src}' style='max-width:100vw'>")
+            # The toggle is not a nicety. Detection is off unless asked
+            # for, so without a visible control an operator opening this
+            # page sees no overlays and concludes tag detection is
+            # broken. The link says what it costs, because it is the
+            # single most expensive thing this server can be asked to do.
+            if cam.may_detect:
+                toggle = (f"<a href='/cam/{name}/?tags=0'>tag overlay: "
+                          f"<b>on</b> &mdash; turn off</a>" if tags else
+                          f"<a href='/cam/{name}/?tags=1'>tag overlay: off "
+                          f"&mdash; turn on</a> <small>(~35 ms/frame)</small>")
+            else:
+                toggle = ("<small>tag overlay unavailable &mdash; disabled "
+                          "for this camera in cameras.json, or the server "
+                          "was started with --no-tags</small>")
             body = (self._nav(name) +
                     f"<div style='padding:4px'>{view}"
                     f"<p>{html.escape(cam.spec.location or '')} "
-                    f"&middot; {cam.spec.solo}</p></div>")
+                    f"&middot; {cam.spec.solo} &middot; {toggle}</p></div>")
             self._send(_page(f"camera {name}", body), "text/html")
 
         def _tiles(self) -> None:
@@ -225,6 +270,14 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "negotiated": cam.negotiated,
                     "mode_note": cam.mode_note,
                     "fps": round(cam.fps, 1),
+                    # Whether the CPU-hot perception layer is running right
+                    # now, and whether it is even permitted to. Detection
+                    # is per-request as of #713.6, so "is it on" is no
+                    # longer answerable from cameras.json alone — and an
+                    # expensive thing running invisibly is how the last
+                    # two bugs in this file stayed hidden.
+                    "detecting": cam.detecting,
+                    "may_detect": cam.may_detect,
                     "error": cam.error,
                     "still_interval_s": cam.spec.still_interval_s,
                 })
@@ -263,7 +316,7 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
         def _snapshot(self, name: str) -> None:
             cam = mgr.get(name)
             try:
-                jpeg = cam.grab(cam.spec.solo)
+                jpeg = cam.grab(cam.spec.solo, tags=self._wants_tags())
             except BenchError as exc:
                 return self.send_error(503, str(exc))
             self._send(jpeg, "image/jpeg")
@@ -271,7 +324,10 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
         def _stream(self, name: str, tile: bool) -> None:
             cam = mgr.get(name)
             profile = cam.spec.tile if tile else cam.spec.solo
-            run = cam.acquire(profile)  # raises before any bytes are sent
+            # Read once and pass the SAME value to release, so the tag
+            # refcount cannot drift no matter what happens in between.
+            tags = self._wants_tags()
+            run = cam.acquire(profile, tags)  # raises before any bytes go out
             try:
                 self.send_response(200)
                 self.send_header(
@@ -302,7 +358,7 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     self.wfile.write(jpeg)
                     self.wfile.write(b"\r\n")
             finally:
-                cam.release()
+                cam.release(tags)
 
     return Handler
 
@@ -702,6 +758,75 @@ def _selftest() -> None:
              ".." not in nasty["frames"][0]["path"]
              and Path(nasty["frames"][0]["path"]).resolve().is_relative_to(
                  tmp.resolve()))
+
+        # --- #713.6: perception is opt-in per REQUEST, proved over HTTP.
+        # cammanager's selftest covers the refcount semantics; this covers
+        # the chain from a query string to the capture loop, which is the
+        # part a unit test cannot see.
+        tagspec = CameraSpec("t", "-", "/dev/fake/t", big, small, tags=True)
+        mgr3 = CameraManager([tagspec], tags=True)
+        srv3 = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mgr3, tmp))
+        threading.Thread(target=srv3.serve_forever, daemon=True).start()
+        b3 = f"http://127.0.0.1:{srv3.server_address[1]}"
+
+        def cam_status():
+            with urllib.request.urlopen(b3 + "/status", timeout=20) as r:
+                return json.loads(r.read())["cameras"][0]
+
+        def page(url: str) -> str:
+            with urllib.request.urlopen(b3 + url, timeout=20) as r:
+                return r.read().decode()
+
+        def hold_stream(qs: str, secs: float = 1.5):
+            """Open a stream, hold it briefly, then abandon it."""
+            def pull():
+                try:
+                    with urllib.request.urlopen(
+                            b3 + "/cam/t/stream" + qs, timeout=secs + 5) as r:
+                        end = time.monotonic() + secs
+                        while time.monotonic() < end and r.read(4096):
+                            pass
+                except Exception:
+                    pass  # abandoning a stream is the normal case here
+            t = threading.Thread(target=pull, daemon=True)
+            t.start()
+            return t
+
+        def settles(pred, secs: float = 6.0) -> bool:
+            end = time.monotonic() + secs
+            while time.monotonic() < end:
+                if pred():
+                    return True
+                time.sleep(0.05)
+            return False
+
+        want("a camera says whether perception is even permitted",
+             cam_status()["may_detect"] is True)
+
+        t_plain = hold_stream("", 2.0)
+        want("a plain stream opens the camera...",
+             settles(lambda: cam_status()["open"]))
+        want("...and does NOT run detection, which is the whole point of "
+             "713.6 — the brains belong to the consumer, not the camera",
+             cam_status()["detecting"] is False)
+        t_plain.join(timeout=10)
+
+        t_tags = hold_stream("?tags=1", 2.0)
+        want("asking for tags turns detection on",
+             settles(lambda: cam_status()["detecting"] is True))
+        t_tags.join(timeout=10)
+        want("...and it stops again when that consumer leaves",
+             settles(lambda: cam_status()["detecting"] is False))
+
+        solo = page("/cam/t/")
+        want("the solo page offers a way to turn the overlay ON — without "
+             "a visible control, an operator sees no overlays and "
+             "concludes detection is broken",
+             "tags=1" in solo and "turn on" in solo)
+        want("...and a way back off once it is on",
+             "turn off" in page("/cam/t/?tags=1"))
+        srv3.shutdown()
+        mgr3.shutdown()
     finally:
         if srv is not None:
             srv.shutdown()
