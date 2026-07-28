@@ -1,0 +1,31 @@
+# Keep kdump-tools off cell1 permanently. Install to
+# /etc/apt/preferences.d/no-kdump-tools
+#
+# WHY A PIN AND NOT JUST A PURGE. kdump-tools is a *Recommends* of
+# ubuntu-desktop-minimal, not a Depends. Purging it works and breaks
+# nothing — but Recommends are installed by default, so the next
+# `apt install` or release upgrade that touches the desktop metapackage
+# would quietly pull it back, and with it
+# /etc/default/grub.d/kdump-tools.cfg and the 512 MB reservation.
+#
+# That return would be invisible: no error, no prompt, just 512 MB
+# fewer next boot and nothing pointing at why. A negative pin is the
+# only thing that makes the removal stick.
+#
+# WHAT WE ARE GIVING UP. kdump captures a memory image when the kernel
+# panics, for post-mortem analysis. On cell1 it was never armed —
+# USE_KDUMP=0 (Ubuntu's default), `kdump-config show` read "Not ready
+# to kdump", and /sys/kernel/kexec_crash_loaded was 0 while
+# kexec_crash_size held the full 512 MB. So the reservation was paid
+# for a capability that could not fire.
+#
+# The box has also never crashed: ten recorded boots, every one ending
+# in "Journal stopped", the normal clean-shutdown message.
+#
+# TO REVERSE: delete this file, `apt install kdump-tools`, and set
+# USE_KDUMP=1 in /etc/default/kdump-tools — that last step being the
+# one that was missing all along.
+
+Package: kdump-tools
+Pin: release *
+Pin-Priority: -1

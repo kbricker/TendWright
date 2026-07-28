@@ -86,5 +86,42 @@ a ~38% increase. That matters directly: camserve reached 3.7 GB of 5.2
 GB before the leak work in #704, and headroom is the cheapest mitigation
 available.
 
-The crashkernel half needs no BIOS trip — it is a `GRUB_CMDLINE_LINUX`
-edit plus `update-grub`.
+### Reclaiming the crashkernel 512 MB
+
+**Not** a `/etc/default/grub` edit — that file is stock on cell1
+(`GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"`) and editing it would have
+done nothing. The reservation comes from a package drop-in:
+
+```
+/etc/default/grub.d/kdump-tools.cfg
+GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT crashkernel=2G-4G:320M,4G-32G:512M,..."
+```
+
+`grub-mkconfig` sources `/etc/default/grub.d/*.cfg` **after**
+`/etc/default/grub`, so the drop-in always wins. Nobody chose this
+setting; it arrived with the `kdump-tools` package.
+
+And kdump was never armed — `USE_KDUMP=0`, `kdump-config show` reads
+"Not ready to kdump", `kexec_crash_loaded` is 0 while
+`kexec_crash_size` holds the full 536870912 bytes. The memory was
+reserved for a capability that could not fire.
+
+```bash
+sudo apt purge kdump-tools           # removes the package AND its grub.d drop-in
+sudo apt autoremove --purge          # 9 orphans: crash, kexec-tools, makedumpfile, initramfs-tools*, ...
+sudo cp hardware/cell1/no-kdump-tools.pref /etc/apt/preferences.d/no-kdump-tools
+sudo update-grub
+sudo reboot
+```
+
+**The `autoremove` was verified safe for this box specifically, and is
+not a blind recommendation.** It offers to remove `initramfs-tools-core`
+and `initramfs-tools-bin`; on a machine that used them, losing those
+means no initrd can be rebuilt at the next kernel update, which is a
+box that stops booting. cell1 builds its initramfs with **dracut**
+(110-11) and reverse-depends on `initramfs-tools-core` only from
+`initramfs-tools-bin` (circular) and `kdump-tools` itself, so they are
+genuinely orphaned here. Check before copying this to another machine.
+
+Afterwards `MemTotal` should rise by ~512 MB and `crashkernel` should be
+absent from `/proc/cmdline`.
