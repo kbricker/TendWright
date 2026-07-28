@@ -218,6 +218,12 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "present": cam.spec.present,
                     "open": cam.profile is not None,
                     "profile": str(cam.profile) if cam.profile else None,
+                    # What the device actually gave us, and how that differs
+                    # from what was asked for. A camera silently running a
+                    # different mode than the registry claims is the exact
+                    # thing that hid a 10x frame-rate overrun for weeks.
+                    "negotiated": cam.negotiated,
+                    "mode_note": cam.mode_note,
                     "fps": round(cam.fps, 1),
                     "error": cam.error,
                     "still_interval_s": cam.spec.still_interval_s,
@@ -583,12 +589,22 @@ def _selftest() -> None:
     class FakeCap:
         def __init__(self, path):
             self.path, self.fail = str(path), "dead" in str(path)
+            self.props: dict = {}
 
         def isOpened(self):
             return not self.fail
 
         def set(self, prop, value):
+            self.props[prop] = value
             return True
+
+        def get(self, prop):
+            """Model a well-behaved device: reports back what was set.
+            cammanager reads these to detect the case where a real camera
+            silently negotiates a different mode — see _record_negotiated.
+            A double without get() makes the capture thread die on open,
+            which is exactly how this was caught."""
+            return float(self.props.get(prop, 0))
 
         def read(self):
             time.sleep(0.01)

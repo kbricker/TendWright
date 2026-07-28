@@ -19,6 +19,7 @@ Selftest (no hardware — a fake capture forces every lifecycle path):
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 
@@ -110,6 +111,10 @@ class Camera:
         self._detector = detector
         self.error: str | None = None
         self.fps = 0.0
+        # What the device actually negotiated, and how it differs from what
+        # the registry asked for. Both None until the camera has been opened.
+        self.negotiated: str | None = None
+        self.mode_note: str | None = None
         self._run_state: _Run | None = None
         self._subs = 0
         self._lock = threading.Lock()
@@ -216,7 +221,55 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, profile.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, profile.height)
         cap.set(cv2.CAP_PROP_FPS, profile.fps)
+        # Keep the driver queue shallow so a paced loop retrieves a recent
+        # frame rather than one buffered while it slept. Not all V4L2
+        # backends honour this, which is why pacing does not depend on it.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self._record_negotiated(cap, profile)
         return cap
+
+    def _record_negotiated(self, cap: cv2.VideoCapture,
+                           profile: Profile) -> None:
+        """Compare what we asked the device for against what it gave us.
+
+        WHY THIS EXISTS. A UVC camera accepts any resolution and any frame
+        rate you set and then delivers whatever mode it actually has, with
+        no error anywhere. Measured on the ELP-USBFHD01M-L36, 2026-07-28:
+
+            asked 640x360 @10  ->  got 640x480 @120, observed 95 fps
+            asked 640x480 @10  ->  got 640x480 @120, observed 46 fps
+            asked 1920x1080@10 ->  got 1920x1080@30, observed 27 fps
+
+        Its native MJPG modes are 320x240, 640x480, 800x600, 1280x720,
+        1280x1024 and 1920x1080 — so the tile profile's 640x360 was never
+        a real mode, and CAP_PROP_FPS is ignored outright at every size.
+
+        The registry said 640x360@10 and the camera ran 640x480 at ~95 fps
+        for weeks without a single line of output saying so. That silence
+        is the actual defect: a wrong number you can see is a bug, and a
+        wrong number you cannot see is a wrong model of the system. So the
+        mismatch is recorded and surfaced in /status rather than raised —
+        a fallback mode is still usable, and one camera must never take
+        the server down.
+        """
+        got = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+               int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        self.negotiated = f"{got[0]}x{got[1]}"
+        notes = []
+        if got != (profile.width, profile.height):
+            notes.append(f"asked {profile.width}x{profile.height}, "
+                         f"device gave {got[0]}x{got[1]}")
+        # The device's reported rate is what the MODE runs at, not what we
+        # requested — treat a mismatch as information, not as a failure,
+        # because software pacing in _run is what actually holds the rate.
+        dev_fps = cap.get(cv2.CAP_PROP_FPS)
+        if dev_fps and profile.fps and abs(dev_fps - profile.fps) > 1.0:
+            notes.append(f"device runs {dev_fps:g} fps natively, "
+                         f"pacing to {profile.fps:g}")
+        self.mode_note = "; ".join(notes) or None
+        if self.mode_note:
+            print(f"camera {self.spec.name}: {self.mode_note}",
+                  file=sys.stderr, flush=True)
 
     def _run(self, run: _Run) -> None:
         cap = None
@@ -226,9 +279,20 @@ class Camera:
         # capture threads that feed them.
         detect = (self._detector is not None and self.spec.tags
                   and run.profile == self.spec.solo)
+        # Software pacing. The device ignores CAP_PROP_FPS entirely (see
+        # _record_negotiated), so the only thing that holds a camera to its
+        # configured rate is this loop declining to read faster. Measured
+        # cost of not doing it: the side camera ran at ~95 fps against a
+        # configured 10, producing ~68 MB/s of frames to decode and throw
+        # away, and camserve burned ~190% of a core.
+        #
+        # fps <= 0 means unpaced, matching what 0 already means for
+        # still_interval_s. It must not quietly acquire a second meaning.
+        period = 1.0 / run.profile.fps if run.profile.fps > 0 else 0.0
         try:
             cap = self._open(run.profile)
             counter = FpsCounter()
+            next_frame = time.monotonic()
             while not run.stop.is_set():
                 frame = read_frame(cap)
                 self.fps = counter.tick()
@@ -241,6 +305,23 @@ class Camera:
                     ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
                 if ok:
                     run.box.put(buf.tobytes())
+                if period:
+                    # Sleep OUTSIDE _DETECT_LOCK — holding or awaiting the
+                    # shared detect lock while sleeping would starve every
+                    # other camera in the fleet, which is a different bug
+                    # (713.6) that this must not make worse.
+                    next_frame += period
+                    delay = next_frame - time.monotonic()
+                    if delay > 0:
+                        # stop.wait() rather than sleep() so a camera closed
+                        # mid-period tears down immediately instead of
+                        # blocking teardown for up to one frame period.
+                        if run.stop.wait(delay):
+                            break
+                    else:
+                        # Running behind: reset rather than accumulate debt,
+                        # or a slow patch makes the loop sprint to catch up.
+                        next_frame = time.monotonic()
         except BenchError as exc:
             self._fail(run, str(exc))
         except Exception as exc:  # never let one camera kill the server
@@ -333,6 +414,11 @@ def _selftest() -> None:
             self.path, self.alive = str(path), True
             self.fail = "dead" in self.path
             self.wedge = "wedge" in self.path
+            # A "lying" device models the real ELP: it accepts whatever you
+            # set and then reports a different mode. Everything reads back
+            # what was set unless the path says otherwise.
+            self.lies = "lying" in self.path
+            self.props: dict = {}
 
         def isOpened(self):
             return not self.fail
@@ -340,7 +426,21 @@ def _selftest() -> None:
         def set(self, prop, value):
             if prop == cv2.CAP_PROP_FRAME_WIDTH:
                 opens.append((self.path, int(value)))
+            self.props[prop] = value
             return True
+
+        def get(self, prop):
+            """Report back the negotiated mode. A real UVC camera reports
+            what it ACTUALLY does, which is not always what you asked for —
+            that gap is what _record_negotiated exists to catch."""
+            if self.lies:
+                if prop == cv2.CAP_PROP_FRAME_WIDTH:
+                    return 640.0
+                if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+                    return 480.0
+                if prop == cv2.CAP_PROP_FPS:
+                    return 120.101
+            return float(self.props.get(prop, 0))
 
         def read(self):
             if self.wedge:
@@ -390,6 +490,45 @@ def _selftest() -> None:
         # 4. a SMALLER request afterwards does not shrink the session
         run4 = cam.acquire(small)
         assert run4 is run3 and cam.profile == big
+
+        # 4a. a well-behaved device produces no mode note. Guards against
+        #     the check crying wolf on every camera, which would train
+        #     everyone to ignore it.
+        assert cam.negotiated == "320x240", cam.negotiated
+        assert cam.mode_note is None, cam.mode_note
+
+        # 4b. a LYING device is caught. This is the real ELP behaviour:
+        #     asked for 640x360@10, delivers 640x480 at 120 fps, reports
+        #     no error. Silence here is what hid a 10x overrun for weeks.
+        liar = Camera(CameraSpec("l", "-", "/dev/fake/lying",
+                                 Profile(640, 360, 10),
+                                 Profile(640, 360, 10), tags=False), None)
+        liar.acquire(Profile(640, 360, 10))
+        wait_for(lambda: liar.negotiated is not None, "liar never opened")
+        assert liar.negotiated == "640x480", liar.negotiated
+        assert liar.mode_note and "640x480" in liar.mode_note, liar.mode_note
+        assert "120" in liar.mode_note, "native rate not reported"
+        liar.release()
+
+        # 4c. PACING actually paces. The fake returns a frame every 10 ms
+        #     (~100 fps); a profile asking for 20 must observe ~20, not 100.
+        #     This is the whole fix: the device ignores CAP_PROP_FPS, so
+        #     only the loop declining to read can hold the rate.
+        paced = Camera(CameraSpec("p", "-", "/dev/fake/p",
+                                  Profile(320, 240, 20),
+                                  Profile(320, 240, 20), tags=False), None)
+        pr = paced.acquire(Profile(320, 240, 20))
+        wait_for(lambda: pr.box.latest() is not None, "paced cam never ran")
+        seq, frames = 0, 0
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 1.5:
+            seq, jpeg = pr.box.next_after(seq)
+            if jpeg is not None:
+                frames += 1
+        rate = frames / (time.monotonic() - t0)
+        paced.release()
+        assert rate < 40, f"pacing did not engage: {rate:.0f} fps"
+        assert rate > 8, f"pacing overshot and starved the stream: {rate:.0f}"
 
         # 5. refcount: still open with subscribers, reaped after linger
         for _ in range(4):
