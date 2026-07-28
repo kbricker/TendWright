@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass
 
 from hardware.units import Frame, fmt_ticks, span_deg
@@ -421,6 +422,13 @@ class StrainWatch:
         self.raw_peak_load: dict[int, float] = {}
         self.unreadable = False
         self.discarded = 0      # readings rejected as physically impossible
+        # PER JOINT, because "which one" is the first question asked and
+        # the aggregate could not answer it. busdiag measured the arm at
+        # REST and found the noise confined to joints 5 and 6 — but the
+        # 74 C reading that started all this was joint 4, which is
+        # spotless at rest. Only a count taken DURING MOTION can say
+        # whether that was motion-induced or a one-off.
+        self.discarded_by_joint: Counter = Counter()
 
     def _confirm(self, i: int, kind: str, needed: int) -> bool:
         """Count consecutive samples of one complaint on one joint.
@@ -466,6 +474,7 @@ class StrainWatch:
                 self._last_temp[i] = (h["temp_c"], now)
             else:
                 self.discarded += 1
+                self.discarded_by_joint[i] += 1
 
             # PEAK LOAD IS REPORTED CONFIRMED, not raw. The same bus that
             # invents temperatures can invent a load spike, and a single
@@ -560,8 +569,11 @@ class StrainWatch:
         if self.unreadable:
             notes.append("some reads unusable")
         if self.discarded:
+            where = ", ".join(
+                f"j{j}x{n}" for j, n in
+                sorted(self.discarded_by_joint.items()))
             notes.append(f"{self.discarded} impossible temperature "
-                         f"reading(s) discarded")
+                         f"reading(s) discarded [{where}]")
         note = f" ({'; '.join(notes)})" if notes else ""
         if not self.peak_temp:
             return (f"strain: peak load {peak['load_pct']:.0f}% on joint "
