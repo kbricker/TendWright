@@ -503,7 +503,15 @@ def cmd_run(args) -> int:
     cals, clip = _load(args)
     ids = sorted(cals)
 
-    if not args.yes:
+    if args.unattended:
+        # Said out loud on every run, because what is given up is the
+        # operator's own abort channel. A flag rather than an isatty()
+        # test: `ssh -tt` forces a pty that reports a terminal with no
+        # human behind it, so only the operator can know this.
+        print("UNATTENDED — no keypress e-stop. The collision gate and "
+              "strain guard still run; the POWER SWITCH is the only "
+              "human abort.", file=sys.stderr)
+    elif not args.yes:
         require_interactive()
 
     with FeetechBus(args.port) as bus:
@@ -594,28 +602,28 @@ def cmd_run(args) -> int:
                       "cutting torque")
             else:
                 print("clip complete — the arm is HOLDING away from rest")
-                _held_torque_cut()
+                _held_torque_cut(args.unattended)
             return 0
         except ClipStopped as exc:
             print(f"\nSTOPPED: {exc}", file=sys.stderr)
             print("the arm is holding HERE:", file=sys.stderr)
             print(exc.where(), file=sys.stderr)
             print(strain.summary(), file=sys.stderr)
-            _held_torque_cut()
+            _held_torque_cut(args.unattended)
             return 3
         except (BenchError, serial.SerialException):
             try:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            _held_torque_cut()
+            _held_torque_cut(args.unattended)
             raise
         except KeyboardInterrupt:
             try:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            _held_torque_cut()
+            _held_torque_cut(args.unattended)
             raise
         finally:
             bus.safe_torque_off(ids)
@@ -648,9 +656,19 @@ def _near_rest(bus, cals: dict[int, JointCal]) -> bool:
         return False
 
 
-def _held_torque_cut() -> None:
-    """Never drop a holding arm on an unwarned operator."""
+def _held_torque_cut(unattended: bool = False) -> None:
+    """Never drop a holding arm on an unwarned operator.
+
+    Unless there is no operator: on a remote run the prompt has no
+    audience, so waiting only keeps the servos energized behind a
+    question nobody will answer, and the run cannot report until
+    something kills it. Cut, and say why."""
     from .term import flush_input
+    if unattended:
+        print("\nthe arm was HOLDING under torque; cutting now "
+              "(--unattended: nobody is at this terminal to warn).",
+              file=sys.stderr)
+        return
     try:
         print("\nthe arm is HOLDING under torque. get a hand on it — it "
               "drops when torque cuts.", file=sys.stderr)
@@ -679,6 +697,13 @@ def run() -> int:
                        help="record the arm's actual path (a directory "
                             "auto-names, so runs accumulate)")
     p_run.add_argument("--yes", action="store_true", help="skip confirmation")
+    p_run.add_argument("--unattended", action="store_true",
+                       help="nobody is at this terminal: implies --yes, "
+                            "and on a fault the arm's torque is cut "
+                            "immediately instead of waiting for someone to "
+                            "get a hand on it. There is NO keypress e-stop "
+                            "in this mode — the power switch and the "
+                            "automatic guards are the only aborts")
     p_run.add_argument("--force", action="store_true",
                        help="run a clip the gate refuses (logged; the arm "
                             "can hit itself)")
@@ -691,6 +716,8 @@ def run() -> int:
                    ).add_argument("--cal", default="calibration.json")
 
     args = parser.parse_args()
+    # A declared-unattended run has no operator to confirm anything.
+    args.yes = getattr(args, "yes", False) or getattr(args, "unattended", False)
     if args.command == "example":
         cal_path = Path(args.cal)
         cals = load_calibration(cal_path) if cal_path.exists() else None
