@@ -34,6 +34,7 @@ Selftest (no hardware — a fake bus forces every violation path):
 from __future__ import annotations
 
 import sys
+import time
 from dataclasses import dataclass
 
 from hardware.units import Frame, fmt_ticks, span_deg
@@ -361,15 +362,32 @@ LOAD_TRIP_SAMPLES = 3       # consecutive, so one noisy read is not a stop
 # --no-gate.
 TRIP_CONFIRM_SAMPLES = 2
 
-# A servo cannot warm 40 C between two 50 ms samples. Physics, not
-# tuning: a reading that jumps by more than this since the previous
-# sample for the same joint is a bus error, and is discarded rather than
-# acted on. This catches the misread ON THE SAMPLE IT HAPPENS, where
-# consecutive-confirmation only catches it on the next one — and unlike
-# the `plausible` range check it works on values that are perfectly
-# believable in isolation. 74 C is a plausible servo temperature; 74 C
-# one sample after 31 C is not.
-TEMP_JUMP_C = 15
+# TEMPERATURE IS RATE-LIMITED BY PHYSICS, so the filter is too.
+#
+# A first attempt used a flat 15 C step. It caught the 74 C misread and
+# then missed a 46 C one on the same afternoon — the arm read 32 C
+# seconds later — because 14 C is under 15 C. A flat step is the wrong
+# shape: what is impossible is not a SIZE of change but a RATE of one,
+# and the right bound depends on how long it has been since the last
+# reading.
+#
+# A servo warms over minutes. Between two 50 ms samples the real change
+# is far below the register's 1 C resolution, so consecutive readings
+# should differ by a count or two at most; over a multi-second pause
+# between phases, a few degrees is fair. 2 C/s is already generous for a
+# servo doing real work, and the quantum covers resolution and dither.
+#
+# At the 50 ms cadence this allows ~2.1 C between samples, which is why
+# both misreads are now caught; across a 10 s gap it allows 22 C, which
+# is why a genuinely heating arm is not slandered as a bus error.
+TEMP_RATE_C_PER_S = 2.0
+TEMP_QUANTUM_C = 2.0
+
+# Temperature is the SLOWEST quantity the servo reports, so confirming a
+# trip over a longer window is physically free: a real overheat lasts
+# minutes and 5 samples is a quarter of a second. Load gets 3 and
+# everything else 2 because those can genuinely change that fast.
+TEMP_TRIP_SAMPLES = 5
 
 
 class StrainViolation(BenchError):
@@ -398,7 +416,9 @@ class StrainWatch:
         # reading on joint 4: two independent maxima read off one record.
         self.peak_load: dict[int, dict] = {}
         self.peak_temp: dict[int, dict] = {}
-        self._last_temp: dict[int, int] = {}
+        self._last_temp: dict[int, tuple[int, float]] = {}
+        self._prev_load: dict[int, float] = {}
+        self.raw_peak_load: dict[int, float] = {}
         self.unreadable = False
         self.discarded = 0      # readings rejected as physically impossible
 
@@ -434,16 +454,37 @@ class StrainWatch:
             # Counted, never silent: a rising discard count is the bus
             # telling you it is corrupting reads, which is worth knowing
             # even though it is not worth stopping for.
+            now = time.monotonic()
             last = self._last_temp.get(i)
-            temp_ok = last is None or abs(h["temp_c"] - last) <= TEMP_JUMP_C
+            if last is None:
+                temp_ok = True
+            else:
+                prev_c, prev_t = last
+                allowed = TEMP_QUANTUM_C + TEMP_RATE_C_PER_S * (now - prev_t)
+                temp_ok = abs(h["temp_c"] - prev_c) <= allowed
             if temp_ok:
-                self._last_temp[i] = h["temp_c"]
+                self._last_temp[i] = (h["temp_c"], now)
             else:
                 self.discarded += 1
 
-            prev = self.peak_load.get(i)
-            if prev is None or h["load_pct"] > prev["load_pct"]:
-                self.peak_load[i] = h
+            # PEAK LOAD IS REPORTED CONFIRMED, not raw. The same bus that
+            # invents temperatures can invent a load spike, and a single
+            # corrupted sample inflating the headline number would make
+            # the arm look closer to its limits than it is — which is the
+            # opposite of what this number is consulted for. A value only
+            # counts once two consecutive samples both reach it. The raw
+            # maximum is kept alongside, and reported when the two
+            # disagree, because that gap is itself the bus-noise signal.
+            before = self._prev_load.get(i)
+            self._prev_load[i] = h["load_pct"]
+            self.raw_peak_load[i] = max(self.raw_peak_load.get(i, 0.0),
+                                        h["load_pct"])
+            if before is not None:
+                confirmed = min(before, h["load_pct"])
+                prev = self.peak_load.get(i)
+                if prev is None or confirmed > prev["load_pct"]:
+                    self.peak_load[i] = {**h, "load_pct": confirmed}
+
             prev = self.peak_temp.get(i)
             if temp_ok and (prev is None or h["temp_c"] > prev["temp_c"]):
                 self.peak_temp[i] = h
@@ -469,7 +510,7 @@ class StrainWatch:
                 self._clear(i, "volts")
 
             if temp_ok and h["temp_c"] >= TEMP_TRIP_C:
-                if self._confirm(i, "temp", TRIP_CONFIRM_SAMPLES):
+                if self._confirm(i, "temp", TEMP_TRIP_SAMPLES):
                     raise StrainViolation(
                         f"joint {i} is at {h['temp_c']} C (limit "
                         f"{TEMP_TRIP_C})",
@@ -508,6 +549,14 @@ class StrainWatch:
                     "did NOT gate this run")
         peak = max(self.peak_load.values(), key=lambda h: h["load_pct"])
         notes = []
+        raw = max(self.raw_peak_load.values(), default=0.0)
+        # A raw maximum well above the confirmed one means single samples
+        # are landing far from their neighbours — the same bus noise the
+        # temperature filter counts, showing up in a channel where
+        # physics cannot rule it out. Shown, not silently smoothed away.
+        if raw >= peak["load_pct"] + 10.0:
+            notes.append(f"raw peak {raw:.0f}% unconfirmed by the "
+                         f"neighbouring sample")
         if self.unreadable:
             notes.append("some reads unusable")
         if self.discarded:
@@ -556,14 +605,18 @@ def _selftest_strain() -> None:
     def trips_ramp(factory, start, end):
         """Walk the temperature up in steps the filter accepts, so the
         end value is believed. Pairs with the jump test: the filter must
-        reject an impossible STEP, never a genuinely hot servo."""
+        reject an impossible RATE, never a genuinely heating servo.
+
+        Steps by the quantum because back-to-back samples have ~zero
+        elapsed time, so the rate term contributes nothing — this is the
+        tightest the filter ever is."""
         w = StrainWatch([1])
         t = start
         try:
             while t < end:
-                t = min(end, t + TEMP_JUMP_C)
-                for _ in range(TRIP_CONFIRM_SAMPLES):
-                    w.check(factory(temp_c=t))
+                t = min(end, t + TEMP_QUANTUM_C)
+                for _ in range(TEMP_TRIP_SAMPLES):
+                    w.check(factory(temp_c=int(t)))
             return False
         except StrainViolation:
             return True
@@ -601,8 +654,13 @@ def _selftest_strain() -> None:
         except StrainViolation as exc:
             want(f"ONE sample of {label} does not stop the arm", False,
                  str(exc))
-    want("...but two consecutive DO",
-         trips(Fake(temp_c=90), n=TRIP_CONFIRM_SAMPLES)[0])
+    want("...but a sustained fault DOES stop it",
+         trips(Fake(volts=5.0), n=TRIP_CONFIRM_SAMPLES)[0]
+         and trips(Fake(load_pct=99.0), n=TRIP_CONFIRM_SAMPLES)[0])
+    want("...and temperature needs a longer window, being the slowest "
+         "quantity the servo reports",
+         trips(Fake(temp_c=90), n=TEMP_TRIP_SAMPLES)[0]
+         and not trips(Fake(temp_c=90), n=TEMP_TRIP_SAMPLES - 1)[0])
 
     # A flicker between two DIFFERENT complaints confirms neither.
     w = StrainWatch([1])
@@ -615,29 +673,57 @@ def _selftest_strain() -> None:
         want("alternating DIFFERENT complaints confirm neither", False,
              str(exc))
 
-    # The physical-impossibility filter: 74 C one sample after 31 C is
-    # not a hot servo, it is a bad byte. Caught on the sample it happens.
+    # The physical-impossibility filter. BOTH misreads seen on the bench
+    # on 2026-07-27 are pinned here: 74 C after 31 C (caught by the first
+    # version of this filter) and 46 C after 32 C (which that version
+    # MISSED, because 14 C was under its flat 15 C step).
+    for label, hot in (("+43 C in one sample", 74), ("+14 C in one sample", 46)):
+        w = StrainWatch([1])
+        w.check(Fake(temp_c=32))
+        for _ in range(6):
+            w.check(Fake(temp_c=hot))   # would trip several times, if believed
+        want(f"an impossible temperature jump is discarded ({label})",
+             w.discarded == 6, f"{w.discarded} of 6 discarded")
+        want(f"...and the arm was NOT stopped by it ({label})", True)
     w = StrainWatch([1])
-    w.check(Fake(temp_c=31))
-    for _ in range(5):
-        w.check(Fake(temp_c=74))       # would trip twice over, if believed
-    want("a physically impossible temperature JUMP is discarded, not "
-         "acted on", w.discarded == 5, f"{w.discarded} discarded")
+    w.check(Fake(temp_c=32))
+    w.check(Fake(temp_c=74))
     want("...and the run says so out loud rather than hiding it",
          "discarded" in w.summary(), w.summary())
     want("...while the same value reached GRADUALLY does trip",
          trips_ramp(Fake, 31, 74))
 
+    # Peak load is reported CONFIRMED: one corrupted sample must not
+    # inflate the headline headroom number.
+    w = StrainWatch([1])
+    for pct in (8.0, 9.0, 95.0, 8.0, 9.0):     # 95 is a lone bad byte
+        w.check(Fake(load_pct=pct))
+    want("a lone load spike does not become the reported peak",
+         w.peak_load[1]["load_pct"] <= 9.0,
+         f"reported {w.peak_load[1]['load_pct']}%")
+    want("...but the raw maximum is kept, so the noise is not hidden",
+         w.raw_peak_load[1] == 95.0, f"raw {w.raw_peak_load[1]}%")
+    want("...and the summary shows both when they disagree",
+         "raw" in w.summary(), w.summary())
+    w = StrainWatch([1])
+    for _ in range(4):
+        w.check(Fake(load_pct=42.0))           # a genuine sustained load
+    want("a REAL sustained load is reported at its true value",
+         w.peak_load[1]["load_pct"] == 42.0,
+         f"reported {w.peak_load[1]['load_pct']}%")
+
     # Peak load and peak temperature are independent maxima. Reading
     # both off one stored sample reported 'hottest 32 C' for a run that
     # died at 74 C.
+    # Peak load happens while COOL; peak temperature happens while the
+    # load is low. Reading both off one stored sample cannot report both.
     w = StrainWatch([1])
-    w.check(Fake(load_pct=40.0, temp_c=30))   # hottest load, coolest temp
-    w.check(Fake(load_pct=5.0, temp_c=44))    # coolest load, hottest temp
+    for load, temp in ((40.0, 30), (40.0, 31), (5.0, 32), (5.0, 33)):
+        w.check(Fake(load_pct=load, temp_c=temp))
     s = w.summary()
     want("summary reports the true peak load", "40%" in s, s)
     want("...AND the true peak temperature, not the one that happened to "
-         "accompany peak load", "44 C" in s, s)
+         "accompany peak load", "33 C" in s, s)
 
     # a brief spike must NOT stop a good run
     w = StrainWatch([1])
