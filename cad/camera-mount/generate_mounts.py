@@ -90,16 +90,23 @@ P = {
     # it. Nothing intrudes on the work area, and the plate registers
     # against a real edge rather than floating on a weighted base —
     # 716.4 forbids a camera that can be nudged.
+    # The plate is EXACTLY the tabletop thickness, 3/4 in, so it covers
+    # the edge face and nothing more (Kyle 2026-07-28: "make the screw
+    # mounting plate 3/4 high, so now you can set the height of the frame
+    # exactly where you want the camera off the table"). That split is
+    # the point: the plate is fixed by the table, and `lens_h` alone is
+    # the knob for how high the camera sits — change it and only the
+    # post grows.
     "table_t": 19.05,        # 0.75 in tabletop, from bench.json
     "lens_h": 75.0,          # lens centre above the table top (~3 in)
-    "edge_tilt_deg": 8.0,    # down from horizontal
-    # Yaw from straight-across-the-edge, toward the far end of the table.
-    # 61 deg aims a stand at bench y=44.0 at the work-zone centre — the
-    # angle is large because a camera ON the edge can only see the work
-    # zone diagonally, and sitting square to the edge in line with the
-    # arm would stare straight down the reach axis with the arm in the
-    # way. Parametric on purpose: re-generate when the fixtures land.
-    "edge_yaw_deg": 61.0,
+    # Aimed at the work-zone centre from the SHORT edge of the main
+    # table (Kyle: "mounted on the outside short edge of the main table
+    # ... centered with a perpendicular angle"). Perpendicular means the
+    # yaw is ZERO and the part is symmetric — the earlier 61 deg came
+    # from mounting on the LONG front edge, where the work zone can only
+    # be seen diagonally. Off the short edge it is dead ahead.
+    "edge_tilt_deg": 8.37,   # down from horizontal
+    "edge_yaw_deg": 0.0,     # 0 = square to the edge it is bolted to
     "post_w": 16.0,          # along the edge
     "post_d": 14.0,          # outboard
     "edge_neck_len": 8.0,    # post face -> frame back wall
