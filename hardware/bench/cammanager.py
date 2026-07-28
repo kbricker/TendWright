@@ -30,7 +30,8 @@ from pupil_apriltags import Detector  # noqa: E402
 
 from hardware.errors import BenchError  # noqa: E402
 
-from .campreview import FpsCounter, TAG_FAMILY, annotate, read_frame  # noqa: E402
+from .campreview import (FpsCounter, TAG_FAMILY, annotate,  # noqa: E402
+                         describe_negotiated, read_frame)
 from .cameras import CameraSpec, Profile  # noqa: E402
 
 JPEG_QUALITY = 80
@@ -230,43 +231,16 @@ class Camera:
 
     def _record_negotiated(self, cap: cv2.VideoCapture,
                            profile: Profile) -> None:
-        """Compare what we asked the device for against what it gave us.
+        """Record what the device actually gave us, for /status.
 
-        WHY THIS EXISTS. A UVC camera accepts any resolution and any frame
-        rate you set and then delivers whatever mode it actually has, with
-        no error anywhere. Measured on the ELP-USBFHD01M-L36, 2026-07-28:
-
-            asked 640x360 @10  ->  got 640x480 @120, observed 95 fps
-            asked 640x480 @10  ->  got 640x480 @120, observed 46 fps
-            asked 1920x1080@10 ->  got 1920x1080@30, observed 27 fps
-
-        Its native MJPG modes are 320x240, 640x480, 800x600, 1280x720,
-        1280x1024 and 1920x1080 — so the tile profile's 640x360 was never
-        a real mode, and CAP_PROP_FPS is ignored outright at every size.
-
-        The registry said 640x360@10 and the camera ran 640x480 at ~95 fps
-        for weeks without a single line of output saying so. That silence
-        is the actual defect: a wrong number you can see is a bug, and a
-        wrong number you cannot see is a wrong model of the system. So the
-        mismatch is recorded and surfaced in /status rather than raised —
-        a fallback mode is still usable, and one camera must never take
-        the server down.
+        The comparison itself lives in `campreview.describe_negotiated` —
+        its docstring carries the measurements and the reasoning. It is
+        shared because campreview opens cameras directly and had exactly
+        the same blind spot. Surfaced, never raised: a fallback mode is
+        still usable and one camera must not take the server down.
         """
-        got = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-               int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-        self.negotiated = f"{got[0]}x{got[1]}"
-        notes = []
-        if got != (profile.width, profile.height):
-            notes.append(f"asked {profile.width}x{profile.height}, "
-                         f"device gave {got[0]}x{got[1]}")
-        # The device's reported rate is what the MODE runs at, not what we
-        # requested — treat a mismatch as information, not as a failure,
-        # because software pacing in _run is what actually holds the rate.
-        dev_fps = cap.get(cv2.CAP_PROP_FPS)
-        if dev_fps and profile.fps and abs(dev_fps - profile.fps) > 1.0:
-            notes.append(f"device runs {dev_fps:g} fps natively, "
-                         f"pacing to {profile.fps:g}")
-        self.mode_note = "; ".join(notes) or None
+        self.negotiated, self.mode_note = describe_negotiated(
+            cap, profile.width, profile.height, profile.fps)
         if self.mode_note:
             print(f"camera {self.spec.name}: {self.mode_note}",
                   file=sys.stderr, flush=True)

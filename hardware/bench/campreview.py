@@ -8,11 +8,18 @@ Keys in the window: s = save a snapshot PNG, q/Esc = quit.
 The view window opens 960 px wide (~quarter of the bench 1080p screen),
 drag-resizable; override with --view-width. Capture, detection, and
 snapshots always run at full camera resolution — only the view scales.
-Headless cell1 note: run over `ssh -X cell1`, or use --grab to save N
-frames to disk without a window.
+The loop is paced in software to --fps (default 30): these cameras
+deliver up to 120 fps and ignore the rate you ask them for, so nothing
+else holds a preview to a sane cost. Headless cell1 note: run over
+`ssh -X cell1`, or use --grab to save N frames to disk without a window.
 
-Usage: campreview [--camera N] [--width W] [--height H] [--calib FILE.npz]
-                  [--view-width PX] [--grab N] [--outdir DIR]
+Usage: campreview [--camera N] [--width W] [--height H] [--fps N]
+                  [--calib FILE.npz] [--view-width PX] [--grab N]
+                  [--outdir DIR]
+
+Selftest (no camera, no window — pacing math + mode negotiation):
+
+    uv run python -m hardware.bench.campreview --selftest
 """
 
 from __future__ import annotations
@@ -88,9 +95,28 @@ FPS_WINDOW = 30  # sliding-window samples for the FPS readout (~1-3 s)
 # sanity envelope, not a screen query (single known bench monitor).
 VIEW_WIDTH_DEFAULT = 960
 VIEW_WIDTH_MIN, VIEW_WIDTH_MAX = 160, 3840
+# Default preview rate. 30 is the fastest a human gains anything from and
+# is the native rate of the 1080p mode; the cameras will happily deliver
+# 120 at 640x480 if nobody stops them. 0 means unpaced, matching what 0
+# already means for still_interval_s in the registry.
+PREVIEW_FPS_DEFAULT = 30.0
 
 # Camera-flavored CLI wrapper (vs bus.py's servo-flavored unplug hint).
 run_tool = make_run_tool("unplug/replug the camera and re-run")
+
+
+def next_deadline(deadline: float, period: float) -> float:
+    """The next frame deadline, one period on.
+
+    RESETS rather than accumulating debt: if the loop fell behind — a
+    slow detection pass, a large snapshot write — the deadline is pulled
+    up to now instead of leaving a backlog the loop would then sprint to
+    burn off. A preview that briefly stutters should return to its rate,
+    not overshoot it.
+    """
+    deadline += period
+    now = time.monotonic()
+    return deadline if deadline > now else now
 
 
 class FpsCounter:
@@ -116,7 +142,56 @@ def read_frame(cap: cv2.VideoCapture):
     return frame
 
 
-def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
+def describe_negotiated(cap: cv2.VideoCapture, width: int, height: int,
+                        fps: float) -> tuple[str, str | None]:
+    """Compare what we asked the device for against what it gave us.
+
+    Returns `(negotiated, note)` — the actual "WxH" the device settled
+    on, and a human-readable note describing every gap, or None when it
+    gave us exactly what we asked for.
+
+    WHY THIS EXISTS. A UVC camera accepts any resolution and any frame
+    rate you set and then delivers whatever mode it actually has, with
+    no error anywhere. Measured on the ELP-USBFHD01M-L36, 2026-07-28:
+
+        asked 640x360 @10  ->  got 640x480 @120, observed 95 fps
+        asked 640x480 @10  ->  got 640x480 @120, observed 46 fps
+        asked 1920x1080@10 ->  got 1920x1080@30, observed 27 fps
+
+    Its native MJPG modes are 320x240, 640x480, 800x600, 1280x720,
+    1280x1024 and 1920x1080 — so camserve's tile profile of 640x360 was
+    never a real mode, and CAP_PROP_FPS is ignored outright at every
+    size.
+
+    The registry said 640x360@10 and the camera ran 640x480 at ~95 fps
+    for weeks without a single line of output saying so. That silence
+    is the actual defect: a wrong number you can see is a bug, and a
+    wrong number you cannot see is a wrong model of the system. So the
+    mismatch is REPORTED, never raised — a fallback mode is still
+    perfectly usable, and one camera must never take a server down.
+
+    Callers are expected to pace in software regardless of what the
+    device claims (see cammanager._run and campreview.run); the rate
+    half of the note says what pacing is protecting against.
+    """
+    got = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+           int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    notes = []
+    if got != (width, height):
+        notes.append(f"asked {width}x{height}, "
+                     f"device gave {got[0]}x{got[1]}")
+    # The device's reported rate is what the MODE runs at, not what we
+    # requested — treat a mismatch as information, not as a failure,
+    # because software pacing is what actually holds the rate.
+    dev_fps = cap.get(cv2.CAP_PROP_FPS)
+    if dev_fps and fps and abs(dev_fps - fps) > 1.0:
+        notes.append(f"device runs {dev_fps:g} fps natively, "
+                     f"pacing to {fps:g}")
+    return f"{got[0]}x{got[1]}", "; ".join(notes) or None
+
+
+def open_camera(index: int, width: int, height: int,
+                fps: float = 0.0) -> cv2.VideoCapture:
     cap = cv2.VideoCapture(index)
     if not cap.isOpened():
         raise BenchError(
@@ -130,6 +205,15 @@ def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    if fps > 0:
+        cap.set(cv2.CAP_PROP_FPS, fps)
+    # Keep the driver queue shallow so a paced loop retrieves a recent
+    # frame rather than one buffered while it slept. Not all V4L2
+    # backends honour this, which is why pacing does not depend on it.
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    _, note = describe_negotiated(cap, width, height, fps)
+    if note:
+        print(f"camera {index}: {note}", file=sys.stderr, flush=True)
     return cap
 
 
@@ -166,6 +250,13 @@ def run() -> int:
     parser.add_argument("--camera", type=int, default=0, help="camera index")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--fps", type=float, default=PREVIEW_FPS_DEFAULT,
+                        help=f"paced capture rate (default "
+                             f"{PREVIEW_FPS_DEFAULT:g}; 0 = unpaced, read as "
+                             "fast as the device delivers). These cameras "
+                             "ignore the rate you ask them for and will run "
+                             "up to 120 fps, so this is the only thing "
+                             "holding the preview to a sane cost.")
     parser.add_argument("--calib", default=None,
                         help=".npz with K + dist to undistort")
     parser.add_argument("--view-width", type=int, default=VIEW_WIDTH_DEFAULT,
@@ -177,7 +268,17 @@ def run() -> int:
     parser.add_argument("--grab", type=int, default=0, metavar="N",
                         help="headless: save N annotated frames and exit")
     parser.add_argument("--outdir", default=".", help="snapshot directory")
+    # Handled in main() before the parser runs, so it works with no other
+    # arguments and never opens a device. Declared here for --help.
+    parser.add_argument("--selftest", action="store_true",
+                        help="run the pure-logic tests and exit "
+                             "(no camera, no window)")
     args = parser.parse_args()
+
+    if args.fps < 0:
+        raise BenchError(f"--fps must be 0 or positive, got {args.fps:g}",
+                         "0 means unpaced; omit the flag for the "
+                         f"{PREVIEW_FPS_DEFAULT:g} fps default")
 
     K, dist = load_calibration(args.calib)
     detector = Detector(families=TAG_FAMILY)
@@ -201,11 +302,18 @@ def run() -> int:
                 "`ssh -X cell1`",
             ) from exc
 
-    cap = open_camera(args.camera, args.width, args.height)
+    cap = open_camera(args.camera, args.width, args.height, args.fps)
     session = int(time.time())
     fps_counter = FpsCounter()
     saved = 0
     view_sized = False  # size once from the first frame's real aspect
+    # Software pacing, same reasoning as cammanager._run: the device
+    # ignores CAP_PROP_FPS, so this loop declining to read faster is the
+    # only thing that holds the rate. Without it a preview window runs at
+    # whatever the mode delivers — up to 120 fps for a picture a human is
+    # looking at, with AprilTag detection on every one of those frames.
+    period = 1.0 / args.fps if args.fps > 0 else 0.0
+    next_frame = time.monotonic()
     try:
         while True:
             frame = read_frame(cap)
@@ -225,6 +333,13 @@ def run() -> int:
                 print(f"saved {path}  ({len(detections)} tags)")
                 if saved >= args.grab:
                     return 0
+                # Paced here too, so `--grab N` samples over N/fps seconds
+                # rather than returning N near-identical frames from the
+                # same instant. No window to service, so a plain sleep.
+                delay = next_frame - time.monotonic()
+                if period and delay > 0:
+                    time.sleep(delay)
+                next_frame = next_deadline(next_frame, period)
                 continue
 
             if not view_sized:
@@ -237,7 +352,26 @@ def run() -> int:
                                  max(1, round(view_width * h / w)))
                 view_sized = True
             cv2.imshow("campreview", frame)
-            key = cv2.waitKey(1) & 0xFF
+            # waitKey IS the pacing sleep: it services the window's event
+            # loop, so the remainder of the frame period is spent there
+            # rather than in a time.sleep that would freeze the UI. Capped
+            # at 50 ms per call so q/Esc still answer promptly at low
+            # rates, and looped until the deadline. A keypress returns
+            # early — that costs one early frame, and next_deadline puts
+            # the schedule straight again.
+            key = 255
+            while True:
+                delay_ms = 1
+                if period:
+                    remaining = next_frame - time.monotonic()
+                    delay_ms = min(50, max(1, int(remaining * 1000)))
+                pressed = cv2.waitKey(delay_ms) & 0xFF
+                if pressed != 255:
+                    key = pressed
+                    break
+                if not period or time.monotonic() >= next_frame:
+                    break
+            next_frame = next_deadline(next_frame, period)
             if key in (ord("q"), 27):
                 return 0
             if key == ord("s"):
@@ -249,7 +383,71 @@ def run() -> int:
         cv2.destroyAllWindows()
 
 
+class _FakeCap:
+    """Enough of cv2.VideoCapture for describe_negotiated, no device.
+
+    `lies` reproduces the real ELP-USBFHD01M-L36: it accepts whatever
+    mode you set and then reports 640x480 at its native 120.101 fps.
+    """
+
+    def __init__(self, width, height, fps, lies=False):
+        self.lies, self._asked = lies, (width, height, fps)
+
+    def get(self, prop):
+        w, h, fps = self._asked
+        if self.lies:
+            w, h, fps = 640, 480, 120.101
+        return float({cv2.CAP_PROP_FRAME_WIDTH: w,
+                      cv2.CAP_PROP_FRAME_HEIGHT: h,
+                      cv2.CAP_PROP_FPS: fps}.get(prop, 0))
+
+
+def selftest() -> int:
+    """Exercise the pure logic — no camera, no window, no display.
+
+        uv run python -m hardware.bench.campreview --selftest
+    """
+    # 1. On schedule: exactly one period per step, no drift. The period is
+    # long relative to the loop body, so nothing here should ever clamp.
+    period, start = 0.05, time.monotonic()
+    deadline = start
+    for _ in range(5):
+        deadline = next_deadline(deadline, period)
+    assert abs(deadline - (start + 5 * period)) < 1e-9, deadline
+
+    # 2. Behind schedule: pull up to now, do NOT bank the debt. This is
+    # the invariant that stops a stuttered loop sprinting to catch up.
+    late = next_deadline(time.monotonic() - 10.0, period)
+    assert abs(late - time.monotonic()) < 0.05, late
+
+    # 3. Unpaced (period 0) never puts a deadline in the future.
+    assert next_deadline(time.monotonic() - 1.0, 0.0) <= time.monotonic()
+
+    # 4. A well-behaved device says nothing — without this the note would
+    # cry wolf on every camera and operators would learn to ignore it.
+    got, note = describe_negotiated(_FakeCap(1280, 720, 30), 1280, 720, 30)
+    assert (got, note) == ("1280x720", None), (got, note)
+
+    # 5. The real camera's lie is caught, and the note names both halves.
+    got, note = describe_negotiated(
+        _FakeCap(640, 360, 10, lies=True), 640, 360, 10)
+    assert got == "640x480", got
+    assert "asked 640x360" in note and "device gave 640x480" in note, note
+    assert "120.101 fps natively" in note and "pacing to 10" in note, note
+
+    # 6. Asking for unpaced means the device's rate is not a mismatch —
+    # there is no rate to disagree with.
+    _, note = describe_negotiated(_FakeCap(640, 480, 0, lies=True),
+                                  640, 480, 0)
+    assert note is None, note
+
+    print("campreview selftest OK")
+    return 0
+
+
 def main() -> int:
+    if "--selftest" in sys.argv:
+        return selftest()
     return run_tool(run)
 
 
