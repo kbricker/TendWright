@@ -80,6 +80,31 @@ P = {
     "cap_tongue_clear": 0.1,  # width clearance vs the 38.5 groove span
     # variants: tilt below horizontal
     "angles_deg": (45, 60),
+    # ---- table-edge stand (plan #717.5), Kyle 2026-07-28: "mount it to
+    # the table flush on the outboard side edge so the arm extends up and
+    # like you said we have the same camera holder frame."
+    #
+    # Same frame, same cap, different foundation: a plate flat against
+    # the table's OUTBOARD edge face, and a post rising past the table
+    # top to hold the camera just above the surface looking back across
+    # it. Nothing intrudes on the work area, and the plate registers
+    # against a real edge rather than floating on a weighted base —
+    # 716.4 forbids a camera that can be nudged.
+    "table_t": 19.05,        # 0.75 in tabletop, from bench.json
+    "lens_h": 75.0,          # lens centre above the table top (~3 in)
+    "edge_tilt_deg": 8.0,    # down from horizontal
+    # Yaw from straight-across-the-edge, toward the far end of the table.
+    # 61 deg aims a stand at bench y=44.0 at the work-zone centre — the
+    # angle is large because a camera ON the edge can only see the work
+    # zone diagonally, and sitting square to the edge in line with the
+    # arm would stare straight down the reach axis with the arm in the
+    # way. Parametric on purpose: re-generate when the fixtures land.
+    "edge_yaw_deg": 61.0,
+    "post_w": 16.0,          # along the edge
+    "post_d": 14.0,          # outboard
+    "edge_neck_len": 8.0,    # post face -> frame back wall
+    "edge_plate_w": 46.0,
+    "edge_plate_drop": 0.0,  # extra plate below the tabletop, if wanted
 }
 
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -291,6 +316,127 @@ def build_variant(angle_deg, p):
     return mount, neck_len, wall_y0 - stop_in
 
 
+def build_edge_stand(p):
+    """Table-edge stand: plate on the outboard edge face, post up, same
+    camera frame at the top looking back across the table (plan #717.5).
+
+    Datum for this variant, chosen to be the two things a person can put
+    a tape to: **z = 0 is the TABLE TOP, y = 0 is the outboard edge
+    face.** The table is at y < 0, the stand at y > 0, so the whole
+    mount lives outside the work area and the camera looks back over it.
+
+    The frame is the SAME ratified part the wall brackets use — Kyle:
+    "like you said we have the same camera holder frame" — so the board
+    fit, the slot, the cap and the print orientation all carry over
+    untouched. Only the foundation changes.
+
+    Orientation is the wall variant's tilt plus a 180 deg yaw, and the
+    180 is load-bearing: without it the frame's insertion end points
+    DOWN and the board would fall out instead of seating against its
+    stop. With it, the board still drops in from above under gravity.
+    """
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    scene.unit_settings.system = "METRIC"
+    scene.unit_settings.scale_length = 0.001
+    scene.unit_settings.length_unit = "MILLIMETERS"
+
+    tilt = p["edge_tilt_deg"]
+    phi = math.radians(90 - tilt)
+    psi = math.radians(180 + p["edge_yaw_deg"])
+    rot = Euler((phi, 0, psi)).to_matrix()
+
+    # top wall sizing, same rule as the wall variants
+    web_top = p["web_h"] / 2 + 1
+    neck_top = web_top + p["flange_t"]
+    neck_bot = -(p["web_h"] / 2 + 1)
+    neck_mid = (neck_top + neck_bot) / 2
+    wall_len = math.ceil(((neck_top - neck_bot) + 3) / math.sin(phi))
+    half_len_frame = p["frame_len"] / 2
+    stop_in = -half_len_frame + p["stop_t"] + 1.0
+    on_frame_cap = half_len_frame - stop_in - p["back_open_min"]
+    wall_on_frame = min(wall_len, on_frame_cap)
+    wall_y0 = half_len_frame - wall_on_frame
+
+    frame, half_len, groove_h, z_cavity, z_wall_out, rail_out = \
+        build_frame(p, wall_y0, wall_len)
+    frame.rotation_euler = Euler((phi, 0, psi))
+    bpy.ops.object.transform_apply(rotation=True)
+
+    # THE POST CANNOT BUTT THE BACK WALL FROM BELOW. At 8 deg the frame
+    # stands nearly vertical, so its back wall is nearly vertical too and
+    # its normal is nearly HORIZONTAL. Trimming a rising column against
+    # that plane slices the column lengthwise instead of docking it —
+    # the first attempt produced a tapered sliver. So the post stands
+    # BESIDE the wall and a horizontal neck docks into it, which is the
+    # same arrangement the wall variants use, just rotated into a régime
+    # where the neck is horizontal and the wall is steep rather than the
+    # other way round.
+    n = rot @ Vector((0, 0, 1))          # wall's outward normal
+    u = Vector((-n.x, -n.y, 0.0))        # post -> wall, horizontal
+    u.normalize()
+    y_post = p["post_d"] / 2             # post overlaps the plate in y
+    reach = p["post_d"] / 2 + p["edge_neck_len"]
+
+    a_local = Vector((0, wall_y0 + wall_len / 2, z_wall_out))
+    a_rot = rot @ a_local
+    board_c = rot @ Vector((0, stop_in + p["board_w"] / 2, 0))
+    target = Vector((u.x * reach, y_post + u.y * reach,
+                     p["lens_h"] - board_c.z + a_rot.z))
+    t = target - a_rot
+    frame.location = t
+    bpy.ops.object.transform_apply(location=True)
+    attach = a_rot + t
+    lens = board_c + t
+
+    # Plate flat on the edge face: y in [0, plate_t], top flush with the
+    # table top so nothing stands proud of the surface behind it.
+    plate_h = p["table_t"] + p["edge_plate_drop"]
+    mount = box("plate", p["edge_plate_w"], p["plate_t"], plate_h,
+                0, p["plate_t"] / 2, -plate_h / 2)
+    # Post: from under the tabletop up to the neck. Spans y 0..post_d so
+    # it fully overlaps the plate — a tangent union risks a non-manifold
+    # STL, which is why nothing here is left merely touching.
+    post_z0, post_z1 = -plate_h, attach.z + p["flange_t"]
+    mount = union(mount, box(
+        "post", p["post_w"], p["post_d"], post_z1 - post_z0,
+        0, y_post, (post_z0 + post_z1) / 2))
+    # Horizontal neck, docked into the wall and trimmed flush against it
+    # so nothing enters the board's slide path.
+    ang = math.atan2(u.y, u.x)
+    # Kept INSIDE the post's back face (t0) so it does not stub out into
+    # space, and no wider than the post, so the silhouette stays a clean
+    # column rather than a flare.
+    t0, t1 = -p["post_d"] / 2 + 2.0, reach + 10.0
+    mid = Vector((u.x * (t0 + t1) / 2, y_post + u.y * (t0 + t1) / 2, 0))
+    neck = box("neck", t1 - t0, p["post_w"], p["web_h"] + p["flange_t"],
+               mid.x, mid.y, attach.z)
+    neck.rotation_euler = Euler((0, 0, ang))
+    bpy.ops.object.transform_apply(rotation=True)
+    half = box("halfspace", 400, 400, 400, 0, 0, 0)
+    half.rotation_euler = Euler((phi, 0, psi))
+    half.location = attach - n * (200 + 1.0)
+    neck = cut(neck, half)
+    mount = union(mount, neck)
+    mount = union(mount, frame)
+
+    # Two woodscrews side by side into the edge face, centred on the
+    # tabletop's thickness. Countersunk from the OUTBOARD face.
+    hole_z = -p["table_t"] / 2
+    for sx in (-1, 1):
+        x = sx * p["screw_spacing"] / 2
+        mount = cut(mount, cyl("shank", p["screw_shank"] / 2,
+                               p["screw_shank"] / 2, p["plate_t"] + 4,
+                               x, p["plate_t"] / 2, hole_z))
+        head_r = p["screw_head"] / 2
+        sink = head_r - p["screw_shank"] / 2
+        mount = cut(mount, cyl("sink", p["screw_shank"] / 2, head_r,
+                               sink, x, p["plate_t"] - sink / 2 + 0.01,
+                               hole_z))
+    mount.name = "CameraMountEdgeStand"
+    return mount, lens, attach
+
+
 def build_cap(p):
     """Slot cap, angle-independent: plate on the entry end face (kept
     below the top wall's underside) + tongue riding the grooves at the
@@ -369,6 +515,26 @@ def main():
             filepath=os.path.join(OUT_DIR, f"camera_mount_{angle}.blend"))
         print(f"[mounts] {angle} deg: neck_len={neck_len} "
               f"back_open={back_open:.1f} -> camera_mount_{angle}.blend/.stl")
+
+    stand, lens, attach = build_edge_stand(P)
+    cam = add_preview_rig()
+    center = (0, 10, P["lens_h"] / 2)
+    aim(cam, (210, 190, 150), center)
+    render(os.path.join(OUT_DIR, "preview_edge_iso.png"))
+    aim(cam, (300, 10, 30), center)          # along the table edge
+    render(os.path.join(OUT_DIR, "preview_edge_side.png"))
+    aim(cam, (0, -230, 60), (0, 0, P["lens_h"]))   # from over the table
+    render(os.path.join(OUT_DIR, "preview_edge_front.png"))
+    bpy.ops.object.select_all(action="DESELECT")
+    stand.select_set(True)
+    bpy.context.view_layer.objects.active = stand
+    bpy.ops.wm.stl_export(
+        filepath=os.path.join(OUT_DIR, "camera_mount_edge.stl"),
+        export_selected_objects=True)
+    bpy.ops.wm.save_as_mainfile(
+        filepath=os.path.join(OUT_DIR, "camera_mount_edge.blend"))
+    print(f"[mounts] edge stand: lens at y={lens.y:.1f} z={lens.z:.1f}, "
+          f"back-wall attach z={attach.z:.1f} -> camera_mount_edge.blend/.stl")
 
     cap = build_cap(P)
     cam = add_preview_rig()
