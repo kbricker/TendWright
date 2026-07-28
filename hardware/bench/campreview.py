@@ -100,6 +100,9 @@ VIEW_WIDTH_MIN, VIEW_WIDTH_MAX = 160, 3840
 # 120 at 640x480 if nobody stops them. 0 means unpaced, matching what 0
 # already means for still_interval_s in the registry.
 PREVIEW_FPS_DEFAULT = 30.0
+# Ask for a one-frame driver queue only when the requested rate is below
+# this fraction of what the device natively runs — see set_queue_depth.
+QUEUE_SHALLOW_RATIO = 0.8
 
 # Camera-flavored CLI wrapper (vs bus.py's servo-flavored unplug hint).
 run_tool = make_run_tool("unplug/replug the camera and re-run")
@@ -190,6 +193,46 @@ def describe_negotiated(cap: cv2.VideoCapture, width: int, height: int,
     return f"{got[0]}x{got[1]}", "; ".join(notes) or None
 
 
+def set_queue_depth(cap: cv2.VideoCapture, want_fps: float) -> bool:
+    """Shallow driver queue ONLY when we are pacing below the device.
+
+    Returns whether the queue was made shallow, so callers can report it.
+
+    A one-frame queue keeps a PACED loop honest: it sleeps most of the
+    period, and without a shallow queue it would wake to a frame that was
+    captured while it slept. That is the reason `CAP_PROP_BUFFERSIZE = 1`
+    was here unconditionally.
+
+    It is also why 1080p ran at half rate for weeks. Measured on cell1,
+    2026-07-28, ELP-USBFHD01M-L36 with JPEG re-encode in the loop:
+
+        1920x1080  bufsize=1        14.9 fps   read 57.2 ms
+        1920x1080  driver default   29.8 fps   read 25.8 ms
+        1280x720   bufsize=1        29.8 fps   read 26.8 ms
+        640x480    bufsize=1        49.3 fps   read 17.0 ms
+
+    With one buffer the driver cannot fill the next frame while we are
+    still working on this one, so any loop whose per-frame work exceeds
+    the frame period drops to a subharmonic — every second frame, hence
+    almost exactly half of 30. Below 1080p the work is small enough that
+    it never bites, which is why this hid in plain sight.
+
+    So the depth follows the intent: **pacing well below what the device
+    produces wants freshness; running flat out wants throughput.** When
+    we consume every frame anyway, a deep queue costs no staleness — the
+    frame we get is the one that just arrived either way.
+    """
+    dev_fps = cap.get(cv2.CAP_PROP_FPS)
+    # No rate asked for (unpaced) or no rate reported → assume flat out.
+    shallow = bool(want_fps > 0 and dev_fps > 0
+                   and want_fps < dev_fps * QUEUE_SHALLOW_RATIO)
+    if shallow:
+        # Best effort: not all V4L2 backends honour it, which is why
+        # pacing never depends on it.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return shallow
+
+
 def open_camera(index: int, width: int, height: int,
                 fps: float = 0.0) -> cv2.VideoCapture:
     cap = cv2.VideoCapture(index)
@@ -207,10 +250,7 @@ def open_camera(index: int, width: int, height: int,
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     if fps > 0:
         cap.set(cv2.CAP_PROP_FPS, fps)
-    # Keep the driver queue shallow so a paced loop retrieves a recent
-    # frame rather than one buffered while it slept. Not all V4L2
-    # backends honour this, which is why pacing does not depend on it.
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    set_queue_depth(cap, fps)
     _, note = describe_negotiated(cap, width, height, fps)
     if note:
         print(f"camera {index}: {note}", file=sys.stderr, flush=True)
@@ -392,6 +432,11 @@ class _FakeCap:
 
     def __init__(self, width, height, fps, lies=False):
         self.lies, self._asked = lies, (width, height, fps)
+        self.sets: dict = {}
+
+    def set(self, prop, value):
+        self.sets[prop] = value
+        return True
 
     def get(self, prop):
         w, h, fps = self._asked
@@ -440,6 +485,24 @@ def selftest() -> int:
     _, note = describe_negotiated(_FakeCap(640, 480, 0, lies=True),
                                   640, 480, 0)
     assert note is None, note
+
+    # 7. Queue depth follows intent, not a constant. An unconditional
+    # one-frame queue is what held 1080p to 14.9 fps instead of 29.8.
+    def depth(want, native):
+        cap = _FakeCap(0, 0, native)
+        return set_queue_depth(cap, want), cap.sets
+
+    # Pacing far below the device: freshness matters, go shallow.
+    shallow, sets = depth(10, 120.101)
+    assert shallow and sets.get(cv2.CAP_PROP_BUFFERSIZE) == 1, sets
+    # Running at the device's own rate: a shallow queue would cost half
+    # the throughput and buy nothing, because every frame is consumed.
+    shallow, sets = depth(30, 30)
+    assert not shallow and cv2.CAP_PROP_BUFFERSIZE not in sets, sets
+    # Unpaced means flat out, which is the same case.
+    assert not depth(0, 120.101)[0]
+    # A device that reports no rate tells us nothing — do not guess.
+    assert not depth(10, 0)[0]
 
     print("campreview selftest OK")
     return 0

@@ -31,7 +31,7 @@ from pupil_apriltags import Detector  # noqa: E402
 from hardware.errors import BenchError  # noqa: E402
 
 from .campreview import (FpsCounter, TAG_FAMILY, annotate,  # noqa: E402
-                         describe_negotiated, read_frame)
+                         describe_negotiated, read_frame, set_queue_depth)
 from .cameras import CameraSpec, Profile  # noqa: E402
 
 JPEG_QUALITY = 80
@@ -122,6 +122,10 @@ class Camera:
         # the registry asked for. Both None until the camera has been opened.
         self.negotiated: str | None = None
         self.mode_note: str | None = None
+        # Whether the driver queue was made shallow for freshness. False
+        # means we are consuming every frame, so a deep queue costs no
+        # staleness and buys back the throughput a shallow one destroys.
+        self.shallow_queue = False
         self._run_state: _Run | None = None
         self._subs = 0
         # Subscribers who asked for detection, counted separately from
@@ -288,10 +292,10 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, profile.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, profile.height)
         cap.set(cv2.CAP_PROP_FPS, profile.fps)
-        # Keep the driver queue shallow so a paced loop retrieves a recent
-        # frame rather than one buffered while it slept. Not all V4L2
-        # backends honour this, which is why pacing does not depend on it.
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Depth follows intent, and is NOT a constant — an unconditional
+        # one-frame queue is what held 1080p to half rate. See
+        # campreview.set_queue_depth for the measurements.
+        self.shallow_queue = set_queue_depth(cap, profile.fps)
         self._record_negotiated(cap, profile)
         return cap
 
