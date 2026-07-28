@@ -512,10 +512,22 @@ def run() -> int:
             raise
         finally:
             bus.safe_torque_off(ids)
+            # THE HEADLINE NUMBER OF A BASELINE RUN. The strain guard
+            # has recorded per-joint peak load and temperature the whole
+            # way, and until now nothing ever printed it — the guard
+            # could stop the arm but could not tell you how close a
+            # HEALTHY run came to the same thresholds, which is the one
+            # thing needed to judge whether they are set sensibly.
+            #
+            # In the finally, so it survives every exit path: an aborted
+            # or strain-tripped run is exactly when the numbers matter
+            # most. After the torque cut, for the same reason the trace
+            # write is — the arm being safe is never delayed by
+            # bookkeeping.
+            print(strain.summary())
             # Written on EVERY exit path — an aborted, e-stopped or
             # obstructed run is exactly when the trace is most worth
-            # having. Torque off comes FIRST: the arm being safe is
-            # never delayed by bookkeeping.
+            # having.
             if trace is not None:
                 written = trace.close()
                 if written is not None:
