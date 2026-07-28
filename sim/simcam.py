@@ -377,13 +377,28 @@ def selftest() -> int:
           np.allclose(back, [250.0, -40.0, 120.0], atol=1e-6),
           f"{np.round(back, 6)}")
     # The table top being world z=0 is assumed by every tag placement.
-    # It is checkable: meshcheck measured the m1 centre 62.4 mm above the
-    # arm's mounting plane, so the anchor height IS that number if the
-    # table is at zero.
+    # It is checkable against the model's own shoulder_pan anchor.
+    #
+    # BEWARE WHAT 62.4 IS. It is the shoulder_pan JOINT ORIGIN in world
+    # z — the point the kinematics rotate about — and throughout this
+    # repo "m1 centre" means that joint origin, NOT the centre of the m1
+    # servo body. They are 18 mm apart and the distinction has already
+    # caused one false alarm (2026-07-28: a tape measurement of the real
+    # motor read 2 in and was compared against this number as though it
+    # were the same point). Measured off the mesh at qpos 0:
+    #
+    #     shoulder_pan joint origin   62.4 mm   world z
+    #     m1 servo BODY               24.3 .. 63.9 mm, centre 44.1 mm
+    #     lowest base geometry        -2.4 mm
+    #
+    # That last line is its own problem and is NOT what this check is
+    # about: the base mesh dips 2.4 mm below world z=0, so if z=0 really
+    # is the table top then the arm is sunk 2.4 mm into it. Filed rather
+    # than silently shimmed here — see 716.4.
     check("the table surface is world z = 0",
           abs(cam0.origin[2] - 0.0624) < 0.001,
-          f"m1 anchor sits {cam0.origin[2] * 1000:.1f} mm up; meshcheck "
-          f"measured the m1 centre 62.4 mm above the mounting plane")
+          f"shoulder_pan joint origin sits {cam0.origin[2] * 1000:.1f} mm "
+          f"up in world z (NOT the servo body centre, which is 44.1)")
 
     print("\nthe camera is aimed where cell.json says it is")
     if "cam_bench" not in cam0.camera_names():
