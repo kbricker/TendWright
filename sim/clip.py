@@ -53,7 +53,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from hardware.errors import BenchError
-from hardware.units import DegFrame, span_deg
 
 POSES_JSON = Path(__file__).resolve().parent.parent / "poses.json"
 
@@ -184,6 +183,31 @@ class Clip:
     def edges(self) -> list[tuple[Pose, Pose]]:
         return list(zip(self.poses, self.poses[1:]))
 
+    def resolved(self, start: dict[int, int]) -> 'Clip':
+        """Every pose made COMPLETE, carrying joints forward.
+
+        A clip built in code — by IK, by a pick-place planner — pins only
+        the joints it cares about and leaves the rest implied. Implied
+        is fine for authoring and dangerous for gating: a pose that does
+        not mention joint 3 is not a pose where joint 3 is absent, it is
+        a pose where joint 3 is wherever the previous pose left it. The
+        gate and the servos must both be handed the second reading, and
+        the only way to guarantee they agree is to resolve it once, here,
+        before either of them sees the clip.
+
+        `start` supplies the joints the FIRST pose does not pin — in
+        practice the arm's measured position. `load_clip` resolves at
+        load time instead (its first pose must be complete, so a file
+        means the same motion wherever it is run); calling this on an
+        already-complete clip is a no-op.
+        """
+        out: list[Pose] = []
+        carry = dict(start)
+        for p in self.poses:
+            carry = {**carry, **p.ticks}
+            out.append(Pose(p.name, dict(carry)))
+        return Clip(self.name, out, self.profile)
+
 
 def edge_duration(profile: MotionProfile, a: Pose, b: Pose) -> float:
     """Seconds until EVERY joint of the edge has arrived.
@@ -242,6 +266,57 @@ def clip_duration(clip: Clip) -> float:
 
 
 # --------------------------------------------------------- pose library
+def pose_from_doc(cals: dict, name: str, body: dict) -> Pose:
+    """One authored pose — human units in, validated ticks out.
+
+    Shared by `load_poses` and the clip loader so a pose means the same
+    thing wherever it is written down. Every value is range-checked
+    against the CALIBRATED range here, at load, rather than clamped
+    later at command time: a pose the arm cannot reach is an authoring
+    mistake, and silently clamping it moves the tool somewhere the
+    author never asked for (the same failure #670 recorded in IK).
+    """
+    ticks: dict[int, int] = {}
+    for key, value in body.items():
+        try:
+            i = int(key)
+        except (TypeError, ValueError):
+            raise BenchError(
+                f"pose '{name}' has non-numeric joint key {key!r}",
+                "joint keys are servo ids, e.g. \"3\"") from None
+        cal = cals.get(i)
+        if cal is None:
+            raise BenchError(
+                f"pose '{name}' names joint {i}, which is not in "
+                f"calibration.json",
+                "calibrate capture the joint, or drop it from the pose")
+        if cal.frame is None:
+            # Without a frame there is no way to tell 45 degrees from 45
+            # ticks, and the two differ by a factor of 11. Refuse rather
+            # than pick one.
+            raise BenchError(
+                f"pose '{name}' names joint {i} ({cal.name}), which has no "
+                f"calibrated frame, so a human-unit value cannot be read",
+                f"re-run `calibrate capture --ids {i}` to establish the "
+                f"joint's zero and direction")
+        try:
+            tick = cal.frame.tick(float(value))
+        except (TypeError, ValueError):
+            raise BenchError(
+                f"pose '{name}' gives joint {i} a non-numeric value "
+                f"{value!r}",
+                "pose values are degrees (gripper: percent open)") from None
+        if not cal.min <= tick <= cal.max:
+            raise BenchError(
+                f"pose '{name}' puts joint {i} ({cal.name}) at "
+                f"{value} -> tick {tick}, outside its calibrated "
+                f"range {cal.min}..{cal.max}",
+                "a pose outside the calibrated range is unreachable; "
+                "re-author it or re-calibrate the joint")
+        ticks[i] = tick
+    return Pose(name, ticks)
+
+
 def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
     """Named poses as DATA, in human units, validated against the
     calibrated range on load.
@@ -256,35 +331,127 @@ def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
     except (OSError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path.name}: {exc}",
                          "poses.json must be valid JSON") from exc
-    out: dict[str, Pose] = {}
-    for name, body in (doc.get("poses") or {}).items():
-        ticks: dict[int, int] = {}
-        for key, value in body.items():
-            try:
-                i = int(key)
-            except ValueError:
+    return {name: pose_from_doc(cals, name, body)
+            for name, body in (doc.get("poses") or {}).items()}
+
+
+# ---------------------------------------------------------- clip library
+CLIP_FORMAT_VERSION = 1
+
+
+def load_clip(cals: dict, path: Path | str,
+              library: dict[str, Pose] | None = None) -> Clip:
+    """A clip authored as JSON — the file form of what `Clip` holds.
+
+        {"version": 1, "name": "pick",
+         "profile": {"speed": 300, "acceleration": 15},
+         "poses": [{"name": "home",  "joints": {"1": 0, "2": -20, ...}},
+                   {"name": "above", "joints": {"2": -45}},
+                   {"name": "down",  "pose": "grip_height"}]}
+
+    Two authoring conveniences, both chosen to remove a way to be wrong
+    rather than to save typing:
+
+    * A pose may `"pose"`-reference an entry in poses.json, so a height
+      that matters lives in ONE place and every clip using it moves when
+      it is re-measured.
+    * A pose names only the joints it CHANGES; the rest carry forward
+      from the pose before it. Re-stating six joints per waypoint is how
+      a typo in an unrelated joint gets into a clip unnoticed.
+
+    The FIRST pose must name every calibrated joint. Carry-forward needs
+    somewhere to start, and the alternative — inheriting from wherever
+    the arm happens to be sitting — would make the same file mean a
+    different motion on every run, which is exactly the property this
+    module exists to prevent. Getting to that first pose from the arm's
+    actual position is the runner's approach move, and it is gated.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise BenchError(f"no such clip: {path}",
+                         "clips are JSON; see `runner example` for the shape")
+    try:
+        doc = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BenchError(f"could not read {path.name}: {exc}",
+                         "a clip file must be valid JSON") from exc
+    if not isinstance(doc, dict):
+        raise BenchError(f"{path.name} is not a clip",
+                         "expected a JSON object with a `poses` list")
+    version = doc.get("version", CLIP_FORMAT_VERSION)
+    if version != CLIP_FORMAT_VERSION:
+        raise BenchError(
+            f"{path.name} is clip format version {version}, this build "
+            f"reads version {CLIP_FORMAT_VERSION}",
+            "the file was written by a different version of the tools")
+
+    prof = doc.get("profile") or {}
+    if not isinstance(prof, dict):
+        raise BenchError(f"{path.name}: `profile` must be an object",
+                         "e.g. {\"speed\": 300, \"acceleration\": 15}")
+    try:
+        profile = MotionProfile(
+            speed=int(prof.get("speed", DEFAULT_PROFILE.speed)),
+            acceleration=int(prof.get("acceleration",
+                                      DEFAULT_PROFILE.acceleration)))
+    except (TypeError, ValueError) as exc:
+        raise BenchError(f"{path.name}: profile speed and acceleration "
+                         f"must be whole numbers ({exc})") from None
+
+    entries = doc.get("poses")
+    if not isinstance(entries, list) or len(entries) < 2:
+        raise BenchError(
+            f"{path.name} has no motion — a clip needs at least two poses",
+            "a single pose is a position, not a move")
+
+    library = library if library is not None else load_poses(cals)
+    want = set(cals)
+    poses: list[Pose] = []
+    for n, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise BenchError(f"{path.name}: pose {n} is not an object")
+        label = str(entry.get("name") or f"p{n}")
+        if "pose" in entry and "joints" in entry:
+            # Silently merging them would make the file's meaning depend
+            # on a precedence rule nobody wrote down.
+            raise BenchError(
+                f"{path.name}: pose '{label}' has both `pose` and "
+                f"`joints`",
+                "use one or the other")
+        if "pose" in entry:
+            ref = entry["pose"]
+            if ref not in library:
+                known = ", ".join(sorted(library)) or "none defined"
                 raise BenchError(
-                    f"pose '{name}' has non-numeric joint key {key!r}",
-                    "joint keys are servo ids, e.g. \"3\"") from None
-            cal = cals.get(i)
-            if cal is None:
+                    f"{path.name}: pose '{label}' references '{ref}', "
+                    f"which is not in poses.json",
+                    f"known poses: {known}")
+            named = library[ref].ticks
+        elif "joints" in entry:
+            named = pose_from_doc(cals, label, entry["joints"] or {}).ticks
+        else:
+            raise BenchError(
+                f"{path.name}: pose '{label}' names no joints",
+                "give it `joints` or a `pose` reference")
+        if not poses:
+            missing = sorted(want - set(named))
+            if missing:
                 raise BenchError(
-                    f"pose '{name}' names joint {i}, which is not in "
-                    f"calibration.json",
-                    "calibrate capture the joint, or drop it from the pose")
-            tick = (cal.frame.tick(float(value))
-                    if isinstance(cal.frame, DegFrame)
-                    else cal.frame.tick(float(value)))
-            if not cal.min <= tick <= cal.max:
-                raise BenchError(
-                    f"pose '{name}' puts joint {i} ({cal.name}) at "
-                    f"{value} -> tick {tick}, outside its calibrated "
-                    f"range {cal.min}..{cal.max}",
-                    "a pose outside the calibrated range is unreachable; "
-                    "re-author it or re-calibrate the joint")
-            ticks[i] = tick
-        out[name] = Pose(name, ticks)
-    return out
+                    f"{path.name}: the first pose ('{label}') must name "
+                    f"every calibrated joint; missing {missing}",
+                    "carry-forward starts here, so a joint absent from the "
+                    "first pose has no value to carry")
+            ticks = dict(named)
+        else:
+            ticks = {**poses[-1].ticks, **named}
+        extra = sorted(set(ticks) - want)
+        if extra:
+            raise BenchError(
+                f"{path.name}: pose '{label}' names joint(s) {extra}, "
+                f"which are not calibrated")
+        poses.append(Pose(label, ticks))
+
+    return Clip(str(doc.get("name") or path.stem), poses, profile)
 
 
 # ------------------------------------------------------------- selftest
@@ -339,6 +506,24 @@ def _selftest() -> None:
     # Lockstep would have them arrive together — assert we are NOT that.
     want("this is NOT lockstep interpolation",
          arrive[1] != arrive[2])
+
+    # Carry-forward: the property a code-built clip depends on, and the
+    # one whose absence would let the gate judge a different motion than
+    # the servos perform.
+    sparse = Clip("sparse", [Pose("x", {1: 100}), Pose("y", {2: 200}),
+                             Pose("z", {1: 300})])
+    r = sparse.resolved({1: 0, 2: 0, 3: 7})
+    want("resolving fills the first pose from the start pose",
+         r.poses[0].ticks == {1: 100, 2: 0, 3: 7}, )
+    want("...and a joint moved in pose 1 STAYS moved in pose 2",
+         r.poses[1].ticks == {1: 100, 2: 200, 3: 7})
+    want("...while a joint nobody pins holds the start value throughout",
+         all(p.ticks[3] == 7 for p in r.poses))
+    want("...and the unresolved clip really did differ (else this is "
+         "testing nothing)",
+         sparse.poses[1].ticks != r.poses[1].ticks)
+    want("resolving an already-complete clip changes nothing",
+         Clip("c", [a, b]).resolved({1: 0, 2: 0}).poses[1].ticks == b.ticks)
 
     empty = Clip("empty", [])
     want("an empty clip samples to nothing", sample_clip(empty) == [])
