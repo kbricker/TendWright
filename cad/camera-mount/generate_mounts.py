@@ -339,8 +339,17 @@ def build_variant(angle_deg, p):
         mount = cut(mount, cyl("sink", p["screw_shank"] / 2, head_r,
                                sink, x, p["plate_t"] - sink / 2 + 0.01,
                                hole_z))
+    # Where the LENS ends up, relative to the two things an installer can
+    # actually reference: the wall face (y=0) and the screw-hole centres.
+    # Needed because the operator positions the SCREWS but cares about
+    # the LENS, and on a 60 deg bracket those differ by 16.5 mm
+    # vertically — the lens is 19.05 mm proud of the PCB along the
+    # optical axis, so the steeper the tilt the more of that offset
+    # becomes drop rather than reach.
+    lens = (rot @ Vector((0, stop_in + p["board_w"] / 2, 0))
+            + rot @ Vector((0, 0, -p["lens_offset"])) + t)
     mount.name = f"CameraMount{angle_deg}"
-    return mount, neck_len, wall_y0 - stop_in
+    return mount, neck_len, wall_y0 - stop_in, lens, hole_z
 
 
 def build_edge_stand(p):
@@ -529,7 +538,7 @@ def render(path):
 
 def main():
     for angle in P["angles_deg"]:
-        mount, neck_len, back_open = build_variant(angle, P)
+        mount, neck_len, back_open, lens, hole_z = build_variant(angle, P)
         center = (0, 34, -14)
         cam = add_preview_rig()
         aim(cam, (170, -130, 100), center)
@@ -549,6 +558,15 @@ def main():
             filepath=os.path.join(OUT_DIR, f"camera_mount_{angle}.blend"))
         print(f"[mounts] {angle} deg: neck_len={neck_len} "
               f"back_open={back_open:.1f} -> camera_mount_{angle}.blend/.stl")
+        # INSTALL NUMBERS. The lens is what gets aimed; the screws are
+        # what gets positioned. Report the offset between them so nobody
+        # has to derive it at the wall with a drill in hand.
+        print(f"[mounts] {angle} deg INSTALL: lens sits {lens.y:.1f} mm out "
+              f"from the wall face, and {hole_z - lens.z:.1f} mm BELOW the "
+              f"screw-hole centres")
+        print(f"[mounts] {angle} deg          -> screw holes go "
+              f"{hole_z - lens.z:.1f} mm ({(hole_z - lens.z)/25.4:.2f} in) "
+              f"ABOVE the height you want the lens at")
 
     stand, lens, attach = build_edge_stand(P)
     cam = add_preview_rig()
