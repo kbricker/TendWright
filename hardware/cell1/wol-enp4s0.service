@@ -1,0 +1,32 @@
+[Unit]
+# Arm wake-on-LAN on cell1's live NIC at every boot (#617).
+#
+# WHY THIS UNIT EXISTS. Two separate switches have to be on for a magic
+# packet to power this box, and neither survives a reboot on r8169:
+#
+#   1. ethtool wol g  — arms the NIC's magic-packet filter, so the
+#      hardware recognises the 102-byte pattern while powered down.
+#   2. power/wakeup    — allows the PCI device to assert PME#, which is
+#      what actually tells the board to come up.
+#
+# Measured on cell1 2026-07-28: power/wakeup read `disabled` on BOTH
+# NICs while the BIOS had "Lan Wake Up From COM RI1" set to [Enabled].
+# That combination is the whole reason WoL looked broken — the firmware
+# was willing and the OS was not, and nothing anywhere reports the
+# mismatch.
+#
+# BindsTo/After the device unit rather than network.target: this touches
+# the interface itself, not routing, so it should run as soon as the
+# device exists and stop mattering if it goes away.
+Description=Arm wake-on-LAN on enp4s0
+BindsTo=sys-subsystem-net-devices-enp4s0.device
+After=sys-subsystem-net-devices-enp4s0.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ethtool -s enp4s0 wol g
+ExecStart=/bin/sh -c 'echo enabled > /sys/class/net/enp4s0/device/power/wakeup'
+
+[Install]
+WantedBy=multi-user.target
