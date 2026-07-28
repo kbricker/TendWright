@@ -5,9 +5,11 @@
   "arm": {
     "x": 25.25,
     "y": 62.25,
-    "yaw_deg": 180.0,
+    "yaw_deg": 189.2983,
+    "base_square_to_deg": 180.0,
     "_comment": "Arm base centre, MEASURED 2026-07-28 by Kyle, clamped down. His words: 'on the main table, front edge, centered at 19.75 inches from the extent edge, the m1 center is 2.25in inset from the edge, arm is clamped down'. DERIVATION into this datum, written out because both axes had a plausible wrong reading: x = 27.5 - 2.25 = 25.25, where 27.5 is the main table's front edge (+x runs away from the back wall toward where you stand). y = 82 - 19.75 = 62.25, measured from the table's FREE far end. The other reading of 'the extent edge' - 19.75 from y=0 - is ruled out twice over: y=0 is the SIDE WALL, not an edge you can put a tape on, and at y=19.75 the return surface is contiguous at x=27.5, so there would be no 'front edge' to inset 2.25 from. Both of Kyle's phrases only parse together at y=62.25.",
-    "_yaw_is_inferred": "yaw 180 = reaches along -x, toward the back wall. INFERRED FROM GEOMETRY, NOT STATED BY KYLE - flagged because bench_scene warns that a yaw error 'looks plausible and silently rotates the entire cell about the arm'. The inference: the base sits 2.25 in in from the front edge, so -x is the only direction with 27.5 in of table in front of it; reaching +x would put the workspace in mid-air where a person stands. With the 376 mm reach the envelope spans x 10.4..40.1, y 47.4..77.1, so it stops 10.4 in short of the back wall and stays on the main table. Convention: 0 = reaches along +x, positive counter-clockwise from above. Pinned by _selftest_arm_frame.",
+    "_yaw_two_numbers": "TWO ANGLES, and confusing them put the arm 9.3 deg askew in the viewer until Kyle spotted it on 2026-07-28: 'the back edged of the base is parallel with the table edge, you have it off angle a few degrees'. `base_square_to_deg` is the MEASURABLE one - the bench direction the base is squared to, which is what a person actually sets when clamping it down. 180 = the back edge parallel to the table's front edge, arm facing the back wall. `yaw_deg` is what the code consumes, and by an old and deliberate convention it means the direction the arm REACHES at pan zero, which is NOT the same thing: this model reaches 9.2983 deg off its own base axis (Twin.reach_yaw_deg, measured from the mesh, because the SO-100 and SO-101 disagree by 90). So yaw_deg = 180 + 9.2983 = 189.2983. DERIVED, not measured - if the arm model is ever swapped, reach_yaw changes and this number is stale, which is why _selftest_arm_base_square asserts the built model's base really is square to base_square_to_deg and fails loudly if it drifts.",
+    "_xy_is_the_m1_axis": "x/y locate the M1 AXIS (the shoulder_pan pivot), because that is the one feature on a real arm you can put a tape to and it is what Kyle measured. It is NOT the model's root body origin, which sits 38.8 mm away - attaching the model at these coordinates directly put the real pivot 1.5 in from where it was measured, which Kyle saw as 'a little bit in'. bench_scene now back-solves the attach origin from this axis via Twin.m1_offset_m. Base-relative checks cannot catch that class of error because they move with the arm.",
     "_m1_height_reconciled": "RESOLVED 2026-07-28, and the 'discrepancy' was mine, not Kyle's. He measured the centre of the m1 MOTOR at 2 in above the table top. I compared that against 62.4 mm and called it an 11.6 mm disagreement. 62.4 mm is the shoulder_pan JOINT ORIGIN - the point the kinematics rotate about - and this repo says 'm1 centre' when it means that joint origin, which is 18 mm away from the centre of the servo body. Kyle asked the right question: 'are you sure what you are checking against is the center?' It was not. Computed off the mesh at qpos 0, measured from the LOWEST base geometry (what a tape resting on the table actually reads): m1 servo body centre 46.5 mm = 1.83 in; joint origin 64.8 mm = 2.55 in. Against his 2.00 in the real gap is 4.3 mm, which is what reading a tape to the nearest inch on a 40 mm-tall motor looks like. The model and the bench agree; nothing was changed. SEPARATE ISSUE the check did expose: the base mesh's lowest point is 2.4 mm BELOW world z=0 while simcam asserts z=0 is the table, so the twin has the arm sunk 2.4 mm into the tabletop. Real, small, and left alone deliberately - see 716.4."
   },
   "cameras": [
@@ -35,13 +37,13 @@
     "_comment": "Shadows OFF by default (Kyle, 2026-07-26) until the lighting is right - hard shadows over a half-built room read as geometry errors that are not there. Flip to true to experiment."
   },
   "view": {
-    "azimuth": 173.814,
-    "elevation": -14.748,
-    "distance": 2.82713,
+    "azimuth": 166.876,
+    "elevation": -23.373,
+    "distance": 0.0373,
     "lookat": [
-      2.14737,
-      0.53349,
-      -0.01127
+      2.31352,
+      1.09255,
+      1.14633
     ]
   },
   "_view_note": "Saved free-camera pose from the last --view session (MuJoCo units, metres). Restored on the next --view and used by --render. Delete this key to go back to the derived angles."

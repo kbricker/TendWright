@@ -1199,9 +1199,30 @@ def build_spec(scene: Scene, shadows: bool = False,
             # it, and would have quietly aimed the arm at the wrong wall
             # after the swap (plan #670).
             from sim.twin import Twin
+            twin = Twin()
+            heading = ayaw - twin.reach_yaw_deg()
+            # The cell measures the arm by its M1 AXIS — that is the one
+            # feature on a real arm you can put a tape to, and it is what
+            # Kyle measures ("the m1 center is 2.25in inset from the
+            # edge"). The MODEL's root origin is NOT that point: on the
+            # SO-101 the shoulder_pan axis sits 38.8 mm from it. Attaching
+            # the model at the measured coordinates therefore put the real
+            # pivot 38.8 mm away from where it was measured — 1.5 in of
+            # pure translation error, spotted by Kyle in the viewer on
+            # 2026-07-28 as "a little bit in".
+            #
+            # So back-solve the attach origin from the axis instead:
+            # rotate the model's own base->m1 offset into bench space and
+            # subtract it. Base-relative checks cannot catch this (they
+            # move with the arm), which is why it survived until someone
+            # looked at the picture against the real bench.
+            ox, oy = twin.m1_offset_m()
+            ca, sa = (math.cos(math.radians(heading)),
+                      math.sin(math.radians(heading)))
             frame = spec.worldbody.add_frame(
-                pos=[ax_ * m, ay_ * m, 0.0],
-                euler=[0.0, 0.0, ayaw - Twin().reach_yaw_deg()])
+                pos=[ax_ * m - (ox * ca - oy * sa),
+                     ay_ * m - (ox * sa + oy * ca), 0.0],
+                euler=[0.0, 0.0, heading])
             spec.attach(child, prefix="arm_", frame=frame)
 
     x0, y0, x1, y1 = scene.footprint()
@@ -1588,6 +1609,12 @@ class Cell:
     arm_x: float | None = None
     arm_y: float | None = None
     arm_yaw_deg: float | None = None
+    # The bench direction the arm's BASE is squared to — the angle a
+    # person actually sets with a clamp, as opposed to arm_yaw_deg, which
+    # is the direction the arm REACHES and differs by the model's own
+    # reach offset. Optional, and purely a checked assertion: nothing
+    # builds from it. See _selftest_arm_base_square.
+    arm_base_square_deg: float | None = None
     cameras: list = field(default_factory=list)
     shadows: bool = False
 
@@ -1686,6 +1713,62 @@ def _selftest_arm_frame() -> None:
         lx, ly = cell.to_arm_frame(*left)
         assert lx > 0 and abs(ly) < 1e-9, (yaw, lx, ly)
     print("arm-frame convention OK")
+
+
+def _selftest_arm_base_square(cell: 'Cell') -> None:
+    """The arm's BASE must sit at the angle the cell says it was clamped
+    to, and its M1 AXIS must land on the measured coordinates.
+
+    Both of these were wrong on 2026-07-28 and neither was caught by any
+    existing check, because every other test is base-relative and so
+    moves with the arm. Kyle found them by looking at the viewer against
+    the real bench: "the back edged of the base is parallel with the
+    table edge, you have it off angle a few degrees, and a little bit
+    in". The angle was 9.3 deg (reach direction confused with base
+    heading) and the "little bit" was 38.8 mm (model root origin
+    confused with the m1 axis).
+
+    `yaw_deg` is DERIVED — base angle plus the model's reach offset — so
+    swapping the arm model silently invalidates it. This check is what
+    turns that into a loud failure instead of a crooked arm nobody
+    notices.
+    """
+    import math
+
+    import mujoco
+
+    from sim.twin import BASE_BODY, JOINT_MAPS
+
+    if cell.arm_pose is None or cell.arm_base_square_deg is None:
+        print("arm base squareness: skipped (not placed, or no "
+              "base_square_to_deg recorded)")
+        return
+    model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
+    data = rest_data(model)
+    mujoco.mj_forward(model, data)
+
+    bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY,
+                            f"arm_{BASE_BODY}")
+    R = data.xmat[bid].reshape(3, 3)
+    got = math.degrees(math.atan2(R[1, 0], R[0, 0]))
+    want = cell.arm_base_square_deg
+    err = (got - want + 180.0) % 360.0 - 180.0
+    assert abs(err) < 0.05, (
+        f"the arm's base sits {got:.3f} deg but cell.json says it is "
+        f"clamped square to {want:.3f} deg (off by {err:+.3f}). "
+        f"yaw_deg is derived as base + Twin.reach_yaw_deg; if the arm "
+        f"model changed, re-derive it.")
+
+    jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                            f"arm_{JOINT_MAPS[1].model_joint}")
+    ax, ay = data.xanchor[jid][:2] / cell.bench.to_m
+    off = math.dist((ax, ay), (cell.arm_x, cell.arm_y))
+    assert off < 1e-3, (
+        f"the m1 axis lands at x {ax:.4f}, y {ay:.4f} but was measured at "
+        f"x {cell.arm_x:.4f}, y {cell.arm_y:.4f} ({off * 25.4:.1f} mm out) "
+        f"- the attach frame is anchored on the wrong point")
+    print(f"arm base squareness OK (base {got:.3f} deg vs clamped "
+          f"{want:g}; m1 axis lands within {off * 25.4:.3f} mm)")
 
 
 def _selftest_arm_faces_its_yaw(cell: 'Cell') -> None:
@@ -1924,6 +2007,8 @@ def load_cell(path: Path = CELL_JSON) -> Cell:
         arm_x=_num(arm, "x", where, required=False),
         arm_y=_num(arm, "y", where, required=False),
         arm_yaw_deg=_num(arm, "yaw_deg", where, required=False),
+        arm_base_square_deg=_num(arm, "base_square_to_deg", where,
+                                 required=False),
         # A camera with no measured position is SKIPPED, not defaulted.
         # It exists and streams (cameras.json knows about it) but nobody
         # has measured where it is, and inventing a pose would draw a
@@ -1974,6 +2059,7 @@ def main() -> int:
         return 0
     if "--selftest" in sys.argv:
         _selftest_arm_frame()
+        _selftest_arm_base_square(cell)
         _selftest_arm_faces_its_yaw(cell)
         _selftest_arm_pose_matches_twin(cell)
         return 0

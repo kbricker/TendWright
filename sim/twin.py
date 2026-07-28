@@ -417,6 +417,31 @@ class Twin:
                              "the arm is vertical at the probe pose")
         return math.degrees(math.atan2(v[1], v[0]))
 
+    def m1_offset_m(self) -> tuple[float, float]:
+        """Where the m1 axis sits relative to the model's base ORIGIN, in
+        the model's own base frame (metres, x/y only).
+
+        Companion to reach_yaw_deg, and it exists for the same reason: a
+        cell places the arm by something a person can put a tape on, and
+        the model's root body origin is not that. On the SO-101 the
+        shoulder_pan axis sits 38.8 mm from the base body origin, so
+        attaching the model AT the measured point puts the real pivot
+        38.8 mm away from where it was measured — a translation error
+        that reads as "the arm is a bit too far in" and is invisible in
+        any base-relative check.
+
+        Measured off the model rather than written down, so it follows a
+        model swap instead of silently surviving one.
+        """
+        self.data.qpos[:] = self._rest_qpos
+        mujoco.mj_forward(self.model, self.data)
+        jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT,
+                                JOINT_MAPS[1].model_joint)
+        base = self.data.xpos[mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_BODY, BASE_BODY)]
+        anchor = self.data.xanchor[jid]
+        return float(anchor[0] - base[0]), float(anchor[1] - base[1])
+
     def _seg_angle(self, joint: int) -> float:
         """Signed angle (deg) from the parent direction to the segment
         this joint drives, about the joint's OWN world axis — the
