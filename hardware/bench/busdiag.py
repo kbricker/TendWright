@@ -58,6 +58,10 @@ from .monitor import parse_ids
 # further than this from it is a misread, not weather.
 OUTLIER_C = 3
 
+# A stationary joint with torque off does not move. Two ticks covers
+# encoder dither and rounding; more than that is the read lying.
+POS_OUTLIER_TICKS = 2
+
 
 def _pct(n: int, total: int) -> str:
     return f"{100.0 * n / total:5.2f}%" if total else "    -"
@@ -102,6 +106,73 @@ def sample_solo(bus: FeetechBus, ids: list[int], seconds: float) -> dict:
               flush=True)
     print()
     return {"temps": temps, "errors": errors}
+
+
+def sample_position(bus: FeetechBus, ids: list[int], seconds: float) -> dict:
+    """Mode C — PRESENT_POSITION alone. The one that matters.
+
+    Temperature corruption cost us two bench runs and nothing else.
+    Position is what the collision gate, the settle test, the guards and
+    the sim-vs-arm trace are all built from, and a corrupted position
+    read is indistinguishable from a real one — there is no physics
+    filter for "the joint is somewhere else now".
+
+    Run this with the arm STATIONARY and torque off: every sample should
+    then be the same tick, so anything that is not is the read lying.
+    The encoder is a different sensor from the temperature and voltage
+    ADCs, so this also separates "those two servos have noisy analog
+    readings" from "those two servos send bad data generally"."""
+    pos: dict[int, list[int]] = defaultdict(list)
+    errors: Counter = Counter()
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        for i in ids:
+            try:
+                pos[i].append(bus.read_position(i))
+            except BenchError:
+                errors[i] += 1
+        print(f"\r  mode C (position only): "
+              f"{sum(len(v) for v in pos.values())} samples", end="",
+              flush=True)
+    print()
+    return {"pos": pos, "errors": errors}
+
+
+def report_position(data: dict, ids: list[int]) -> list[int]:
+    pos, errors = data["pos"], data["errors"]
+    print("\nmode C — PRESENT_POSITION alone, arm stationary")
+    print(f"  {'joint':>5} {'samples':>8} {'median':>8} {'spread':>7} "
+          f"{'isolat':>7} {'wstep':>6} {'comm err':>9}")
+    dirty = []
+    for i in ids:
+        vs = pos.get(i, [])
+        if not vs:
+            print(f"  {i:>5} {'no data':>8}")
+            continue
+        med = statistics.median(vs)
+        spread = max(vs) - min(vs)
+        # A stationary joint has no encoder dither to speak of, so the
+        # outlier band is tighter than the temperature one.
+        n_spike = sum(1 for k in range(1, len(vs) - 1)
+                      if abs(vs[k] - vs[k - 1]) > POS_OUTLIER_TICKS
+                      and abs(vs[k] - vs[k + 1]) > POS_OUTLIER_TICKS)
+        step = max((abs(vs[k] - vs[k - 1]) for k in range(1, len(vs))),
+                   default=0)
+        if n_spike:
+            dirty.append(i)
+        print(f"  {i:>5} {len(vs):>8} {med:>8.0f} {spread:>7} "
+              f"{n_spike:>7} {step:>6} {errors.get(i, 0):>9}")
+        if n_spike:
+            offenders = sorted({vs[k] for k in range(1, len(vs) - 1)
+                                if abs(vs[k] - vs[k - 1]) > POS_OUTLIER_TICKS
+                                and abs(vs[k] - vs[k + 1])
+                                > POS_OUTLIER_TICKS})[:8]
+            print(f"        spike values: {offenders} "
+                  f"(median {med:.0f})")
+    print("\n  A stationary joint should report ONE tick forever. Any "
+          "isolated\n  spike here is a position the gate would have "
+          "believed.")
+    return dirty
 
 
 def outliers(values: list[int]) -> tuple[int, list[int], float]:
@@ -317,6 +388,10 @@ def run() -> int:
                         help="only the single-register mode")
     parser.add_argument("--full-only", action="store_true",
                         help="only the five-register health read mode")
+    parser.add_argument("--position", action="store_true",
+                        help="also sample PRESENT_POSITION alone (arm must "
+                             "be stationary) — the register everything "
+                             "safety-critical is built from")
     args = parser.parse_args()
 
     ids = parse_ids(args.ids)
@@ -339,6 +414,21 @@ def run() -> int:
         if ran_b:
             b = sample_solo(bus, ids, args.seconds)
             b_dirty = report_solo(b, ids)
+        if args.position:
+            c = sample_position(bus, ids, args.seconds)
+            c_dirty = report_position(c, ids)
+            if c_dirty:
+                print(f"\n  *** POSITION READS ARE CORRUPTED on joint(s) "
+                      f"{c_dirty}. Everything that\n      trusts a position "
+                      f"— the collision gate, wait_settle, the guards, the\n"
+                      f"      sim-vs-arm trace — is reading those joints "
+                      f"through the same lie. ***")
+            else:
+                print("\n  Position reads are CLEAN on every joint. The "
+                      "corruption is confined to\n  the analog registers "
+                      "(temperature, voltage), which share an ADC path;\n"
+                      "  the magnetic encoder is a different sensor and it "
+                      "is reporting truthfully.")
 
     verdict(a_dirty, b_dirty, ids, ran_a, ran_b)
     return 0
