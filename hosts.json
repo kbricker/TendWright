@@ -1,0 +1,12 @@
+{
+  "_comment": "Wakeable machines. Used by `uv run python -m hardware.bench.wake`. A null mac means the address has not been captured yet — the tool refuses to wake that host and says how to get it.",
+  "hosts": [
+    {
+      "name": "cell1",
+      "address": "192.168.86.202",
+      "mac": null,
+      "port": 22,
+      "note": "Minisforum UM350. NIC enp4s0, Realtek RTL8168 on r8169. MAC still uncaptured - run `ip link show enp4s0` at the machine (#617)."
+    }
+  ]
+}
