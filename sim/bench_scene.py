@@ -1126,33 +1126,66 @@ def build_spec(scene: Scene, shadows: bool = False,
     # the view direction. The sight line is the point - a camera box
     # tells you nothing about whether it is aimed at the work.
     for cam in cameras:
-        w = next((wl for wl in scene.walls if wl.name == cam.wall), None)
-        if w is None:
-            continue
-        along_x = w.yaw_deg % 180 == 0
-        ox, oy = OUTWARD[w.outward]
-        stand = 2.0 if cam.standoff is None else cam.standoff
-        # into the room is opposite the wall's outward direction
-        ix, iy = -ox, -oy
-        if along_x:
-            px, py = cam.along, w.y + iy * stand
+        if cam.free_standing:
+            # An explicit spot on the bench looking along its own yaw —
+            # a table-edge stand, a tripod, anything not on a wall.
+            px, py = cam.x, cam.y
+            a = math.radians(cam.yaw_deg or 0.0)
+            ix, iy = math.cos(a), math.sin(a)
         else:
-            px, py = w.x + ix * stand, cam.along
+            w = next((wl for wl in scene.walls if wl.name == cam.wall), None)
+            if w is None:
+                continue
+            along_x = w.yaw_deg % 180 == 0
+            ox, oy = OUTWARD[w.outward]
+            stand = 2.0 if cam.standoff is None else cam.standoff
+            # into the room is opposite the wall's outward direction
+            ix, iy = -ox, -oy
+            if along_x:
+                px, py = cam.along, w.y + iy * stand
+            else:
+                px, py = w.x + ix * stand, cam.along
+        # Planned poses are drawn in amber, measured ones in near-black.
+        # A glance has to distinguish intent from fact, because both are
+        # solid geometry in the same picture.
+        body_rgba = ([0.95, 0.70, 0.15, 0.75] if cam.planned
+                     else [0.15, 0.15, 0.18, 1.0])
+        sight_rgba = ([0.98, 0.72, 0.10, 0.40] if cam.planned
+                      else [0.95, 0.35, 0.25, 0.45])
+        # A PLANNED camera's sight line is visible by DEFAULT, unlike a
+        # measured one's. For a camera that exists, the aim is a
+        # diagnostic you go looking for; for one that does not, the aim
+        # IS the proposal — hiding it behind a keypress would mean
+        # opening the scene to review a plan and seeing nothing of it.
+        sight_group = GROUP_FIXTURE if cam.planned else GROUP_HIDDEN
         spec.worldbody.add_geom(
             name=f"camera_{cam.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[1.5 * m / 2, 1.5 * m / 2, 1.2 * m / 2],
             pos=[px * m, py * m, cam.z * m],
-            rgba=[0.15, 0.15, 0.18, 1.0], group=GROUP_FIXTURE)
+            rgba=body_rgba, group=GROUP_FIXTURE)
         t = math.radians(cam.tilt_deg)
         dx, dy, dz = ix * math.cos(t), iy * math.cos(t), -math.sin(t)
-        reach = 40.0
+        # Stop the sight line where it meets the tabletop, so it reads as
+        # "this is the spot it is aimed at" rather than a ray disappearing
+        # through the bench. Falls back to the old fixed length for a
+        # camera aimed level or upward.
+        reach = (cam.z / -dz) if dz < -1e-6 else 40.0
+        reach = max(2.0, min(reach, 60.0))
         spec.worldbody.add_geom(
             name=f"camsight_{cam.name}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[0.25 * m / 2, 0.25 * m / 2, reach * m / 2],
             pos=[(px + dx * reach / 2) * m, (py + dy * reach / 2) * m,
                  (cam.z + dz * reach / 2) * m],
             zaxis=[dx, dy, dz],
-            rgba=[0.95, 0.35, 0.25, 0.45], group=GROUP_HIDDEN)
+            rgba=sight_rgba, group=sight_group)
+        # A puck where the sight line lands, so the aim point is legible
+        # without measuring off the screen.
+        spec.worldbody.add_geom(
+            name=f"camaim_{cam.name}", type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+            size=[1.2 * m, 0.15 * m, 0],
+            pos=[(px + dx * reach) * m, (py + dy * reach) * m,
+                 (cam.z + dz * reach) * m],
+            rgba=sight_rgba, group=sight_group)
 
         # A MuJoCo camera at the SAME pose, so the cell can be rendered
         # from where the real camera actually looks (plan #606). It is
@@ -1173,7 +1206,8 @@ def build_spec(scene: Scene, shadows: bool = False,
               rgt[2] * fwd[0] - rgt[0] * fwd[2],
               rgt[0] * fwd[1] - rgt[1] * fwd[0])
         spec.worldbody.add_camera(
-            name=f"cam_{cam.name}", pos=[px * m, py * m, cam.z * m],
+            name=(f"camplan_{cam.name}" if cam.planned else f"cam_{cam.name}"),
+            pos=[px * m, py * m, cam.z * m],
             xyaxes=[*rgt, *up],
             fovy=cam.fovy_deg if cam.fovy_deg is not None
             else DEFAULT_FOVY_DEG)
@@ -1585,13 +1619,31 @@ class Camera:
     """
 
     name: str
-    wall: str
-    along: float              # position along the wall's run
     z: float                  # lens centre above the table top
+    wall: str | None = None
+    along: float | None = None      # position along the wall's run
+    # FREE-STANDING alternative to wall/along: an explicit spot on the
+    # bench plus the direction it looks. That is what a table-edge stand
+    # needs (#717.5) — it is not on a wall, so `wall` cannot place it.
+    x: float | None = None
+    y: float | None = None
+    yaw_deg: float | None = None    # 0 = looks along +x, CCW from above
     tilt_deg: float = 60.0
     standoff: float | None = None   # lens out from the wall FACE
     fovy_deg: float | None = None   # None -> DEFAULT_FOVY_DEG
+    # PLANNED means "where we intend to put it", NOT where it is. The
+    # cell nulls unmeasured poses precisely so a render cannot pass for
+    # evidence, so intent has to be marked rather than merely written
+    # down: a planned camera draws its body and sight line (that is the
+    # point — you can look at the aim before you drill), but its MuJoCo
+    # camera is named `camplan_` rather than `cam_`, so nothing that
+    # renders "what the camera sees" picks it up by accident.
+    planned: bool = False
     notes: str = ""
+
+    @property
+    def free_standing(self) -> bool:
+        return self.x is not None and self.y is not None
 
 
 @dataclass
@@ -1685,9 +1737,15 @@ class Cell:
                 lines.append("    WARNING: that point is not over any "
                              "measured bench surface")
         for cam in self.cameras:
-            lines.append(f"  CAMERA {cam.name}: on wall '{cam.wall}' at "
-                         f"{cam.along:g} along, lens {cam.z:g} above the "
-                         f"top, {cam.tilt_deg:g} deg down")
+            tag = "PLANNED camera" if cam.planned else "CAMERA"
+            where = (f"free-standing at x {cam.x:g}, y {cam.y:g}, facing "
+                     f"{cam.yaw_deg or 0:g} deg" if cam.free_standing
+                     else f"on wall '{cam.wall}' at {cam.along:g} along")
+            lines.append(f"  {tag} {cam.name}: {where}, lens {cam.z:g} "
+                         f"above the top, {cam.tilt_deg:g} deg down")
+        if any(c.planned for c in self.cameras):
+            lines.append("    (amber = PLANNED, not measured — press 3 for "
+                         "the sight lines)")
         return "\n".join(lines)
 
     def sketch(self, cols: int = 62) -> str:
@@ -2016,16 +2074,25 @@ def load_cell(path: Path = CELL_JSON) -> Cell:
         # `sim.simcam` render a view no real camera has. Absent is
         # honest; a plausible guess is not.
         cameras=tuple(
-            Camera(name=c.get("name", "cam"), wall=c["wall"],
-                   along=float(c["along"]), z=float(c["z"]),
+            Camera(name=c.get("name", "cam"), wall=c.get("wall"),
+                   along=(float(c["along"])
+                          if c.get("along") is not None else None),
+                   x=float(c["x"]) if c.get("x") is not None else None,
+                   y=float(c["y"]) if c.get("y") is not None else None,
+                   yaw_deg=(float(c["yaw_deg"])
+                            if c.get("yaw_deg") is not None else None),
+                   z=float(c["z"]),
                    tilt_deg=float(c.get("tilt_deg") or 60.0),
                    standoff=(float(c["standoff"])
                              if c.get("standoff") is not None else None),
                    fovy_deg=(float(c["fovy_deg"])
                              if c.get("fovy_deg") is not None else None),
+                   planned=bool(c.get("planned", False)),
                    notes=c.get("notes", ""))
             for c in (doc.get("cameras") or [])
-            if c.get("along") is not None and c.get("z") is not None),
+            if c.get("z") is not None
+            and (c.get("along") is not None
+                 or (c.get("x") is not None and c.get("y") is not None))),
         shadows=bool((doc.get("render") or {}).get("shadows", False)))
 
 

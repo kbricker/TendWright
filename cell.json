@@ -15,21 +15,23 @@
   "cameras": [
     {
       "name": "bench",
-      "wall": null,
-      "along": null,
-      "z": null,
-      "tilt_deg": null,
-      "standoff": null,
-      "notes": "POSITION RETIRED 2026-07-28, not lost - see _STATUS_2026_07_28. It was on the SIDE wall at along 51.5, lens centre z 29.0 above the top, tilted 60 deg down, standoff never measured; the z was genuinely measured on 2026-07-26. Those numbers are kept here as history and must not be reinstated: they placed the camera relative to an arm that stood on the RETURN, and the arm is now on the main table roughly 42 in away, so the old pose points at empty bench. Nulled rather than adjusted because there is no arithmetic that turns a measurement of the old layout into a measurement of the new one. Re-measure after mounting; targets are in 713.9 (overhead: ~504 mm above the table, near-nadir, centred on the work zone - which is LOWER than the 29 in it was at). Registry entry for the live camera is cameras.json - this is only where it is in space."
+      "wall": "back",
+      "along": 62.25,
+      "z": 26.6,
+      "tilt_deg": 60.0,
+      "standoff": 2.0,
+      "planned": true,
+      "notes": "PLANNED, NOT MEASURED - drawn in amber so the intent can be looked at before anything is drilled (Kyle 2026-07-28: 'add the camera locations to the mujoco so I can see them and the LoS you intend'). Uses the ALREADY PRINTED 60 deg wall bracket on the back wall, on the arm's own line (along 62.25 = the arm's y), lens 26.6 in above the top. That height puts the optical axis on the work-zone centre; 45 deg at 15.3 in is the alternative and trades 30 deg off nadir for 45 but gains resolution (2.33 vs 1.65 px/mm). standoff 2.0 is still a PLACEHOLDER, not a measurement - it shifts the sight line without changing its angle. WHY THE BACK WALL: the arm reaches toward it, so targets are always between the camera and the arm, and the arm cannot occlude them at the moment of grasp - the failure a true overhead view has. Clears the shelf (underside 36.5) by ~10 in, and sits 578 mm from m1 against a 376 mm reach, so the arm cannot strike it. POSITION RETIRED 2026-07-28, not lost - see _STATUS_2026_07_28. It was on the SIDE wall at along 51.5, lens centre z 29.0 above the top, tilted 60 deg down, standoff never measured; the z was genuinely measured on 2026-07-26. Those numbers are kept here as history and must not be reinstated: they placed the camera relative to an arm that stood on the RETURN, and the arm is now on the main table roughly 42 in away, so the old pose points at empty bench. Nulled rather than adjusted because there is no arithmetic that turns a measurement of the old layout into a measurement of the new one. Re-measure after mounting; targets are in 713.9 (overhead: ~504 mm above the table, near-nadir, centred on the work zone - which is LOWER than the 29 in it was at). Registry entry for the live camera is cameras.json - this is only where it is in space."
     },
     {
       "name": "side",
-      "wall": null,
-      "along": null,
-      "z": null,
-      "tilt_deg": null,
-      "standoff": null,
-      "notes": "SECOND CAMERA, added 2026-07-27. Position has never been measured and stays NULL - the sim will not draw it, which is correct behaviour rather than a gap: an invented pose renders a sight line that looks like evidence. NAME AND ROLE ARE STILL PROVISIONAL, taken from what its first frame showed rather than from Kyle. It has NO MOUNT AT ALL (717.5) and is currently offline. Target from 713.9: ~90 deg azimuth from the arm's reach axis, ~268 mm standoff, 100-200 mm above the table - never on the base side looking down the reach axis, where the arm blocks everything it reaches for. Worth keeping a low angle wherever it lands: the overhead camera cannot resolve HEIGHT above the table and this one can, which is what a grasp approach needs, and it is the only fixed viewpoint that still sees the target when the arm reaches over it."
+      "x": 27.5,
+      "y": 44.0,
+      "yaw_deg": 119.1,
+      "z": 2.953,
+      "tilt_deg": 8.0,
+      "planned": true,
+      "notes": "PLANNED, NOT MEASURED - amber in the viewer. FREE-STANDING rather than on a wall: it is the table-edge stand of 717.5, clamped flush to the outboard edge at x=27.5 with the lens 2.953 in (75 mm) above the top. y=44.0 is set by REACH, not by optics: at 16 in along the edge the arm passes within 36 mm of the camera and at 12-14 in it can strike it outright, so 18.25 in buys 93 mm of clearance for a little resolution (2.43 px/mm, 40 mm tag ~97 px). yaw 119.1 aims it at the work-zone centre; the angle is steep because a camera ON the edge can only see the work zone diagonally, and squaring it to the edge in line with the arm would stare straight down the reach axis with the arm in the way. -y side chosen because +y leaves only 1.5 in of table beyond it. Re-aim once 716.4 places the nest and bins - the stand's tilt and yaw are generator parameters, not literals. SECOND CAMERA, added 2026-07-27. Position has never been measured and stays NULL - the sim will not draw it, which is correct behaviour rather than a gap: an invented pose renders a sight line that looks like evidence. NAME AND ROLE ARE STILL PROVISIONAL, taken from what its first frame showed rather than from Kyle. It has NO MOUNT AT ALL (717.5) and is currently offline. Target from 713.9: ~90 deg azimuth from the arm's reach axis, ~268 mm standoff, 100-200 mm above the table - never on the base side looking down the reach axis, where the arm blocks everything it reaches for. Worth keeping a low angle wherever it lands: the overhead camera cannot resolve HEIGHT above the table and this one can, which is what a grasp approach needs, and it is the only fixed viewpoint that still sees the target when the arm reaches over it."
     }
   ],
   "render": {
@@ -39,7 +41,7 @@
   "view": {
     "azimuth": -128.324,
     "elevation": -37.219,
-    "distance": 0.05902,
+    "distance": 0.06665,
     "lookat": [
       1.49127,
       2.83509,

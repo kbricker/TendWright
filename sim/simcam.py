@@ -413,12 +413,20 @@ def selftest() -> int:
         # OK while its whole second half never ran is worse than one
         # that fails. Currently the case after 2026-07-28, when the arm
         # moved to the main table and both camera poses were retired.
-        print("  SKIP no camera is placed in cell.json, so there is no "
-              "aim to check.")
-        print("       This is the designed state, not a fault — poses are "
-              "nulled rather than")
-        print("       guessed. EVERY CAMERA CHECK BELOW IS UNTESTED until "
-              "one is measured.")
+        planned = [n for n in cam0.camera_names() if n.startswith("camplan_")]
+        print("  SKIP no MEASURED camera in cell.json, so there is no aim "
+              "to check.")
+        if planned:
+            print(f"       {len(planned)} PLANNED pose(s) exist "
+                  f"({', '.join(planned)}) and are drawn in the scene so "
+                  f"the aim can be")
+            print("       reviewed — but they are intent, not measurement, "
+                  "so nothing renders through")
+            print("       them. They become real by being measured and "
+                  "losing their `planned` flag.")
+        print("       This is the designed state, not a fault. EVERY CAMERA "
+              "CHECK BELOW IS")
+        print("       UNTESTED until a camera is actually measured.")
         print(f"       cameras in the model: {cam0.camera_names()}")
         print("\nsimcam selftest OK (camera aim + render checks SKIPPED)")
         return 1 if fails else 0
