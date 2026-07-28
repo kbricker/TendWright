@@ -333,11 +333,43 @@ def _selftest_in_motion(cals, commanded, opening) -> None:
 # Every threshold is a REFUSAL point, not a target. They sit below the
 # servo's own trip points so we stop first.
 LOAD_TRIP_PCT = 55.0        # sustained load; brief peaks are normal
-LOAD_PEAK_PCT = 80.0        # instantaneous — stop now, do not wait
+LOAD_PEAK_PCT = 80.0        # a jam — confirm once, then stop
 TEMP_TRIP_C = 55            # STS3215 protects itself around 70
 TEMP_WARN_C = 45
 VOLTS_MIN = 6.0             # brown-out: a sagging rail drops the arm
 LOAD_TRIP_SAMPLES = 3       # consecutive, so one noisy read is not a stop
+
+# NO SINGLE REGISTER READ MAY STOP THE ARM.
+#
+# Measured 2026-07-27: joint 4 reported 74 C mid-sweep and tripped the
+# temperature guard, aborting the run. A `scan` seconds later read the
+# same joint at 31 C, and peak load across the whole run was 11%. The
+# servo was never hot — one corrupted byte on the bus was, and it cost a
+# bench run.
+#
+# The principle was already understood for load, where LOAD_TRIP_SAMPLES
+# exists precisely "so one noisy read is not a stop". It simply was not
+# applied to temperature, voltage, or the fault bits, each of which
+# tripped on a single sample. A corrupted read is indistinguishable from
+# a real fault in one observation and trivially distinguishable in two,
+# so every trip now needs consecutive confirmation.
+#
+# The cost is bounded and small: 2 samples is ~100 ms at motion.SAMPLE_S,
+# and the servo's own protection remains the backstop underneath. The
+# cost of NOT doing it is a guard that cries wolf, which is worse than no
+# guard — an operator who has seen three false stops starts reaching for
+# --no-gate.
+TRIP_CONFIRM_SAMPLES = 2
+
+# A servo cannot warm 40 C between two 50 ms samples. Physics, not
+# tuning: a reading that jumps by more than this since the previous
+# sample for the same joint is a bus error, and is discarded rather than
+# acted on. This catches the misread ON THE SAMPLE IT HAPPENS, where
+# consecutive-confirmation only catches it on the next one — and unlike
+# the `plausible` range check it works on values that are perfectly
+# believable in isolation. 74 C is a plausible servo temperature; 74 C
+# one sample after 31 C is not.
+TEMP_JUMP_C = 15
 
 
 class StrainViolation(BenchError):
@@ -355,9 +387,33 @@ class StrainWatch:
 
     def __init__(self, ids: list[int]):
         self.ids = list(ids)
-        self._hot: dict[int, int] = {i: 0 for i in ids}
-        self.worst: dict[int, dict] = {}
+        # One counter per (joint, condition): a joint flickering between
+        # two different complaints has confirmed neither.
+        self._streak: dict[tuple[int, str], int] = {}
+        # Peak load and peak temperature are tracked SEPARATELY. They
+        # used to share one stored sample — the max-load one — so the
+        # reported temperature was whatever happened to accompany peak
+        # load rather than the hottest reading seen. On 2026-07-27 that
+        # printed "hottest 32 C on joint 6" for a run aborted by a 74 C
+        # reading on joint 4: two independent maxima read off one record.
+        self.peak_load: dict[int, dict] = {}
+        self.peak_temp: dict[int, dict] = {}
+        self._last_temp: dict[int, int] = {}
         self.unreadable = False
+        self.discarded = 0      # readings rejected as physically impossible
+
+    def _confirm(self, i: int, kind: str, needed: int) -> bool:
+        """Count consecutive samples of one complaint on one joint.
+
+        Returns True only once `needed` in a row have been seen, so a
+        single corrupted register read can never stop the arm."""
+        key = (i, kind)
+        self._streak[key] = self._streak.get(key, 0) + 1
+        return self._streak[key] >= needed
+
+    def _clear(self, i: int, *kinds: str) -> None:
+        for kind in kinds:
+            self._streak.pop((i, kind), None)
 
     def check(self, bus) -> None:
         for i in self.ids:
@@ -373,52 +429,95 @@ class StrainWatch:
             if not h["plausible"]:
                 self.unreadable = True
                 continue
-            prev = self.worst.get(i)
+
+            # Discard a temperature that moved faster than a servo can.
+            # Counted, never silent: a rising discard count is the bus
+            # telling you it is corrupting reads, which is worth knowing
+            # even though it is not worth stopping for.
+            last = self._last_temp.get(i)
+            temp_ok = last is None or abs(h["temp_c"] - last) <= TEMP_JUMP_C
+            if temp_ok:
+                self._last_temp[i] = h["temp_c"]
+            else:
+                self.discarded += 1
+
+            prev = self.peak_load.get(i)
             if prev is None or h["load_pct"] > prev["load_pct"]:
-                self.worst[i] = h
+                self.peak_load[i] = h
+            prev = self.peak_temp.get(i)
+            if temp_ok and (prev is None or h["temp_c"] > prev["temp_c"]):
+                self.peak_temp[i] = h
+
             if h["faults"]:
-                raise StrainViolation(
-                    f"joint {i} reports {', '.join(h['faults'])}",
-                    "the servo is about to protect itself by cutting "
-                    "torque, which would drop the arm — power down and "
-                    "let it cool before re-running")
+                if self._confirm(i, "fault", TRIP_CONFIRM_SAMPLES):
+                    raise StrainViolation(
+                        f"joint {i} reports {', '.join(h['faults'])}",
+                        "the servo is about to protect itself by cutting "
+                        "torque, which would drop the arm — power down and "
+                        "let it cool before re-running")
+            else:
+                self._clear(i, "fault")
+
             if h["volts"] < VOLTS_MIN:
-                raise StrainViolation(
-                    f"joint {i} sees {h['volts']:.1f} V (limit "
-                    f"{VOLTS_MIN})",
-                    "a sagging supply cuts torque and drops the arm; "
-                    "check the supply before re-running")
-            if h["temp_c"] >= TEMP_TRIP_C:
-                raise StrainViolation(
-                    f"joint {i} is at {h['temp_c']} C (limit "
-                    f"{TEMP_TRIP_C})",
-                    "let the arm cool; a batch of back-to-back runs "
-                    "heats the shoulder joints most")
+                if self._confirm(i, "volts", TRIP_CONFIRM_SAMPLES):
+                    raise StrainViolation(
+                        f"joint {i} sees {h['volts']:.1f} V (limit "
+                        f"{VOLTS_MIN})",
+                        "a sagging supply cuts torque and drops the arm; "
+                        "check the supply before re-running")
+            else:
+                self._clear(i, "volts")
+
+            if temp_ok and h["temp_c"] >= TEMP_TRIP_C:
+                if self._confirm(i, "temp", TRIP_CONFIRM_SAMPLES):
+                    raise StrainViolation(
+                        f"joint {i} is at {h['temp_c']} C (limit "
+                        f"{TEMP_TRIP_C})",
+                        "let the arm cool; a batch of back-to-back runs "
+                        "heats the shoulder joints most")
+            elif temp_ok:
+                self._clear(i, "temp")
+
             if h["load_pct"] >= LOAD_PEAK_PCT:
-                raise StrainViolation(
-                    f"joint {i} hit {h['load_pct']:.0f}% load",
-                    "something is in the way, or the pose is beyond what "
-                    "this joint can hold — clear the workspace and check "
-                    "the arm before re-running")
+                # Still the fast path — confirmed in 2 samples rather
+                # than 3 — because by the time you have three samples of
+                # 80% something is already jammed.
+                if self._confirm(i, "peak", TRIP_CONFIRM_SAMPLES):
+                    raise StrainViolation(
+                        f"joint {i} hit {h['load_pct']:.0f}% load",
+                        "something is in the way, or the pose is beyond what "
+                        "this joint can hold — clear the workspace and check "
+                        "the arm before re-running")
+            else:
+                self._clear(i, "peak")
+
             if h["load_pct"] >= LOAD_TRIP_PCT:
-                self._hot[i] += 1
-                if self._hot[i] >= LOAD_TRIP_SAMPLES:
+                if self._confirm(i, "load", LOAD_TRIP_SAMPLES):
                     raise StrainViolation(
                         f"joint {i} held {h['load_pct']:.0f}% load for "
                         f"{LOAD_TRIP_SAMPLES} samples",
                         "sustained strain — the arm is pushing against "
                         "something rather than moving freely")
             else:
-                self._hot[i] = 0
+                self._clear(i, "load")
 
     def summary(self) -> str:
-        if not self.worst:
+        if not self.peak_load:
             return ("strain: no readable health data — the servo status "
                     "registers did not return plausible values, so strain "
                     "did NOT gate this run")
-        peak = max(self.worst.values(), key=lambda h: h["load_pct"])
-        hot = max(self.worst.values(), key=lambda h: h["temp_c"])
-        note = " (some reads unusable)" if self.unreadable else ""
+        peak = max(self.peak_load.values(), key=lambda h: h["load_pct"])
+        notes = []
+        if self.unreadable:
+            notes.append("some reads unusable")
+        if self.discarded:
+            notes.append(f"{self.discarded} impossible temperature "
+                         f"reading(s) discarded")
+        note = f" ({'; '.join(notes)})" if notes else ""
+        if not self.peak_temp:
+            return (f"strain: peak load {peak['load_pct']:.0f}% on joint "
+                    f"{peak['id']}, no usable temperature{note}")
+        hot = max(self.peak_temp.values(), key=lambda h: h["temp_c"])
         return (f"strain: peak load {peak['load_pct']:.0f}% on joint "
                 f"{peak['id']}, hottest {hot['temp_c']} C on joint "
                 f"{hot['id']}{note}")
@@ -429,10 +528,11 @@ def _selftest_strain() -> None:
     with a refusal — a guard that only ever passes is decoration."""
     fails: list[str] = []
 
-    def want(label: str, ok: bool) -> None:
+    def want(label: str, ok: bool, detail: str = "") -> None:
         if not ok:
             fails.append(label)
-        print(f"  [{'ok ' if ok else 'FAIL'}] {label}")
+        print(f"  [{'ok ' if ok else 'FAIL'}] {label}"
+              + (f"  — {detail}" if detail and not ok else ""))
 
     class Fake:
         def __init__(self, **over):
@@ -453,24 +553,91 @@ def _selftest_strain() -> None:
         except StrainViolation:
             return True, w
 
+    def trips_ramp(factory, start, end):
+        """Walk the temperature up in steps the filter accepts, so the
+        end value is believed. Pairs with the jump test: the filter must
+        reject an impossible STEP, never a genuinely hot servo."""
+        w = StrainWatch([1])
+        t = start
+        try:
+            while t < end:
+                t = min(end, t + TEMP_JUMP_C)
+                for _ in range(TRIP_CONFIRM_SAMPLES):
+                    w.check(factory(temp_c=t))
+            return False
+        except StrainViolation:
+            return True
+
     ok, w = trips(Fake())
     want("a healthy servo does NOT trip", not ok)
     want("...and its peak is still reported", "peak load" in w.summary())
 
-    want("an OVERLOAD fault bit trips immediately",
-         trips(Fake(faults=["OVERLOAD"], status=0x20))[0])
-    want("an OVERHEAT fault bit trips immediately",
-         trips(Fake(faults=["OVERHEAT"], status=0x04))[0])
+    want("an OVERLOAD fault bit trips", trips(Fake(faults=["OVERLOAD"],
+                                                   status=0x20))[0])
+    want("an OVERHEAT fault bit trips", trips(Fake(faults=["OVERHEAT"],
+                                                   status=0x04))[0])
     want("a brown-out trips (a sagging rail drops the arm)",
          trips(Fake(volts=5.0))[0])
     want("over-temperature trips below the servo's own protection",
          trips(Fake(temp_c=TEMP_TRIP_C))[0])
-    want("a load PEAK trips on the first sample",
-         trips(Fake(load_pct=LOAD_PEAK_PCT), n=1)[0])
+    want("a load PEAK trips fast", trips(Fake(load_pct=LOAD_PEAK_PCT),
+                                         n=TRIP_CONFIRM_SAMPLES)[0])
     want("sustained load trips only after several samples",
          trips(Fake(load_pct=LOAD_TRIP_PCT), n=LOAD_TRIP_SAMPLES)[0]
          and not trips(Fake(load_pct=LOAD_TRIP_PCT),
                        n=LOAD_TRIP_SAMPLES - 1)[0])
+
+    # ---- THE 2026-07-27 FALSE STOP. One corrupted register read must
+    # never stop the arm, whatever it claims. Each of these is a real
+    # fault condition presented for exactly ONE sample.
+    for label, over in (("a fault bit", {"faults": ["OVERLOAD"]}),
+                        ("a brown-out", {"volts": 5.0}),
+                        ("an over-temperature", {"temp_c": 90}),
+                        ("a load peak", {"load_pct": 99.0})):
+        w = StrainWatch([1])
+        try:
+            w.check(Fake(**over))
+            want(f"ONE sample of {label} does not stop the arm", True)
+        except StrainViolation as exc:
+            want(f"ONE sample of {label} does not stop the arm", False,
+                 str(exc))
+    want("...but two consecutive DO",
+         trips(Fake(temp_c=90), n=TRIP_CONFIRM_SAMPLES)[0])
+
+    # A flicker between two DIFFERENT complaints confirms neither.
+    w = StrainWatch([1])
+    try:
+        for b in (Fake(volts=5.0), Fake(load_pct=99.0), Fake(volts=5.0),
+                  Fake(load_pct=99.0)):
+            w.check(b)
+        want("alternating DIFFERENT complaints confirm neither", True)
+    except StrainViolation as exc:
+        want("alternating DIFFERENT complaints confirm neither", False,
+             str(exc))
+
+    # The physical-impossibility filter: 74 C one sample after 31 C is
+    # not a hot servo, it is a bad byte. Caught on the sample it happens.
+    w = StrainWatch([1])
+    w.check(Fake(temp_c=31))
+    for _ in range(5):
+        w.check(Fake(temp_c=74))       # would trip twice over, if believed
+    want("a physically impossible temperature JUMP is discarded, not "
+         "acted on", w.discarded == 5, f"{w.discarded} discarded")
+    want("...and the run says so out loud rather than hiding it",
+         "discarded" in w.summary(), w.summary())
+    want("...while the same value reached GRADUALLY does trip",
+         trips_ramp(Fake, 31, 74))
+
+    # Peak load and peak temperature are independent maxima. Reading
+    # both off one stored sample reported 'hottest 32 C' for a run that
+    # died at 74 C.
+    w = StrainWatch([1])
+    w.check(Fake(load_pct=40.0, temp_c=30))   # hottest load, coolest temp
+    w.check(Fake(load_pct=5.0, temp_c=44))    # coolest load, hottest temp
+    s = w.summary()
+    want("summary reports the true peak load", "40%" in s, s)
+    want("...AND the true peak temperature, not the one that happened to "
+         "accompany peak load", "44 C" in s, s)
 
     # a brief spike must NOT stop a good run
     w = StrainWatch([1])
