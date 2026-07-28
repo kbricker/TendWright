@@ -113,6 +113,40 @@ def outliers(values: list[int]) -> tuple[int, list[int], float]:
     return len(bad), bad, med
 
 
+def spikes(values: list[int]) -> tuple[int, int, int, list[int]]:
+    """Separate SPIKES from DRIFT. (spikes, worst step, longest run, samples)
+
+    A median test cannot tell a corrupted reading from a servo that is
+    genuinely warming: both look like values far from the middle. The
+    difference is in the neighbours. A real temperature moves by one
+    count and STAYS there; a corrupted one differs from the readings on
+    BOTH sides of it and the next sample is back where it was.
+
+    This is the same reasoning the strain guard's rate filter uses, which
+    is the point — if this says drift, the guard is discarding real data
+    and its threshold is wrong. `longest run` is how many samples in a
+    row an off-median value persisted: 1 means spike, many means the
+    servo really did go there."""
+    if len(values) < 3:
+        return 0, 0, 0, values
+    med = statistics.median(values)
+    n_spike = 0
+    worst_step = 0
+    longest = 0
+    run = 0
+    for k, v in enumerate(values):
+        if k:
+            worst_step = max(worst_step, abs(v - values[k - 1]))
+        off = abs(v - med) > OUTLIER_C
+        run = run + 1 if off else 0
+        longest = max(longest, run)
+        if off and 0 < k < len(values) - 1:
+            if (abs(v - values[k - 1]) > OUTLIER_C
+                    and abs(v - values[k + 1]) > OUTLIER_C):
+                n_spike += 1
+    return n_spike, worst_step, longest, values
+
+
 def report_full(data: dict, ids: list[int]) -> list[int]:
     """Per-joint anomaly rates across EVERY register, not just temp."""
     rows, errors = data["rows"], data["errors"]
@@ -198,7 +232,7 @@ def report_solo(data: dict, ids: list[int]) -> list[int]:
     temps, errors = data["temps"], data["errors"]
     print("\nmode B — temperature register alone, nothing else in flight")
     print(f"  {'joint':>5} {'samples':>8} {'temp med':>9} {'temp bad':>9} "
-          f"{'comm err':>9}")
+          f"{'comm err':>9} {'isolat':>7} {'wstep':>6} {'runmax':>6}")
     dirty = []
     for i in ids:
         vs = temps.get(i, [])
@@ -206,14 +240,21 @@ def report_solo(data: dict, ids: list[int]) -> list[int]:
             print(f"  {i:>5} {'no data':>8}")
             continue
         n, bad, med = outliers(vs)
+        n_spike, step, longest, _ = spikes(vs)
         if n:
             dirty.append(i)
         print(f"  {i:>5} {len(vs):>8} {med:>9.0f} "
-              f"{n:>4} {_pct(n, len(vs))} {errors.get(i, 0):>9}")
+              f"{n:>4} {_pct(n, len(vs))} {errors.get(i, 0):>9} "
+              f"{n_spike:>7} {step:>6} {longest:>6}")
         if bad:
             counts = Counter(bad).most_common(6)
             print(f"        bad temps seen: "
                   + ", ".join(f"{v}C x{c}" for v, c in counts))
+    print("\n  isolated = differs from BOTH neighbours (a corrupted read).")
+    print("  worst step = largest change between consecutive samples.")
+    print("  longest run = samples in a row an off-median value held;")
+    print("                1 means spikes, many means the servo really "
+          "went there.")
     return dirty
 
 
