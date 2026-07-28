@@ -413,6 +413,11 @@ def run() -> int:
         # guarded sweep, because a collision does not care which phase
         # the routine is in.
         strain = StrainWatch(ids)
+        # NO KEYPRESS E-STOP MEANS NO KEY POLLING. `read_key` calls
+        # require_interactive() itself, so polling for an abort
+        # nobody can issue does not merely do nothing — it raises
+        # mid-motion and aborts the run it was meant to protect.
+        poll = None if args.unattended else read_key
 
         trace = None
         if args.trace:
@@ -450,7 +455,7 @@ def run() -> int:
                             acceleration=accel)
             if trace is not None:
                 trace.phase("rest", edge=1)
-            wait_settle(bus, rest, speed, "rest", poll_key=read_key,
+            wait_settle(bus, rest, speed, "rest", poll_key=poll,
                         sample_sink=sink,
                         invariant=lambda: strain.check(bus))
 
@@ -491,7 +496,7 @@ def run() -> int:
                     if trace is not None:
                         trace.phase(f"j{i} clearance")
                     wait_settle(bus, hold, speed, "clearance",
-                                poll_key=read_key, sample_sink=sink,
+                                poll_key=poll, sample_sink=sink,
                                 invariant=lambda: strain.check(bus))
                     # ENTRY GUARD: the sweep is unreachable until the
                     # encoders confirm the clearance actually happened.
@@ -507,7 +512,7 @@ def run() -> int:
                     if trace is not None:
                         trace.phase(f"j{i} {label}")
                     wait_settle(bus, goals, speed, f"{name} {label}",
-                                poll_key=read_key, invariant=invariant,
+                                poll_key=poll, invariant=invariant,
                                 sample_sink=sink)
                 if clearance:
                     for j in clearance:
@@ -518,7 +523,7 @@ def run() -> int:
                     if trace is not None:
                         trace.phase(f"j{i} refold")
                     wait_settle(bus, rest, speed, "refold",
-                                poll_key=read_key, sample_sink=sink,
+                                poll_key=poll, sample_sink=sink,
                                 invariant=lambda: strain.check(bus))
 
             print("\nroutine complete — arm at rest, cutting torque")

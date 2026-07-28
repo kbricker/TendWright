@@ -575,6 +575,9 @@ def cmd_run(args) -> int:
             print(f"tracing the arm's actual path to {dest}")
 
         strain = StrainWatch(ids)
+        # See exercise.py: read_key demands a terminal, so an
+        # unattended run must not poll for a key at all.
+        poll = None if args.unattended else read_key
         try:
             # Wake without lurch: pre-load each goal to the CURRENT
             # position while still torque-off, then enable. Enabling
@@ -590,7 +593,7 @@ def cmd_run(args) -> int:
                 bus, cals, clip,
                 gate=None if args.no_gate else gate,
                 strain=strain, trace=trace,
-                poll_key=read_key)
+                poll_key=poll)
             print(f"\n{outcome.summary()}")
             print(strain.summary())
             # A clip may END ANYWHERE — unlike `exercise`, which always
