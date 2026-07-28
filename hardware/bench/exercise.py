@@ -25,8 +25,13 @@ ANY key during motion is an E-STOP; on e-stop, obstruction, or Ctrl+C the
 arm halts and HOLDS while you get a hand on it — torque cuts on your Enter.
 Exit codes: 0 done, 1 aborted, 2 error, 3 operator e-stop, 130 Ctrl+C.
 
+--unattended is for a REMOTE run with nobody at the keyboard: it implies
+--yes, gives up the keypress e-stop (the gate and the strain guard still
+run; the power switch is then the only human abort), and cuts torque
+immediately on a fault instead of waiting for a hand that is not there.
+
 Usage: exercise [--ids RANGE] [--span PCT] [--speed F] [--cal FILE]
-                [--port PORT] [--yes]
+                [--port PORT] [--yes] [--unattended]
 """
 
 from __future__ import annotations
@@ -187,11 +192,27 @@ def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
             )
 
 
-def held_torque_cut(why: str) -> None:
+def held_torque_cut(why: str, unattended: bool = False) -> None:
     """The arm is (or may be) holding under torque somewhere mid-routine.
     Never drop it on an unwarned operator: hold until they have a hand on
     it, then let the caller's cleanup cut torque. A Ctrl+C anywhere in
-    here (not just at the input) skips ahead to that same cleanup."""
+    here (not just at the input) skips ahead to that same cleanup.
+
+    UNATTENDED SKIPS THE WAIT. The prompt protects a human standing at
+    the bench; on a remote run there is nobody at this terminal to warn,
+    so waiting achieves nothing and costs something — the servos stay
+    energized and heating while a prompt no one will answer sits open,
+    and the run cannot report until it is killed. Cutting promptly and
+    saying so out loud is the honest behaviour when the warning has no
+    audience. It is a separate flag rather than an isatty() test on
+    purpose: a forced pty (`ssh -tt`) reports a terminal that has no
+    human behind it, so the machine cannot infer this and the operator
+    must declare it."""
+    if unattended:
+        print(f"\n{why} — the arm was HOLDING under torque; cutting now "
+              "(--unattended: nobody is at this terminal to warn, and the "
+              "arm will settle to its slump pose).", file=sys.stderr)
+        return
     try:
         print(f"\n{why} — the arm is HOLDING under torque. get a hand on "
               "it — it drops when torque cuts.", file=sys.stderr)
@@ -231,7 +252,17 @@ def run() -> int:
     parser.add_argument("--yes", action="store_true",
                         help="skip the confirmation prompt (never the "
                              "preflight checks)")
+    parser.add_argument("--unattended", action="store_true",
+                        help="nobody is at this terminal: implies --yes, "
+                             "and on a fault the arm's torque is cut "
+                             "immediately instead of waiting for someone "
+                             "to get a hand on it. There is NO keypress "
+                             "e-stop in this mode — the power switch and "
+                             "the automatic guards are the only aborts")
     args = parser.parse_args()
+    # A declared-unattended run has no operator to confirm anything, so
+    # demanding the y/n prompt would only strand it.
+    args.yes = args.yes or args.unattended
 
     if not SPAN_MIN <= args.span <= SPAN_MAX:
         raise BenchError(f"--span must be {SPAN_MIN}-{SPAN_MAX}",
@@ -246,7 +277,16 @@ def run() -> int:
     accel = args.accel
     speed = min(SPEED_CAP, round(SPEED_BASE * args.speed))
 
-    require_interactive()  # the e-stop key is the safety channel
+    if not args.unattended:
+        require_interactive()  # the e-stop key is the safety channel
+    else:
+        # Said out loud on every run, because the thing being given up
+        # is the operator's own abort channel. What remains: the twin's
+        # pre-flight gate, the strain guard (which needs no human), and
+        # the power switch.
+        print("UNATTENDED — no keypress e-stop. The collision gate and "
+              "strain guard still run; the POWER SWITCH is the only "
+              "human abort.", file=sys.stderr)
 
     cal_path = Path(args.cal)
     if not cal_path.exists():
@@ -489,7 +529,7 @@ def run() -> int:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            held_torque_cut("e-stop")
+            held_torque_cut("e-stop", args.unattended)
             return 3
         except (BenchError, serial.SerialException):
             # SerialException is the raw pyserial fault _check doesn't
@@ -501,14 +541,14 @@ def run() -> int:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            held_torque_cut("error")
+            held_torque_cut("error", args.unattended)
             raise
         except KeyboardInterrupt:
             try:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            held_torque_cut("interrupted")
+            held_torque_cut("interrupted", args.unattended)
             raise
         finally:
             bus.safe_torque_off(ids)
