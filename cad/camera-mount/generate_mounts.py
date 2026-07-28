@@ -98,14 +98,34 @@ P = {
     # the knob for how high the camera sits — change it and only the
     # post grows.
     "table_t": 19.05,        # 0.75 in tabletop, from bench.json
-    "lens_h": 75.0,          # lens centre above the table top (~3 in)
+    "lens_h": 75.0,          # LENS centre above the table top (~3 in)
+    # The lens stands proud of the PCB, so the board is NOT the optical
+    # centre — placing the board at lens_h would put the actual lens
+    # lower and further forward. Kyle measured ~0.75 in (2026-07-28);
+    # no published figure exists for this module (the vendor pages give
+    # only the 38x38 board, and M12 holders run 8-16.5 mm), so a part in
+    # hand beats a datasheet. Strictly the no-parallax point sits a few
+    # mm BEHIND the front element, which is well inside the error already
+    # carried by the placeholder FOV — see bench_scene.DEFAULT_FOVY_DEG.
+    "lens_offset": 19.05,    # PCB face -> lens, along the optical axis
     # Aimed at the work-zone centre from the SHORT edge of the main
     # table (Kyle: "mounted on the outside short edge of the main table
     # ... centered with a perpendicular angle"). Perpendicular means the
     # yaw is ZERO and the part is symmetric — the earlier 61 deg came
     # from mounting on the LONG front edge, where the work zone can only
     # be seen diagonally. Off the short edge it is dead ahead.
-    "edge_tilt_deg": 8.37,   # down from horizontal
+    # 7 deg down, chosen against the actual work zone rather than to
+    # centre the frame on it. The trade, computed from the short edge at
+    # 75 mm with a 45.5 deg vertical field: the tilt has to be steep
+    # enough that the NEAREST work-zone row is still inside the bottom of
+    # the frame, and shallow enough to leave headroom above the table for
+    # a lifted part. At 7 deg the table is in frame from y 76.9 outward
+    # (the work zone ends at 77.05, so it is all covered) and the camera
+    # sees ~216 mm above the table at the work-zone centre — a 20 mm
+    # blank plus a generous lift. Steeper (8.5) would centre the frame
+    # exactly on the work zone but leaves only 4 mm of margin at the near
+    # edge; shallower (6) gains headroom and starts losing the near rows.
+    "edge_tilt_deg": 7.0,    # down from horizontal
     "edge_yaw_deg": 0.0,     # 0 = square to the edge it is bolted to
     "post_w": 16.0,          # along the edge
     "post_d": 14.0,          # outboard
@@ -388,13 +408,20 @@ def build_edge_stand(p):
     a_local = Vector((0, wall_y0 + wall_len / 2, z_wall_out))
     a_rot = rot @ a_local
     board_c = rot @ Vector((0, stop_in + p["board_w"] / 2, 0))
+    # The optical centre is lens_offset FORWARD of the board along the
+    # view direction, so solving for the board height would leave the
+    # real lens low by lens_offset*sin(tilt). Solve for the LENS and let
+    # the board fall where it must.
+    view = rot @ Vector((0, 0, -1))
+    lens_from_board = view * p["lens_offset"]
     target = Vector((u.x * reach, y_post + u.y * reach,
-                     p["lens_h"] - board_c.z + a_rot.z))
+                     p["lens_h"] - (board_c.z + lens_from_board.z)
+                     + a_rot.z))
     t = target - a_rot
     frame.location = t
     bpy.ops.object.transform_apply(location=True)
     attach = a_rot + t
-    lens = board_c + t
+    lens = board_c + lens_from_board + t
 
     # Plate flat on the edge face: y in [0, plate_t], top flush with the
     # table top so nothing stands proud of the surface behind it.
