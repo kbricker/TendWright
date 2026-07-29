@@ -220,7 +220,16 @@ class SimCam:
             worst = max(worst, float(np.linalg.norm(
                 predicted - self._cell_tool(pose)) * 1000.0))
         derived = self.cell.arm_pose[2] - self.twin.reach_yaw_deg()
-        return worst, abs(self.yaw_deg - derived)
+        # WRAP THE DIFFERENCE. A plain subtraction called this cell broken:
+        # the fitted yaw comes from atan2, which returns (-180, 180], and
+        # this arm is mounted facing back along the axis, so the fit lands
+        # on -180.0000 while the cell builder's derived value is +180.0000.
+        # They are the SAME ANGLE and the check reported 360 degrees of
+        # disagreement. Which side of the boundary atan2 picks is decided
+        # by the sign of a near-zero numerator, so this was luck, not
+        # correctness — it reproduces identically on mujoco 3.10 and 3.11.
+        diff = (self.yaw_deg - derived + 180.0) % 360.0 - 180.0
+        return worst, abs(diff)
 
     def rig_to_world(self, xyz_mm) -> np.ndarray:
         """Rig-frame mm -> cell-world metres."""
@@ -354,6 +363,7 @@ def cmd_render(out: str, tags: tuple[Tag, ...] = ()) -> int:
 
 def selftest() -> int:
     fails = []
+    untested = []
 
     def check(name, cond, detail=""):
         print(f"  {'ok  ' if cond else 'FAIL'} {name}"
@@ -361,13 +371,42 @@ def selftest() -> int:
         if not cond:
             fails.append(name)
 
+    def skip(name: str) -> None:
+        """Record a check that did NOT run. Never counts as a pass.
+
+        The summary reports these separately and loudly, because a skip
+        that reads like a tick is worse than a failure — see the EGL block
+        below, which takes the same line about render checks.
+        """
+        print(f"  ---- {name}  (NOT RUN)")
+        untested.append(name)
+
+    # Tag detection needs the system libapriltag, which exists on the cell
+    # controller and not on the Windows desk (#713.5 — the cell components
+    # only ever run on Linux; Windows is where the code is written). So the
+    # geometry and rendering halves of this test still earn their keep on
+    # the desk, and the detection half is honestly marked as not run.
+    from hardware.errors import BenchError
+    try:
+        from hardware.bench.apriltag import Detector
+        Detector().close()
+        have_tags = True
+    except BenchError as exc:
+        have_tags = False
+        print(f"!! TAG DETECTION UNAVAILABLE HERE: {exc}")
+        print("!! Every detection check below is NOT RUN. This test is only "
+              "complete on the cell controller.\n")
+
     print("the generated marker is a real tag36h11")
     cam0 = SimCam()
-    img = tag_image(7)
-    found = cam0.detect(img)
-    check("a generated tag detects as itself",
-          len(found) == 1 and found[0].tag_id == 7,
-          f"{[d.tag_id for d in found]}")
+    if have_tags:
+        img = tag_image(7)
+        found = cam0.detect(img)
+        check("a generated tag detects as itself",
+              len(found) == 1 and found[0].tag_id == 7,
+              f"{[d.tag_id for d in found]}")
+    else:
+        skip("a generated tag detects as itself")
 
     print("\nthe rig <-> cell frame bridge")
     err, dis = cam0.verify_frame()
@@ -432,8 +471,23 @@ def selftest() -> int:
               "CHECK BELOW IS")
         print("       UNTESTED until a camera is actually measured.")
         print(f"       cameras in the model: {cam0.camera_names()}")
+        # Do NOT print OK when something failed. The exit code was already
+        # right here, but the line above it said "OK" unconditionally, so
+        # anyone reading the output rather than $? saw a pass over a
+        # failure.
+        if fails:
+            print(f"\nsimcam FAILED: {len(fails)} "
+                  f"(camera aim + render checks SKIPPED)")
+            for f in fails:
+                print(f"  - {f}")
+            return 1
+        if untested:
+            print(f"\nsimcam PARTIAL — camera aim + render checks SKIPPED, "
+                  f"and {len(untested)} detection check(s) NOT RUN for want "
+                  f"of libapriltag. Full coverage needs the cell controller.")
+            return 0
         print("\nsimcam selftest OK (camera aim + render checks SKIPPED)")
-        return 1 if fails else 0
+        return 0
     backend = os.environ.get("MUJOCO_GL", "(default)")
     try:
         frame = cam0.render(width=640, height=360)
@@ -454,24 +508,32 @@ def selftest() -> int:
           f"mean brightness {frame.mean():.1f}")
 
     print("\ntags on the table, rendered and read back")
-    cam = SimCam(DEMO_TAGS)
-    frame = cam.render()
-    found = {d.tag_id: d for d in cam.detect(frame)}
-    for t in DEMO_TAGS:
-        check(f"tag {t.tag_id} at rig ({t.x_mm:.0f}, {t.y_mm:.0f}) is seen",
-              t.tag_id in found,
-              f"pixel ({found[t.tag_id].center[0]:.0f}, "
-              f"{found[t.tag_id].center[1]:.0f})" if t.tag_id in found
-              else "NOT DETECTED")
-    check("no phantom detections", len(found) <= len(DEMO_TAGS),
-          f"{sorted(found)}")
+    if have_tags:
+        cam = SimCam(DEMO_TAGS)
+        frame = cam.render()
+        found = {d.tag_id: d for d in cam.detect(frame)}
+        for t in DEMO_TAGS:
+            check(f"tag {t.tag_id} at rig ({t.x_mm:.0f}, {t.y_mm:.0f}) is seen",
+                  t.tag_id in found,
+                  f"pixel ({found[t.tag_id].center[0]:.0f}, "
+                  f"{found[t.tag_id].center[1]:.0f})" if t.tag_id in found
+                  else "NOT DETECTED")
+        check("no phantom detections", len(found) <= len(DEMO_TAGS),
+              f"{sorted(found)}")
+    else:
+        for t in DEMO_TAGS:
+            skip(f"tag {t.tag_id} at rig ({t.x_mm:.0f}, {t.y_mm:.0f}) is seen")
+        skip("no phantom detections")
 
     print("\nthe pipeline notices when the tag is not there")
     # An empty scene must yield nothing. Without this the detection
     # checks above would still pass against a detector that returned
     # everything it was asked about.
-    check("an empty table detects no tags", not cam0.detect(cam0.render()),
-          "")
+    if have_tags:
+        check("an empty table detects no tags",
+              not cam0.detect(cam0.render()), "")
+    else:
+        skip("an empty table detects no tags")
 
     print()
     if fails:
@@ -479,6 +541,18 @@ def selftest() -> int:
         for f in fails:
             print(f"  - {f}")
         return 1
+    if untested:
+        # Deliberately NOT "simcam OK". The geometry and rendering checks
+        # passed, but a reader skimming for a green line must not come away
+        # believing the detection pipeline was exercised when it was not.
+        print(f"simcam PARTIAL — {len(untested)} detection check(s) NOT RUN "
+              f"for want of libapriltag:")
+        for u in untested:
+            print(f"  - {u}")
+        print("Run this on the cell controller for full coverage: "
+              "ssh cell1 'cd ~/TendWright && uv run python -m sim.simcam "
+              "selftest'")
+        return 0
     print("simcam OK")
     return 0
 
