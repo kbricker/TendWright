@@ -5,14 +5,14 @@
   "cameras": [
     {
       "name": "bench",
-      "location": "UNMOUNTED as of 2026-07-28 - was a wall bracket 60 deg down over the arm, on the return; the arm has since moved to the main table, so that pose points at empty bench. Pose retired in cell.json; target in plan 713.9",
-      "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.4:1.0-video-index0",
+      "location": "MOUNTED 2026-07-28: back wall, printed 60 deg bracket, screw line 28-7/8 in above the table top centred on the arm's line (y 62.25), lens ~26.6 in up looking down the main table at the work zone. Identity confirmed by LOOKING at a frame, not inferred: it shows the table from above with the gripper at the far end and 4 tags locked.",
+      "path": "/dev/v4l/by-path/pci-0000:05:00.4-usb-0:1.4:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 480, "fps": 10},
       "tags": true,
       "still_interval_s": 0,
       "still_keep": 200,
-      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Was on root port 1 direct (path captured 2026-07-25); moved to root port 2, hub port 4 on 2026-07-27. Re-identified by its first frame: it looks down on the arm with the gripper and the table tags in view."
+      "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Path has now changed three times by design - root port 1 direct (2026-07-25), root port 2 hub port 4 (2026-07-27), and root port 1 hub port 4 on a DIFFERENT PCI controller (05:00.4, 2026-07-28) after the cell rebuild. by-path IS the identity, so re-cabling is a new identity and the registry is expected to need updating; that is the feature, not a fault."
     },
     {
       "name": "side",

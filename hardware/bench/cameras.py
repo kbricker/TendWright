@@ -222,7 +222,11 @@ def _suggest_entry(f: Found, index: int) -> dict:
         "location": "TODO: where this camera looks",
         "path": f.path,
         "solo": {"width": 1920, "height": 1080, "fps": 30},
-        "tile": {"width": 640, "height": 360, "fps": 10},
+        # 640x480, NOT 640x360: the ELP boards have no 360-line mode and
+        # silently substitute 480, which is 4:3 where solo is 16:9 — so a
+        # 360 default framed the tile view differently from the solo view
+        # and nothing said so (#713.7). Suggest a mode that exists.
+        "tile": {"width": 640, "height": 480, "fps": 10},
         "tags": True,
         "still_interval_s": 0,
         "still_keep": 200,
