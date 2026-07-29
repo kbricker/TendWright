@@ -69,6 +69,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import socket
 import sys
 import threading
@@ -311,29 +312,49 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
         def _debug_memory(self) -> None:
             """Where the heap actually went, and whether it is live (#704).
 
-                /debug/memory            read-only: the free-vs-live ratio
-                /debug/memory?trim=1     ...then hand free heap back to the OS
-                /debug/memory?raw=1      ...plus glibc's raw XML
+                /debug/memory                      read-only
+                /debug/memory?raw=1                ...plus glibc's raw XML
+                /debug/memory?trim=<pid>           ...then malloc_trim(0)
 
-            ALWAYS ON, unlike --debug-memory. That flag turns on
-            tracemalloc, which taxes every allocation and therefore has
-            to be opt-in; this reads bin headers the allocator already
-            maintains and costs nothing measurable. The difference
-            matters because of how #704 went: a gdb attach was the only
-            way to probe a running camserve, and on 2026-07-29 it
-            segfaulted inside __malloc_trim and killed a process that
-            had spent 3 h 42 m growing to 1.26 GB. An endpoint that
-            needs a restart to become available is useless against a
-            leak that takes hours to become visible — the restart is the
-            one thing that destroys the evidence.
+            ALWAYS ON, unlike --debug-memory, which switches on
+            tracemalloc and taxes every allocation. An endpoint that needs
+            a restart to exist cannot diagnose a leak that takes hours to
+            show, because the restart destroys the evidence.
 
-            Read-only by default for the same reason: take the number
-            with the heap untouched, THEN trim.
+            `trim` TAKES THIS PROCESS'S PID, not a boolean, and that is
+            deliberate. malloc_trim consolidates and unlinks free chunks,
+            which can abort the process outright; a plain `?trim=1` was
+            reachable by a browser prefetch, a bookmark or a stale tab,
+            and firing it by accident at hour three of a soak destroys
+            the specimen. Requiring the pid means the caller has looked
+            at the running process. There is no auth on this server, so
+            this is the only guard available and it is not security —
+            it is a guard against the operator's own reflexes.
+
+            Allocator internals belong in memprobe, not here; its module
+            docstring carries the reasoning and the hazards.
             """
             from .memprobe import memory_report
 
-            report = memory_report(trim=self._flag("trim"),
-                                   raw=self._flag("raw"))
+            # send_error messages must be PURE ASCII: they go into the HTTP
+            # status line and BaseHTTPRequestHandler encodes that latin-1,
+            # so an em-dash raises UnicodeEncodeError inside the error
+            # path and the client gets nothing at all. The selftest caught
+            # exactly that here.
+            want = (parse_qs(urlparse(self.path).query).get("trim") or [""])[0]
+            trim = want.strip() == str(os.getpid())
+            if want.strip() and not trim:
+                return self.send_error(
+                    400, f"?trim= must be this process's pid ({os.getpid()}); "
+                         f"it can abort the server, so it is not a boolean")
+            try:
+                report = memory_report(trim=trim, raw=self._flag("raw"))
+            except Exception as exc:        # a probe must not kill its patient
+                # Explicitly NOT letting this escape: do_GET's outer
+                # `except OSError: pass` would swallow a ctypes OSError
+                # into no response and no log line, which reads as "the
+                # endpoint is broken" instead of naming the failure.
+                return self.send_error(503, f"memory probe failed: {exc!r}")
             self._send(json.dumps(report, indent=2).encode(),
                        "application/json")
 
@@ -820,13 +841,37 @@ def _selftest() -> None:
         want("memory can be diagnosed on a live server, without the "
              "restart that destroys the evidence",
              code == 200 and "rss_mb" in mem and "verdict" in mem)
-        code, trimmed = get("/debug/memory?trim=1")
-        want("...and the trim is opt-in, so the read-only number is "
-             "taken first with the heap untouched",
-             "trim" not in mem and "trim" in trimmed)
+        want("...and reading it does NOT switch on the expensive "
+             "instrument — that is what lets it be always-on",
+             mem["tracemalloc_on"] is False)
+        want("...and it reports how much of the process it actually "
+             "accounts for, so the verdict cannot be read as covering "
+             "memory it never saw", "accounted_pct" in mem)
+        want("...and the free-chunk COUNT, which is the number that "
+             "found #704 while the byte ratio said 'ambiguous'",
+             "free_chunks" in mem and "mean_chunk_bytes" in mem)
+        want("the default is read-only — no trim unless asked",
+             "trim" not in mem)
         code, rawed = get("/debug/memory?raw=1")
         want("...and glibc's raw XML is available when the summary is "
-             "not enough", "raw_xml" in rawed and "raw_xml" not in mem)
+             "not enough",
+             code == 200 and "raw_xml" in rawed and "raw_xml" not in mem)
+        # The REFUSAL that matters most on this endpoint: malloc_trim can
+        # abort the process, so a value a browser prefetch could produce
+        # must not be enough to fire it.
+        try:
+            get("/debug/memory?trim=1")
+            want("a bare ?trim=1 is REFUSED — it can abort the server, so "
+                 "it must not be reachable by a prefetch or a stale tab",
+                 False)
+        except urllib.error.HTTPError as exc:
+            want("a bare ?trim=1 is REFUSED — it can abort the server, so "
+                 "it must not be reachable by a prefetch or a stale tab",
+                 exc.code == 400)
+        code, trimmed = get(f"/debug/memory?trim={os.getpid()}")
+        want("...while the pid of this very process does fire it, so the "
+             "guard is a speed bump for reflexes and not a lockout",
+             code == 200 and "trim" in trimmed)
 
         # --- #713.6: perception is opt-in per REQUEST, proved over HTTP.
         # cammanager's selftest covers the refcount semantics; this covers
