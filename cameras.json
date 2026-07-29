@@ -15,15 +15,15 @@
       "notes": "ELP-USBFHD01M-L36, 3.6mm, first camera of the fleet. Path has now changed three times by design - root port 1 direct (2026-07-25), root port 2 hub port 4 (2026-07-27), and root port 1 hub port 4 on a DIFFERENT PCI controller (05:00.4, 2026-07-28) after the cell rebuild. by-path IS the identity, so re-cabling is a new identity and the registry is expected to need updating; that is the feature, not a fault."
     },
     {
-      "name": "side",
-      "location": "UNMOUNTED, and the NAME IS STILL PROVISIONAL - was table level looking across the bench toward the arm. It has no stand at all (717.5); target in 713.9 is ~90 deg azimuth from the arm's reach axis, ~268 mm standoff, 100-200 mm above the table",
-      "path": "/dev/v4l/by-path/pci-0000:05:00.3-usb-0:2.3:1.0-video-index0",
+      "name": "low",
+      "location": "MOUNTED 2026-07-28: printed edge stand (717.5) bolted to the outboard face of the main table's SHORT end, centred 13.75 in from the front edge. Lens 75 mm above the top, 7 deg down, looking straight along the table at the work zone. RENAMED from 'side' - it is not to the side of anything, it is at the END looking down the length, and 'low' is what actually distinguishes it: it is the only view that resolves HEIGHT above the table. Rename freely if you prefer 'end'.",
+      "path": "/dev/v4l/by-path/pci-0000:05:00.4-usb-0:1.3:1.0-video-index0",
       "solo": {"width": 1920, "height": 1080, "fps": 30},
       "tile": {"width": 640, "height": 480, "fps": 10},
       "tags": true,
       "still_interval_s": 0,
       "still_keep": 200,
-      "notes": "Second camera, added 2026-07-27, root port 2 hub port 3. NAME AND LOCATION ARE PROVISIONAL — taken from what its first frame showed (a low view across the bench with table tags in frame), not from Kyle. Rename once he says what it is for. Worth keeping a low angle regardless: the overhead camera cannot see HEIGHT above the table and this one can, which is what a grasp approach needs."
+      "notes": "Second camera, added 2026-07-27, mounted 2026-07-28. DO NOT EXPECT IT TO READ TAGS LYING ON THE TABLE - measured and geometric, not a focus problem: at 75 mm height and ~470 mm out it grazes the table plane at 9.1 deg, so a flat 40 mm tag presents 6.3 mm deep (~110x17 px, 2.2 px per cell vertically) and a flat 20 mm tag ~55x9 px. tag36h11 needs roughly 5 px/cell in BOTH axes. Its first mounted frame duly reported 0 tags with a full sheet in view, which is the expected answer. The SAME tags on a VERTICAL face read fine from here (40 mm -> 13.7 px/cell), so tags meant for this camera belong on the side of a part or a fixture, never flat. This camera earns its place on height, approach clearance and did-the-grasp-work, which the overhead cannot do at all; tag metrology is the overhead's job."
     }
   ]
 }
