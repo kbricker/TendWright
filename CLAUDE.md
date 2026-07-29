@@ -35,8 +35,20 @@ spec `spec-tendwright-overview`).
 
 ## Cell controller (hardware bench)
 
-- **cell1** — Minisforum UM350 (Ryzen 3550H, 8GB), Ubuntu 24.04, headless on
-  Kyle's bench. Runs the camera + arm + Pico at P2+.
+- **cell1** — Minisforum UM350 (Ryzen 3550H, 8GB), **Ubuntu 26.04 LTS**
+  (resolute, glibc 2.43), on Kyle's bench. Runs the camera + arm + Pico at P2+.
+- **NOT headless** — it boots to `graphical.target` and Kyle uses the GNOME
+  desktop directly when he is at the bench. The stack costs ~280 MB resident
+  (gnome-shell alone is ~220 MB of the 5.87 GB usable), which is worth knowing
+  when accounting for memory but is NOT to be "reclaimed": Kyle 2026-07-29,
+  *"I DO use the desktop when im at the bench, so gnome is fine."* Dropping it
+  is on the table only for later headless deployments as the cell matures.
+- **spark has no sudo on cell1** — `sudo -n` fails and `ptrace_scope=1`, so
+  anything needing root (apt, gdb attach) has to be handed to Kyle as a command
+  to run. `ssh cell1 'sudo ...'` also fails for want of a tty; use `ssh -t`.
+- `unattended-upgrades` is **active and enabled**, so packages update on their
+  own. Account for that when a long soak runs: a service restarting mid-run is
+  a confound.
 - Access: `ssh cell1` (alias in `~/.ssh/config`; key auth, works for Kyle and
   spark — same Windows user). User `kyle` is in `dialout`.
 - Two more identical UM350s are spares/future roles (MES box etc.), not yet
