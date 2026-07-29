@@ -40,3 +40,8 @@ stills/
 # bench scene renders (regenerate with: sim.bench_scene --render DIR)
 scene_render/
 bench_views/
+
+# Edge-validation cache: derived from poses.json + the model, and keyed
+# by their contents. Rebuildable, machine-specific, and would churn on
+# every routine run.
+.edge-cache.json
