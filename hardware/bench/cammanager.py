@@ -364,9 +364,19 @@ class Camera:
                 self.fps = counter.tick()
                 if run.focus.is_set():
                     self.focus_score = focus_score(frame)
-                    cv2.putText(frame, f"focus {self.focus_score:7.0f}",
-                                (10, frame.shape[0] - 18),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1.1,
+                    # TOP-RIGHT corner (Kyle 2026-07-28: "move that focus
+                    # number to the top corner not the bottom"). Right
+                    # rather than left because annotate() already writes
+                    # the size/fps/tag line at top-left, and with
+                    # ?focus=1&tags=1 — the combination that actually
+                    # matters, peak the number then check the tags still
+                    # lock — the two would print over each other.
+                    label = f"focus {self.focus_score:.0f}"
+                    (tw, th), _ = cv2.getTextSize(
+                        label, cv2.FONT_HERSHEY_SIMPLEX, 1.3, 3)
+                    cv2.putText(frame, label,
+                                (max(10, frame.shape[1] - tw - 14), th + 16),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.3,
                                 (0, 255, 255), 3)
                 if run.tags.is_set():
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
