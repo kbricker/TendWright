@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "name": "pan-wiggle",
+  "_comment": "Poses are DEGREES (gripper: percent open). The first pose must name every calibrated joint; later poses name only what changes and inherit the rest. `pose` references a name from poses.json instead of `joints`.",
+  "_anchored": "Generated from calibration.json: pose 'rest' IS this arm's captured rest pose, and joint 1 pans +/-15 deg from it with the arm folded. Re-generate after re-calibrating. Always `runner show` before `runner run`.",
+  "profile": {
+    "speed": 250,
+    "acceleration": 12
+  },
+  "poses": [
+    {
+      "name": "rest",
+      "joints": {
+        "1": 7.21,
+        "2": -86.22,
+        "3": 161.98,
+        "4": 69.79,
+        "5": 0.0,
+        "6": 10.3
+      }
+    },
+    {
+      "name": "left",
+      "joints": {
+        "1": 22.21
+      }
+    },
+    {
+      "name": "right",
+      "joints": {
+        "1": -7.79
+      }
+    },
+    {
+      "name": "home",
+      "joints": {
+        "1": 7.21
+      }
+    }
+  ]
+}
