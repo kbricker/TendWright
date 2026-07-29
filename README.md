@@ -95,7 +95,9 @@ coordinates to the orchestrator. Then bring in a **webcam** over a bin and do
 the same with OpenCV + ArUco/AprilTags, including **hand-eye calibration**.
 - **Learn:** OpenCV, camera calibration, coordinate transforms, optionally a
   learned pose model
-- **Libraries:** `opencv-python`, `pupil-apriltags`, `numpy`
+- **Libraries:** `opencv-python`, `numpy`, and the system `libapriltag`
+  (ctypes binding in `hardware/bench/apriltag.py` — see #713.5 for why the
+  `pupil-apriltags` package was dropped)
 
 ### P3 — Quality inspection ML
 A camera inspects the finished part: pass/fail on a defect, or a pixel→mm
@@ -137,7 +139,7 @@ Python/not-Python boundary physical.
 | Kinematics / planning | `mink`, `roboticstoolbox-python`, MoveIt2 (`rclpy`), Drake |
 | Robot comms | `ur_rtde` (UR), socket/URScript, `pymodbus`, `asyncua` (OPC UA), ROS2 `rclpy` |
 | CNC | `pygcode`, `pyserial` + GRBL, MTConnect agent/client |
-| Vision / ML | `opencv-python`, `numpy`, `pupil-apriltags`, `open3d`, `torch`, `scikit-learn`, `ultralytics` (YOLO) |
+| Vision / ML | `opencv-python`, `numpy`, system `libapriltag` (own ctypes binding), `open3d`, `torch`, `scikit-learn`, `ultralytics` (YOLO) |
 | Orchestration | plain Python (hand-rolled FSM base — see `orchestrator/fsm.py`), `asyncio` later if the cell goes concurrent |
 | MES / data | `FastAPI`, `SQLModel`/`SQLAlchemy`, Postgres/SQLite, `Streamlit`, InfluxDB/TimescaleDB, Grafana |
 

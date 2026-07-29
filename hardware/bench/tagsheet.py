@@ -67,7 +67,10 @@ def verify(tag_id: int, png: bytes) -> None:
     A generated sheet that does not decode is worse than no sheet: the
     error only surfaces at the bench, after printing and cutting.
     """
-    from pupil_apriltags import Detector
+    # Imported here rather than at module scope so generating a sheet on a
+    # machine without libapriltag still works up to the read-back, and
+    # fails with the library's own install message instead of at import.
+    from .apriltag import Detector
     img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_GRAYSCALE)
     big = cv2.resize(img, (CELLS_TOTAL * 40,) * 2,
                      interpolation=cv2.INTER_NEAREST)

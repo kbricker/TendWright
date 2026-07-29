@@ -914,8 +914,11 @@ def _selftest() -> None:
                 time.sleep(0.05)
             return False
 
-        want("a camera says whether perception is even permitted",
-             cam_status()["may_detect"] is True)
+        # Detection needs the SYSTEM libapriltag as of #713.5, and there is
+        # no Windows build — so which half of this runs is a property of the
+        # machine, not a skip. Both halves are real behaviour worth
+        # asserting, and neither is allowed to pass by default.
+        have_tags = cam_status()["may_detect"]
 
         t_plain = hold_stream("", 2.0)
         want("a plain stream opens the camera...",
@@ -925,20 +928,45 @@ def _selftest() -> None:
              cam_status()["detecting"] is False)
         t_plain.join(timeout=10)
 
-        t_tags = hold_stream("?tags=1", 2.0)
-        want("asking for tags turns detection on",
-             settles(lambda: cam_status()["detecting"] is True))
-        t_tags.join(timeout=10)
-        want("...and it stops again when that consumer leaves",
-             settles(lambda: cam_status()["detecting"] is False))
+        if have_tags:
+            want("a camera says whether perception is even permitted",
+                 cam_status()["may_detect"] is True)
+            t_tags = hold_stream("?tags=1", 2.0)
+            want("asking for tags turns detection on",
+                 settles(lambda: cam_status()["detecting"] is True))
+            t_tags.join(timeout=10)
+            want("...and it stops again when that consumer leaves",
+                 settles(lambda: cam_status()["detecting"] is False))
 
-        solo = page("/cam/t/")
-        want("the solo page offers a way to turn the overlay ON — without "
-             "a visible control, an operator sees no overlays and "
-             "concludes detection is broken",
-             "tags=1" in solo and "turn on" in solo)
-        want("...and a way back off once it is on",
-             "turn off" in page("/cam/t/?tags=1"))
+            solo = page("/cam/t/")
+            want("the solo page offers a way to turn the overlay ON — "
+                 "without a visible control, an operator sees no overlays "
+                 "and concludes detection is broken",
+                 "tags=1" in solo and "turn on" in solo)
+            want("...and a way back off once it is on",
+                 "turn off" in page("/cam/t/?tags=1"))
+        else:
+            # The libapriltag-absent path. It must DEGRADE, not fail: a
+            # machine without the library still serves every camera, says
+            # so where an operator will look, and never claims it can
+            # detect. Losing this quietly is how someone spends an
+            # afternoon on the camera instead of on apt.
+            print("  (libapriltag absent — asserting the veto path)")
+            want("without libapriltag a camera reports may_detect=false "
+                 "rather than pretending", cam_status()["may_detect"] is False)
+            want("...and asking for tags anyway does NOT start detection "
+                 "or break the stream",
+                 cam_status()["detecting"] is False)
+            t_asked = hold_stream("?tags=1", 2.0)
+            want("...the stream still serves frames with tags requested, "
+                 "because a missing detector is a veto and not an error",
+                 settles(lambda: cam_status()["open"]))
+            want("...and detection still never runs",
+                 cam_status()["detecting"] is False)
+            t_asked.join(timeout=10)
+            want("...and the solo page says the overlay is unavailable "
+                 "instead of offering a control that cannot work",
+                 "unavailable" in page("/cam/t/"))
         srv3.shutdown()
         mgr3.shutdown()
     finally:

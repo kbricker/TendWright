@@ -70,7 +70,17 @@ spec `spec-tendwright-overview`).
   gripper model files vendored into the repo (not a dependency).
 - **Approved stack (bench toolkit, per Kyle 2026-07-21):** `feetech-servo-sdk`
   + `pyserial` (STS3215 bus control — minimal-SDK route, NOT LeRobot);
-  `opencv-python` + `pupil-apriltags` (camera preview, tag detection).
+  `opencv-python` (camera preview).
+- **Tag detection is the SYSTEM `libapriltag`, not a Python package** (Kyle
+  2026-07-29, plan #713.5). `pupil-apriltags` was dropped entirely: it is at
+  its final release and vendors AprilTag 3.1.x, which leaks 12*sz bytes per
+  failed cluster in `quad_segment_maxima` — measured at 11.19 kB per
+  `detect()` call. Install with `sudo apt install libapriltag3t64` (Ubuntu
+  ships 3.4.5, which has the 2019 fix). The ctypes binding is ours:
+  `hardware/bench/apriltag.py`. **There is no Windows build**, so detection
+  is cell1-side; `cammanager` treats a missing library as a third veto
+  (loud on stderr, `may_detect=false` in `/status`) rather than refusing to
+  serve cameras.
 - **Python:** simulation-first. Hardware code only lands after the sim version
   of the same rung works.
 - **Review:** CodeRabbit is NOT on this repo. Before completing any plan, run

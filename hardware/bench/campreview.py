@@ -43,7 +43,8 @@ _USER_FONTDIR = os.environ.get("QT_QPA_FONTDIR")
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
-from pupil_apriltags import Detector  # noqa: E402
+
+from .apriltag import TAG_FAMILY, Detector  # noqa: E402
 
 
 def _fix_qt_fonts() -> None:
@@ -88,7 +89,6 @@ _fix_qt_fonts()
 # servo SDK out of their import graph entirely (errors.py exists for this).
 from hardware.errors import BenchError, make_run_tool  # noqa: E402
 
-TAG_FAMILY = "tag36h11"
 FPS_WINDOW = 30  # sliding-window samples for the FPS readout (~1-3 s)
 # Default view-window width: 960x540 is a quarter of the bench's 1080p
 # screen by area — Kyle never watches the preview at 100%. The clamp is a

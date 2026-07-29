@@ -310,11 +310,15 @@ class SimCam:
         bench runs can read it.
         """
         import cv2
-        import pupil_apriltags as pa
+
+        from hardware.bench.apriltag import TAG_FAMILY, Detector
 
         gray = (frame if frame.ndim == 2 else
                 cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY))
-        return pa.Detector(families="tag36h11").detect(gray)
+        # Closed rather than left to the collector: the C detector owns a
+        # threadpool, and the sim constructs one of these per call.
+        with Detector(families=TAG_FAMILY) as det:
+            return det.detect(gray)
 
 
 # --------------------------------------------------------------------

@@ -26,11 +26,11 @@ import time
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
 import cv2  # noqa: E402
-from pupil_apriltags import Detector  # noqa: E402
 
 from hardware.errors import BenchError  # noqa: E402
 
-from .campreview import (FpsCounter, TAG_FAMILY, annotate,  # noqa: E402
+from .apriltag import TAG_FAMILY, Detector  # noqa: E402
+from .campreview import (FpsCounter, annotate,  # noqa: E402
                          describe_negotiated, focus_score, read_frame,
                          set_queue_depth)
 from .cameras import CameraSpec, Profile  # noqa: E402
@@ -38,10 +38,11 @@ from .cameras import CameraSpec, Profile  # noqa: E402
 JPEG_QUALITY = 80
 LINGER_S = 3.0  # keep a camera open this long after the last subscriber
 FRAME_WAIT_S = 5.0
-# One detector per manager, not per camera: pupil_apriltags detectors are
-# heavyweight and hold GIL-bound native state. Only full-resolution
-# sessions detect (see _run), so this lock serializes at most a couple
-# of streams rather than the whole fleet.
+# One detector per manager, not per camera: an apriltag detector is
+# heavyweight and holds native state plus its own threadpool, and our
+# binding says plainly that detect() is not thread-safe. Only
+# full-resolution sessions detect (see _run), so this lock serializes at
+# most a couple of streams rather than the whole fleet.
 _DETECT_LOCK = threading.Lock()
 
 
@@ -153,10 +154,14 @@ class Camera:
     def may_detect(self) -> bool:
         """Whether detection is PERMITTED on this camera at all.
 
-        Two vetoes, both of which can only turn detection off, never on:
-        the server-wide `--no-tags` (no detector exists) and the
-        per-camera `tags:` in cameras.json. Nothing here turns detection
-        on — only an explicit request does that (see acquire).
+        THREE vetoes, none of which can ever turn detection on: the
+        server-wide `--no-tags`, the per-camera `tags:` in cameras.json,
+        and libapriltag being absent from the machine (#713.5 — it is a
+        system package now, and there is no Windows build). The first and
+        third present identically here, as "no detector exists"; the
+        difference is visible in camserve's stderr at startup. Nothing
+        here turns detection on — only an explicit request does that
+        (see acquire).
         """
         return self._detector is not None and self.spec.tags
 
@@ -458,7 +463,20 @@ class CameraManager:
     """Owns every registered camera and the janitor that closes idle ones."""
 
     def __init__(self, specs: list[CameraSpec], tags: bool = True):
-        detector = Detector(families=TAG_FAMILY) if tags else None
+        detector = None
+        if tags:
+            try:
+                detector = Detector(families=TAG_FAMILY)
+            except BenchError as exc:
+                # A THIRD veto, alongside --no-tags and per-camera `tags:`
+                # — see Camera.may_detect. libapriltag is a system package
+                # (#713.5) and there is no Windows build, so a machine
+                # without it must still serve cameras rather than refuse to
+                # start. Said LOUDLY on purpose: silent loss of detection
+                # is how an operator concludes the tags are broken and
+                # spends an afternoon on the camera instead of on apt.
+                # /status reports may_detect=false for every camera too.
+                print(f"TAG DETECTION OFF: {exc}", file=sys.stderr)
         self.cameras: dict[str, Camera] = {
             s.name: Camera(s, detector) for s in specs}
         self.order = [s.name for s in specs]
