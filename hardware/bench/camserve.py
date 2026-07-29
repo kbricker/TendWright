@@ -11,6 +11,7 @@ Serves (LAN only, NO auth — never port-forward this):
     http://cell1:8081/cam/<name>/stream multipart MJPEG
     http://cell1:8081/cam/<name>/snapshot   single current JPEG (curl-able)
     http://cell1:8081/status            JSON: every camera's state
+    http://cell1:8081/debug/memory      JSON: where the heap went (#704)
 
 ON-DEMAND CAPTURE — snap and KEEP, on a trigger rather than a timer:
 
@@ -136,6 +137,8 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     return self._tiles()
                 if path == "/status":
                     return self._status()
+                if path == "/debug/memory":
+                    return self._debug_memory()
                 if path.startswith("/cam/"):
                     parts = path[len("/cam/"):].split("/")
                     name = parts[0]
@@ -303,6 +306,35 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "still_interval_s": cam.spec.still_interval_s,
                 })
             self._send(json.dumps({"cameras": out}, indent=2).encode(),
+                       "application/json")
+
+        def _debug_memory(self) -> None:
+            """Where the heap actually went, and whether it is live (#704).
+
+                /debug/memory            read-only: the free-vs-live ratio
+                /debug/memory?trim=1     ...then hand free heap back to the OS
+                /debug/memory?raw=1      ...plus glibc's raw XML
+
+            ALWAYS ON, unlike --debug-memory. That flag turns on
+            tracemalloc, which taxes every allocation and therefore has
+            to be opt-in; this reads bin headers the allocator already
+            maintains and costs nothing measurable. The difference
+            matters because of how #704 went: a gdb attach was the only
+            way to probe a running camserve, and on 2026-07-29 it
+            segfaulted inside __malloc_trim and killed a process that
+            had spent 3 h 42 m growing to 1.26 GB. An endpoint that
+            needs a restart to become available is useless against a
+            leak that takes hours to become visible — the restart is the
+            one thing that destroys the evidence.
+
+            Read-only by default for the same reason: take the number
+            with the heap untouched, THEN trim.
+            """
+            from .memprobe import memory_report
+
+            report = memory_report(trim=self._flag("trim"),
+                                   raw=self._flag("raw"))
+            self._send(json.dumps(report, indent=2).encode(),
                        "application/json")
 
         def _capture(self, names: list[str] | None) -> None:
@@ -779,6 +811,22 @@ def _selftest() -> None:
              ".." not in nasty["frames"][0]["path"]
              and Path(nasty["frames"][0]["path"]).resolve().is_relative_to(
                  tmp.resolve()))
+
+        # --- #704: the leak endpoint answers on a RUNNING server. That
+        # property is the point of it, so it is tested over HTTP rather
+        # than by calling memory_report directly — memprobe's own
+        # selftest already covers the numbers.
+        code, mem = get("/debug/memory")
+        want("memory can be diagnosed on a live server, without the "
+             "restart that destroys the evidence",
+             code == 200 and "rss_mb" in mem and "verdict" in mem)
+        code, trimmed = get("/debug/memory?trim=1")
+        want("...and the trim is opt-in, so the read-only number is "
+             "taken first with the heap untouched",
+             "trim" not in mem and "trim" in trimmed)
+        code, rawed = get("/debug/memory?raw=1")
+        want("...and glibc's raw XML is available when the summary is "
+             "not enough", "raw_xml" in rawed and "raw_xml" not in mem)
 
         # --- #713.6: perception is opt-in per REQUEST, proved over HTTP.
         # cammanager's selftest covers the refcount semantics; this covers
