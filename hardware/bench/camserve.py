@@ -187,6 +187,12 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "<ul>" + "".join(rows) + "</ul></div>")
             self._send(_page("cameras", body), "text/html")
 
+        def _flag(self, name: str) -> bool:
+            """Read a boolean query flag. SILENCE MEANS NO."""
+            raw = (parse_qs(urlparse(self.path).query).get(name)
+                   or [""])[0].strip().lower()
+            return raw in ("1", "true", "yes", "on")
+
         def _wants_tags(self) -> bool:
             """Did this request ask for perception?
 
@@ -196,9 +202,7 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             `tags:` in cameras.json and `--no-tags` are vetoes layered on
             top (see Camera.may_detect); neither can turn detection on.
             """
-            raw = (parse_qs(urlparse(self.path).query).get("tags")
-                   or [""])[0].strip().lower()
-            return raw in ("1", "true", "yes", "on")
+            return self._flag("tags")
 
         def _trouble(self, cam) -> str:
             """Why this camera has no picture, in words — a broken-image
@@ -214,7 +218,10 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             cam = mgr.get(name)
             trouble = self._trouble(cam)
             tags = self._wants_tags()
-            src = f"/cam/{name}/stream" + ("?tags=1" if tags else "")
+            focus = self._flag("focus")
+            q = "&".join([p for p, on in (("tags=1", tags), ("focus=1", focus))
+                          if on])
+            src = f"/cam/{name}/stream" + (f"?{q}" if q else "")
             view = (f"<div class='err'>{trouble}</div>" if trouble else
                     f"<img src='{src}' style='max-width:100vw'>")
             # The toggle is not a nicety. Detection is off unless asked
@@ -231,10 +238,20 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                 toggle = ("<small>tag overlay unavailable &mdash; disabled "
                           "for this camera in cameras.json, or the server "
                           "was started with --no-tags</small>")
+            # Focusing aid: a live sharpness number burned into the frame,
+            # so the barrel can be turned against a value instead of an
+            # impression. Kept out of the way unless asked for.
+            fq = ("?tags=1&focus=1" if tags else "?focus=1")
+            ftog = (f"<a href='/cam/{name}/{'?tags=1' if tags else ''}'>"
+                    f"focus meter: <b>on</b> &mdash; turn off</a>" if focus
+                    else f"<a href='/cam/{name}/{fq}'>focus meter: off "
+                         f"&mdash; turn on</a> <small>(maximise it while "
+                         f"turning the lens barrel)</small>")
             body = (self._nav(name) +
                     f"<div style='padding:4px'>{view}"
                     f"<p>{html.escape(cam.spec.location or '')} "
-                    f"&middot; {cam.spec.solo} &middot; {toggle}</p></div>")
+                    f"&middot; {cam.spec.solo} &middot; {toggle} "
+                    f"&middot; {ftog}</p></div>")
             self._send(_page(f"camera {name}", body), "text/html")
 
         def _tiles(self) -> None:
@@ -277,6 +294,10 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     # expensive thing running invisibly is how the last
                     # two bugs in this file stayed hidden.
                     "detecting": cam.detecting,
+                    # Sharpness of the centre half, live, while someone is
+                    # focusing. 0 when nobody asked. Only the TREND means
+                    # anything -- see campreview.focus_score.
+                    "focus_score": round(cam.focus_score, 1),
                     "may_detect": cam.may_detect,
                     "error": cam.error,
                     "still_interval_s": cam.spec.still_interval_s,
@@ -326,8 +347,8 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             profile = cam.spec.tile if tile else cam.spec.solo
             # Read once and pass the SAME value to release, so the tag
             # refcount cannot drift no matter what happens in between.
-            tags = self._wants_tags()
-            run = cam.acquire(profile, tags)  # raises before any bytes go out
+            tags, focus = self._wants_tags(), self._flag("focus")
+            run = cam.acquire(profile, tags, focus)  # raises before bytes
             try:
                 self.send_response(200)
                 self.send_header(
@@ -358,7 +379,7 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     self.wfile.write(jpeg)
                     self.wfile.write(b"\r\n")
             finally:
-                cam.release(tags)
+                cam.release(tags, focus)
 
     return Handler
 

@@ -108,6 +108,33 @@ QUEUE_SHALLOW_RATIO = 0.8
 run_tool = make_run_tool("unplug/replug the camera and re-run")
 
 
+def focus_score(frame) -> float:
+    """How sharp the middle of the frame is. Higher is sharper.
+
+    Variance of the Laplacian — the standard focus measure. A fixed
+    M12 lens is focused by ROTATING THE BARREL, and by eye that is a
+    guess: the eye is poor at the last quarter turn and a live preview
+    at 30 fps flatters everything. A number you can maximise is a
+    different job.
+
+    Measured on the CENTRE HALF only. Turning a barrel changes the
+    magnification slightly, and vignetting and lens softness at the
+    corners move with focus too, so scoring the whole frame mixes those
+    in and the peak drifts. The centre keeps the content constant.
+
+    ABSOLUTE VALUES MEAN NOTHING — it scales with scene texture,
+    exposure and resolution. Only the trend as you turn the barrel is
+    information. Peak it, then stop.
+    """
+    h, w = frame.shape[:2]
+    roi = frame[h // 4:h - h // 4, w // 4:w - w // 4]
+    if roi.size == 0:
+        return 0.0
+    if roi.ndim == 3:
+        roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(roi, cv2.CV_64F).var())
+
+
 def next_deadline(deadline: float, period: float) -> float:
     """The next frame deadline, one period on.
 

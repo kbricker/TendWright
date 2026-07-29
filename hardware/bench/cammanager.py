@@ -31,7 +31,8 @@ from pupil_apriltags import Detector  # noqa: E402
 from hardware.errors import BenchError  # noqa: E402
 
 from .campreview import (FpsCounter, TAG_FAMILY, annotate,  # noqa: E402
-                         describe_negotiated, read_frame, set_queue_depth)
+                         describe_negotiated, focus_score, read_frame,
+                         set_queue_depth)
 from .cameras import CameraSpec, Profile  # noqa: E402
 
 JPEG_QUALITY = 80
@@ -108,6 +109,9 @@ class _Run:
         # so detection switches on and off LIVE, with no reopen. Starts
         # clear; Camera._sync_tags_locked owns every write to it.
         self.tags = threading.Event()
+        # Same opt-in shape as tags: a live sharpness readout for
+        # focusing the barrel, off unless someone asked for it.
+        self.focus = threading.Event()
 
 
 class Camera:
@@ -132,6 +136,9 @@ class Camera:
         # _subs. Detection runs while this is above zero and stops when
         # the last consumer of it leaves — the camera keeps streaming.
         self._tag_subs = 0
+        self._focus_subs = 0
+        # Latest sharpness reading, for whoever is turning the barrel.
+        self.focus_score = 0.0
         self._lock = threading.Lock()
         self._release_at = 0.0
         self._retired: list[threading.Thread] = []
@@ -159,7 +166,8 @@ class Camera:
         run = self._run_state
         return bool(run and run.tags.is_set())
 
-    def acquire(self, profile: Profile, tags: bool = False) -> _Run:
+    def acquire(self, profile: Profile, tags: bool = False,
+                focus: bool = False) -> _Run:
         """Register interest and return the session to read frames from.
 
         Callers hold the returned _Run, so a later restart cannot swap
@@ -183,6 +191,8 @@ class Camera:
             self._subs += 1
             if tags:
                 self._tag_subs += 1
+            if focus:
+                self._focus_subs += 1
             try:
                 run = self._run_state
                 if run is not None and run.thread is not None \
@@ -202,17 +212,21 @@ class Camera:
                 self._subs = max(0, self._subs - 1)
                 if tags:
                     self._tag_subs = max(0, self._tag_subs - 1)
+                if focus:
+                    self._focus_subs = max(0, self._focus_subs - 1)
                 raise
             finally:
                 if retire is not None:
                     self._retire_locked(retire)
 
-    def release(self, tags: bool = False) -> None:
-        """Drop a subscription. `tags` MUST match what acquire was given."""
+    def release(self, tags: bool = False, focus: bool = False) -> None:
+        """Drop a subscription. The flags MUST match what acquire got."""
         with self._lock:
             self._subs = max(0, self._subs - 1)
             if tags:
                 self._tag_subs = max(0, self._tag_subs - 1)
+            if focus:
+                self._focus_subs = max(0, self._focus_subs - 1)
             self._sync_tags_locked()
             if self._subs == 0:
                 self._release_at = time.monotonic() + LINGER_S
@@ -234,6 +248,11 @@ class Camera:
             run.tags.set()
         else:
             run.tags.clear()
+        if self._focus_subs > 0:
+            run.focus.set()
+        else:
+            run.focus.clear()
+            self.focus_score = 0.0
 
     def reap(self) -> None:
         """Janitor: close idle cameras once their linger has expired, and
@@ -343,6 +362,12 @@ class Camera:
             while not run.stop.is_set():
                 frame = read_frame(cap)
                 self.fps = counter.tick()
+                if run.focus.is_set():
+                    self.focus_score = focus_score(frame)
+                    cv2.putText(frame, f"focus {self.focus_score:7.0f}",
+                                (10, frame.shape[0] - 18),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.1,
+                                (0, 255, 255), 3)
                 if run.tags.is_set():
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     with _DETECT_LOCK:
