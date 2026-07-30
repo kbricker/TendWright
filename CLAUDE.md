@@ -43,9 +43,15 @@ spec `spec-tendwright-overview`).
   when accounting for memory but is NOT to be "reclaimed": Kyle 2026-07-29,
   *"I DO use the desktop when im at the bench, so gnome is fine."* Dropping it
   is on the table only for later headless deployments as the cell matures.
-- **spark has no sudo on cell1** — `sudo -n` fails and `ptrace_scope=1`, so
-  anything needing root (apt, gdb attach) has to be handed to Kyle as a command
-  to run. `ssh cell1 'sudo ...'` also fails for want of a tty; use `ssh -t`.
+- **spark CAN shut cell1 down**, and nothing else as root. A scoped rule
+  grants `(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/shutdown,
+  /usr/bin/systemctl poweroff`. Everything else — `apt`, gdb attach
+  (`ptrace_scope=1`) — is handed to Kyle as a command to run, and
+  `ssh cell1 'sudo ...'` needs `ssh -t` for the password prompt.
+  **Check with `sudo -n -l`, never `sudo -n true`**: the latter probes the
+  general `(ALL:ALL) ALL` entry, which requires a password, so it reports
+  failure even when a scoped grant exists. That mistake made spark tell Kyle
+  it could not power the box down while the rule to do so was already live.
 - `unattended-upgrades` is **active and enabled**, so packages update on their
   own. Account for that when a long soak runs: a service restarting mid-run is
   a confound.
