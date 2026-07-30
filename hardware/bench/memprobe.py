@@ -1,14 +1,34 @@
 """Find out where a long-running process is putting its memory (plan #704).
 
 camserve reached 3.7 GB of cell1's 5.2 GB and was still growing at about
-21 MB/min with one viewer attached. Two hypotheses were tested and both
-were wrong — the AprilTag detector does not leak (600 detects grew peak
-RSS by 0.2 MB), and it is not thread stacks (26 threads) or descriptors
-(7). The memory is 3.77 GB of ordinary private-dirty heap.
+21 MB/min with one viewer attached.
 
-So stop guessing. This periodically records where the process actually
-allocated, and the difference between one sample and the next is the
-leak — no theory required.
+IT WAS THE APRILTAG DETECTOR, and an early version of this docstring said
+it was not. That sentence is preserved here inverted, because how it was
+got wrong is the most useful thing in this file:
+
+    "the AprilTag detector does not leak (600 detects grew peak RSS by
+    0.2 MB)"
+
+0.2 MB over 600 calls is 341 bytes per detect. The leak was 12*sz bytes
+per failed cluster in quad_segment_maxima, which for sz=28 is 336. That
+measurement was a POSITIVE DETECTION, read as noise because it was small
+— and it was small because the test used a blank image, which produces
+almost none of the clusters that leak. A detector that does not leak grows
+0.00 MB over 600 calls, not 0.2. The same mistake was then made twice more
+on the same plan: a pure-noise stimulus whose speckle was filtered before
+reaching the leaking function, and a stage bisect fed a JPEG-compressed
+frame, which has had exactly the high-frequency detail removed that
+generates clusters. Fixed in #713.5 by dropping pupil-apriltags for the
+system libapriltag; see hardware/bench/apriltag.py.
+
+Genuinely eliminated, and still true: thread stacks (26) and descriptors
+(7). The memory was ordinary private-dirty heap.
+
+The lesson this file exists to enforce: a small non-zero number is not
+zero, and a stimulus that does not reach the suspect code proves nothing
+about it. So stop guessing — record where the process actually allocated,
+and let the difference between one sample and the next be the leak.
 
 WHAT IT COSTS. `tracemalloc` roughly doubles allocation cost and adds a
 frame-capture per allocation, so this is a DIAGNOSTIC, not something to
@@ -81,11 +101,11 @@ fastbin, `r = r->fd` over every bin), so:
   cannot tell you that is why.** That is the blind spot, and it is not
   the one an earlier version of this file claimed.
 
-`?trim=1` is strictly worse: `mtrim` calls `malloc_consolidate`, which
-WRITES through `fd`/`bk` while unlinking. Treat it as an operation that
-may kill the process, fire it deliberately and last, and take the
-read-only numbers first. It is opt-in for that reason, not merely for
-tidiness.
+`?trim=<pid>` is strictly worse: `mtrim` calls `malloc_consolidate`,
+which WRITES through `fd`/`bk` while unlinking. It takes the process's own
+pid rather than a boolean precisely because it can be fatal — a bare
+`?trim=1` was firable by a browser prefetch or a stale tab. Fire it
+deliberately and last, after every read-only number is banked.
 
 Every successful read is therefore also a corruption test. The #704 soak
 walked these lists every 15 s for an hour without faulting, which is
@@ -93,7 +113,7 @@ what actually argued corruption down — no separate run was needed.
 
 NOT A FOLLOW-UP: `MALLOC_CHECK_=3`. glibc 2.34 moved malloc debugging
 out of libc entirely; the tunable is inert without
-`LD_PRELOAD=libc_malloc_debug.so.0`. cell1 runs 2.39, so a run under it
+`LD_PRELOAD=libc_malloc_debug.so.0`. cell1 runs 2.43, so a run under it
 would abort nothing and be written up as "no corruption detected" — a
 null result manufactured by the experiment not existing. It also cannot
 see fragmentation, which is what a "mostly free" reading is about.

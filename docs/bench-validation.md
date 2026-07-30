@@ -78,7 +78,18 @@ uv run python -m sim.twin validate     # must predict BOTH bench collisions
 uv run python -m sim.twin frames
 uv run python -m hardware.bench.camserve --selftest
 uv run python -m sim.meshcheck selftest       # printed STLs vs the model
+uv run python -m hardware.bench.apriltag selftest  # MUST run on cell1
+uv run python -m hardware.bench.tagsheet --selftest
+uv run python -m hardware.bench.kasa selftest      # power gates, no device
 ```
+
+**Run these ON CELL1, not on the desk.** `apriltag` and `tagsheet` both
+need the system `libapriltag`, which is Linux-only (#713.5), and on the
+desk they report `PARTIAL` with every meaningful check skipped. The
+apriltag one carries the ONLY regression guard for #713.5's leak fix —
+200 detections on a cluster-rich frame must stay under 0.2 kB/call against
+the 11.19 kB/call the old library leaked — so a `PARTIAL` there means that
+guard did not run.
 
 All report OK. `sim.twin validate` is the important one — it is
 the model asserting it still predicts the two collisions the bench

@@ -324,10 +324,16 @@ class SimCam:
 
         gray = (frame if frame.ndim == 2 else
                 cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY))
-        # Closed rather than left to the collector: the C detector owns a
-        # threadpool, and the sim constructs one of these per call.
-        with Detector(families=TAG_FAMILY) as det:
-            return det.detect(gray)
+        # Built ONCE and kept. Constructing a detector is not cheap: it runs
+        # quick_decode_init, which for tag36h11 with 2 bits corrected
+        # allocates and fills 587 x (1 + 36 + 36x35) entries at 16 bytes —
+        # about 36 MB, every time. The previous shape made one per call, so
+        # a selftest that detects a handful of frames churned hundreds of
+        # megabytes for no reason. Lazily, so importing simcam on a machine
+        # without libapriltag still works and only detect() reports it.
+        if getattr(self, "_detector", None) is None:
+            self._detector = Detector(families=TAG_FAMILY)
+        return self._detector.detect(gray)
 
 
 # --------------------------------------------------------------------

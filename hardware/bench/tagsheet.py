@@ -106,12 +106,14 @@ def parse_ids(spec: str) -> list[int]:
     return out
 
 
-def build(ids: list[int], mm: float, note: str) -> str:
+def build(ids: list[int], mm: float, note: str,
+          check: bool = True) -> str:
     img_mm = mm * CELLS_TOTAL / CELLS_BLACK
     cells = []
     for i in ids:
         png = tag_png(i)
-        verify(i, png)
+        if check:
+            verify(i, png)
         b64 = base64.b64encode(png).decode()
         cells.append(
             f'  <div class="tag">\n'
@@ -159,8 +161,15 @@ correctly (10 stripes of 10mm)</div>
 
 
 def selftest() -> int:
-    for i in (0, 8, 15, 100, 586):
-        verify(i, tag_png(i))
+    """Geometry first, read-back second.
+
+    The read-back needs the system libapriltag, which is Linux-only as of
+    #713.5. It used to be first, so on a machine without the library the
+    BenchError took out the five checks below it that need no detector at
+    all — quiet-zone geometry, the sizing assertion, the parse_ids refusal.
+    Ordering them the other way round means the desk still tests everything
+    it CAN, and the one thing it cannot is named rather than swallowed.
+    """
     png = tag_png(8)
     img = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_GRAYSCALE)
     assert img.shape == (CELLS_TOTAL, CELLS_TOTAL), img.shape
@@ -175,7 +184,21 @@ def selftest() -> int:
         pass
     else:
         raise AssertionError("an out-of-range id was accepted")
-    print("tagsheet selftest OK")
+    print("tagsheet geometry OK")
+
+    try:
+        for i in (0, 8, 15, 100, 586):
+            verify(i, tag_png(i))
+    except BenchError as exc:
+        # NOT "OK". The read-back is the check that stops an undecodable
+        # sheet reaching the printer, so a run without it is partial and
+        # has to say so in the word a reader skims for.
+        print(f"tagsheet PARTIAL — read-back NOT RUN: {exc}", file=sys.stderr)
+        print("  5 tags were generated but never decoded. Full coverage: "
+              "ssh cell1 'cd ~/TendWright && uv run python -m "
+              "hardware.bench.tagsheet --selftest'", file=sys.stderr)
+        return 0
+    print("tagsheet selftest OK (5 tags generated and read back)")
     return 0
 
 
@@ -189,6 +212,11 @@ def run() -> int:
     ap.add_argument("--out", default=None, help="output .html")
     ap.add_argument("--note", default="", help="extra line for the sheet")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="skip the detector read-back. ONLY for generating a "
+                         "sheet on a machine without libapriltag (the desk); "
+                         "the sheet is then unproven and must not be printed "
+                         "without checking it elsewhere")
     args = ap.parse_args()
     if args.mm <= 0:
         raise BenchError(f"--mm must be positive, got {args.mm:g}",
@@ -196,10 +224,20 @@ def run() -> int:
     ids = parse_ids(args.ids)
     out = Path(args.out or f"docs/bench-apriltags-{args.mm:g}mm.html")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(build(ids, args.mm, args.note), encoding="utf-8")
+    out.write_text(build(ids, args.mm, args.note, check=not args.no_verify),
+                   encoding="utf-8")
     print(f"{out}: {len(ids)} tags (IDs {ids[0]}-{ids[-1]}), "
           f"{args.mm:g}mm black square, printed {args.mm * 1.25:g}mm overall")
-    print("every tag was read back through the detector before writing")
+    if args.no_verify:
+        # Loud, because the whole reason verify() exists is that a sheet
+        # which does not decode only reveals itself at the bench, after
+        # printing and cutting.
+        print("!! --no-verify: NOT ONE TAG WAS READ BACK. This sheet is "
+              "unproven.", file=sys.stderr)
+        print("!! Re-run without the flag on the cell controller before you "
+              "print it.", file=sys.stderr)
+    else:
+        print("every tag was read back through the detector before writing")
     return 0
 
 
