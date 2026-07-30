@@ -76,13 +76,29 @@ class _PoseFsm(StateMachine):
     TRANSPARENT_GUARD_ERRORS = (BenchError, serial.SerialException)
 
 
+#: `pose_distance` to a pose that names nothing. Not zero — see below.
+UNREACHABLE = 1 << 30
+
+
 def pose_distance(a: dict[int, int], b: dict[int, int]) -> int:
     """Worst per-joint difference, in ticks, over the joints B names.
 
     Over B's joints rather than A's: B is the pose being asked about,
     and a joint it does not mention is a joint it makes no claim about.
+
+    A pose that names NOTHING is therefore infinitely far, not zero.
+    The natural reading of "worst difference over an empty set" is 0,
+    and that reading is a security hole: every caller here treats a
+    small distance as "the arm is there". An empty target made the
+    encoder guard pass from any position and made `at()` prefer the
+    empty pose over every real one, because 0 wins the nearest-pose
+    comparison outright. `library_pose` now refuses to build such a
+    pose, so this is the second line of defence — but a guard whose
+    failure mode is "authorise everything" gets two.
     """
-    return max((abs(b[i] - a[i]) for i in b if i in a), default=0)
+    if not b:
+        return UNREACHABLE
+    return max((abs(b[i] - a[i]) for i in b if i in a), default=UNREACHABLE)
 
 
 class PoseMachine:
@@ -299,13 +315,20 @@ class PoseMachine:
         from sim.clip import Clip
 
         from .guards import StrainWatch
-        from .runner import run_clip
+        from .runner import check_hold_structure, run_clip
 
         run_kwargs.setdefault("strain", StrainWatch(sorted(self.cals)))
         frm = self.state
-        self.fsm.fire(f"go:{to}", bus=bus)
         clip = Clip(f"{frm}->{to}",
                     [self.poses[frm], self.poses[to]], self.profile)
+        # STRUCTURE FIRST, BEFORE THE MACHINE COMMITS. This refusal is
+        # knowable from the clip alone — it needs no bus and no twin —
+        # and `fire` moves the state the instant it passes its guards.
+        # Refusing afterwards drove the machine to BETWEEN for a move
+        # that never happened and never could, so an authoring mistake
+        # cost the operator a resync every time they hit it.
+        check_hold_structure(clip, self.cals)
+        self.fsm.fire(f"go:{to}", bus=bus)
         try:
             return run_clip(bus, self.cals, clip, gate=self.gate,
                             **run_kwargs)

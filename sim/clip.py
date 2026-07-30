@@ -324,6 +324,7 @@ def pose_from_doc(cals: dict, name: str, body: dict) -> Pose:
     author never asked for (the same failure #670 recorded in IK).
     """
     ticks: dict[int, int] = {}
+    seen: dict[int, str] = {}
     for key, value in body.items():
         try:
             i = int(key)
@@ -360,8 +361,35 @@ def pose_from_doc(cals: dict, name: str, body: dict) -> Pose:
                 f"range {cal.min}..{cal.max}",
                 "a pose outside the calibrated range is unreachable; "
                 "re-author it or re-calibrate the joint")
+        # "3" and "03" both parse to joint 3, and the second silently
+        # won — a 90 deg difference with no error.
+        if i in seen:
+            raise BenchError(
+                f"pose '{name}' names joint {i} twice, as {seen[i]!r} and "
+                f"{key!r}", "use one spelling per joint")
+        seen[i] = key
         ticks[i] = tick
     return Pose(name, ticks)
+
+
+def _nonempty(pose: Pose, where: str) -> Pose:
+    """Refuse a library pose that positions no joints.
+
+    A POSE THAT POSITIONS NOTHING IS NOT A POSE, and it is actively
+    dangerous rather than merely useless: `pose_distance` measures over
+    the joints the TARGET names, so an empty target is zero ticks from
+    everywhere. One such entry in poses.json made PoseMachine's encoder
+    guard — the one whose refusal reads "the encoders, not the plan,
+    decide where the arm is" — pass unconditionally from any arm
+    position, and made `at()` report it in preference to every real
+    pose forever after, because 0 wins the nearest-pose comparison.
+    """
+    if not pose.ticks:
+        raise BenchError(
+            f"{where}: pose '{pose.name}' positions no joints",
+            'give it joints, or `"base": "rest"` to start from the '
+            'calibrated rest pose')
+    return pose
 
 
 def library_pose(cals: dict, name: str, body: dict,
@@ -369,11 +397,11 @@ def library_pose(cals: dict, name: str, body: dict,
     """One entry of the pose library. Two body shapes, both supported.
 
         "PICK":  {"1": 0, "2": -20, "3": 90, ...}       plain joint map
-        "CLEAR": {"base": "rest", "joints": {"3": 90}, "holds": [3]}
+        "CLEAR": {"base": "rest", "joints": {"3": 90}}
 
     The plain map is the original form and still means exactly what it
-    did. The extended form exists for two things the plain one cannot
-    say, both of which a real library needs:
+    did. The extended form exists for one thing the plain one cannot
+    say:
 
     **`base: "rest"` starts from the CALIBRATED rest pose.** Without it,
     authoring REST means copying six numbers out of calibration.json
@@ -383,22 +411,59 @@ def library_pose(cals: dict, name: str, body: dict,
     the library reads the value rather than restating it. Anything not
     overridden by `joints` carries the calibrated rest through.
 
-    **`holds` names the joints that must physically BE where this pose
-    puts them** (see `Pose.holds`). A library pose that is only safe
-    with the elbow open needs to say so wherever it is used; without
-    this, the guard the executor enforces is reachable from clip files
-    and not from the library, which is backwards — the library is the
-    part meant to be reused.
+    **`holds` IS NOT SUPPORTED HERE, and was removed on 2026-07-30 the
+    same day it was added.** Two independent review lenses found the
+    same thing: a library pose carrying holds is unusable by every
+    consumer, because a hold means "these joints must ALREADY be here
+    before the edge into this pose is commanded" and a library pose is
+    a STATE, not the entry to one. Concretely, for a `CLEAR` holding
+    the elbow open, `check_hold_structure` refuses every edge INTO it
+    (the edge is what moves the elbow there) and every edge OUT of it
+    (it becomes pose 0, whose holds cannot be pre-verified). Both
+    directions, no author-side workaround.
+
+    What an author means by "CLEAR holds the elbow" is a property of
+    BEING at the pose — checkable on departure, or after arrival — and
+    that is a different mechanism from the entry guard, not a
+    configuration of it. Clip files still carry `holds` and they work;
+    the library half was speculative and shipping it dead would have
+    read as support. Design it when something needs it.
     """
     if not isinstance(body, dict):
         raise BenchError(f"{where}: pose '{name}' is not an object",
                          "a pose is a joint map, or an object with "
                          "`base`/`joints`/`holds`")
-    # Joint keys are numeric strings, so these three names can never
-    # collide with one — the two forms are distinguishable without a
-    # version flag or a guess.
-    if not any(k in body for k in ("base", "joints", "holds")):
-        return pose_from_doc(cals, name, body)
+    # WHICH SHAPE IS THIS. The keys `base`/`joints`/`holds` cannot
+    # collide with a joint id, which is what makes the two forms
+    # distinguishable — but non-collision is NOT the same as
+    # unambiguous, and the first version of this shipped as if it were.
+    # A body carrying BOTH a joint map and an extended key read as
+    # extended and then took its joints only from `body["joints"]`,
+    # silently discarding every numeric entry: `{"1":0,...,"base":"rest"}`
+    # loaded as the bare rest fold, up to 72 degrees per joint away from
+    # what was written, with no error. That is the natural edit someone
+    # makes when converting a plain pose to "start from rest and
+    # override", so it is refused rather than guessed at.
+    extended = [k for k in body if k in ("base", "joints")]
+    if "holds" in body:
+        raise BenchError(
+            f"{where}: pose '{name}' declares `holds`, which the pose "
+            f"library does not support",
+            "a hold guards the ENTRY to a pose, and a library pose is a "
+            "state rather than an entry — every edge into or out of it "
+            "is refused. Put the hold on the pose inside a clip file")
+    if not extended:
+        return _nonempty(pose_from_doc(cals, name, body), where)
+    stray = sorted(k for k in body
+                   if k not in ("base", "joints")
+                   and not str(k).startswith("_"))
+    if stray:
+        raise BenchError(
+            f"{where}: pose '{name}' mixes {stray} with "
+            f"{sorted(extended)}",
+            "a pose is EITHER a plain joint map, OR an object with "
+            "`base`/`joints` — put the joints inside `joints`. "
+            "Keys starting with _ are ignored as comments")
 
     ticks: dict[int, int] = {}
     base = body.get("base")
@@ -414,19 +479,20 @@ def library_pose(cals: dict, name: str, body: dict,
         # Commands must not go outside the range; see `clamp_goal`.
         ticks = {i: max(c.min, min(c.max, c.rest)) for i, c in cals.items()}
 
-    named = body.get("joints") or {}
+    named = body.get("joints")
+    # Type-checked BEFORE the `or {}` default: `body.get("joints") or {}`
+    # swallows every FALSY non-dict — null, [], 0, "" — and produced a
+    # pose positioning nothing at all. See the empty-pose refusal below
+    # for why that is not a harmless no-op.
+    if named is None:
+        named = {}
     if not isinstance(named, dict):
-        raise BenchError(f"{where}: pose '{name}' has a non-object `joints`")
-    ticks.update(pose_from_doc(cals, name, named).ticks)
-    holds = _holds_from_doc(where, name, body.get("holds"), set(cals))
-    missing = sorted(j for j in holds if j not in ticks)
-    if missing:
         raise BenchError(
-            f"{where}: pose '{name}' holds joint(s) {missing} without "
-            f"positioning them",
-            'add them to `joints`, or give the pose `"base": "rest"` so '
-            'every joint has a value')
-    return Pose(name, ticks, holds)
+            f"{where}: pose '{name}' has a non-object `joints` "
+            f"({type(named).__name__})",
+            'e.g. "joints": {"3": 90}')
+    ticks.update(pose_from_doc(cals, name, named).ticks)
+    return _nonempty(Pose(name, ticks), where)
 
 
 def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
@@ -471,6 +537,14 @@ def _holds_from_doc(where: str, label: str, raw, calibrated: set) -> tuple:
                          "holds is a list of servo ids, e.g. [3, 4]")
     out: list[int] = []
     for item in raw:
+        # `int()` is too generous for a safety guard: True is an int in
+        # Python so [true] guarded joint 1, and 2.9 truncated silently to
+        # joint 2 — a guard on the WRONG joint reads exactly like a guard
+        # on the right one.
+        if isinstance(item, bool) or isinstance(item, float):
+            raise BenchError(
+                f"{where}: pose '{label}' holds {item!r}, which is not a "
+                f"joint id", "holds is a list of whole servo ids, e.g. [3, 4]")
         try:
             j = int(item)
         except (TypeError, ValueError):
@@ -566,7 +640,6 @@ def load_clip(cals: dict, path: Path | str,
         if not isinstance(entry, dict):
             raise BenchError(f"{path.name}: pose {n} is not an object")
         label = str(entry.get("name") or f"p{n}")
-        inherited_holds: tuple[int, ...] = ()
         if "pose" in entry and "joints" in entry:
             # Silently merging them would make the file's meaning depend
             # on a precedence rule nobody wrote down.
@@ -582,15 +655,9 @@ def load_clip(cals: dict, path: Path | str,
                     f"{path.name}: pose '{label}' references '{ref}', "
                     f"which is not in poses.json",
                     f"known poses: {known}")
+            # Library poses carry no holds — see `library_pose`. A
+            # clip that needs a guard states it on its own entry.
             named = library[ref].ticks
-            # A library pose's HOLDS come with it. If the library says
-            # this pose is only safe with the elbow open, every clip
-            # that uses it inherits that — otherwise the guard would
-            # depend on each author remembering to restate it, which is
-            # exactly the property the library exists to remove. An
-            # explicit `holds` on the entry still wins, so a clip can
-            # add to it; it just cannot silently lose it.
-            inherited_holds = library[ref].holds
         elif "joints" in entry:
             named = pose_from_doc(cals, label, entry["joints"] or {}).ticks
         else:
@@ -614,8 +681,6 @@ def load_clip(cals: dict, path: Path | str,
                 f"{path.name}: pose '{label}' names joint(s) {extra}, "
                 f"which are not calibrated")
         holds = _holds_from_doc(path.name, label, entry.get("holds"), want)
-        if inherited_holds:
-            holds = tuple(sorted(set(holds) | set(inherited_holds)))
         # A hold must be INTRODUCED by a pose that states the position
         # it is asserting, and may then be inherited by poses that keep
         # holding it. Without this rule carry-forward silently supplies
@@ -636,14 +701,30 @@ def load_clip(cals: dict, path: Path | str,
         silent = sorted(j for j in holds
                         if j not in named and j not in inherited)
         if silent:
+            # THE HINT USED TO NAME AN OPTION THE RUNNER FORBIDS. It said
+            # "or hold it from the pose that opens it" — but a pose that
+            # opens a joint MOVES it, and `check_hold_structure` refuses
+            # a hold on a joint its own edge moves, so following the hint
+            # produced a clip that loaded and was then refused at run
+            # time. Only restating the joint works.
+            #
+            # And restating IS the right requirement, tempting as it is
+            # to accept "the previous pose named it". That relaxation
+            # reopens the refold trap above: `refold {"3": 0}` names j3,
+            # so `sweepB {holds:[3]}` would sail through guarding the
+            # FOLDED tick again. The two cases are syntactically
+            # identical — one previous pose established the value, the
+            # other reverted it — so the only honest discriminator is
+            # making the author write down what they are guarding, at
+            # the point they guard it.
             raise BenchError(
                 f"{path.name}: pose '{label}' holds joint(s) {silent} "
                 f"without positioning them, and the pose before it does "
                 f"not hold them either",
                 "the pose that first holds a joint must say where — "
                 "otherwise the guarded value is whatever an earlier pose "
-                "happened to leave there. Add it to `joints`, or hold it "
-                "from the pose that opens it")
+                "happened to leave there. Restate the joint in `joints` "
+                "on this pose, at the value you mean to guard")
         poses.append(Pose(label, ticks, holds))
 
     return Clip(str(doc.get("name") or path.stem), poses, profile)

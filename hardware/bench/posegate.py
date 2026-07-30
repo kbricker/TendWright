@@ -50,6 +50,12 @@ class Verdict:
     detail: str                 # one line, always populated
     poses_checked: int = 0
     gated: bool = True          # False = nothing was actually checked
+    # Structurally-nested contacts the twin WAIVED. The twin counts
+    # these "so the gate can say out loud that it looked away" and
+    # prints them in GateReport.summary() — but this Verdict was
+    # dropping the count, so `runner run`, the tool the waiver was added
+    # for, reported a bare "clear" while excusing real penetration.
+    excused: int = 0
 
     @property
     def refused(self) -> bool:
@@ -199,8 +205,12 @@ class PoseGate:
                  self._profile),
             settle_from_measured=from_measured)
         if report.clean:
-            return Verdict(True, f"clear ({report.poses_checked} poses)",
-                           report.poses_checked, True)
+            waived = getattr(report, "nest_excused", 0)
+            note = (f", {waived} structural contact(s) WAIVED"
+                    if waived else "")
+            return Verdict(True,
+                           f"clear ({report.poses_checked} poses{note})",
+                           report.poses_checked, True, waived)
         a, b = poses[0], poses[-1]
 
         # The WORST contact, not the first one found. Order of discovery

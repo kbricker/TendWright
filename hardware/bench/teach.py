@@ -160,7 +160,15 @@ def gate_recording(bus: FeetechBus, ids: list[int], frames: list[list[int]],
     poses = [dict(here)]
     for frame in frames:
         poses.append({**here, **dict(zip(ids, frame))})
-    verdict = gate.check_sequence(poses, label="replay")
+    # `here` came off the encoders, so poses[0] is a FACT — the same
+    # reason runner's gate_clip passes this. Without it, replay from a
+    # cold torque-off start is refused at step 0 over the arm's own
+    # resting slump (measured: shoulder <-> gripper, 0.22 mm), and the
+    # documented escape is --force, which prints "the arm can hit
+    # itself". Training the operator to force past a safety gate for a
+    # benign condition is exactly what the runner fix existed to stop,
+    # and this consumer was missed when that fix landed.
+    verdict = gate.check_sequence(poses, label="replay", from_measured=True)
     if verdict.allowed:
         return (f"collision gate CLEAR — {verdict.poses_checked} poses "
                 f"checked, including the approach to frame 0 (the bench "

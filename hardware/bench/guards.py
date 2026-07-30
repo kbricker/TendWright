@@ -276,6 +276,28 @@ def _selftest() -> None:
     tight = [Hold(joint=3, tick=2111, opening=-1, tol=5)]
     assert tight[0].ok(2116) and not tight[0].ok(2117)
 
+    # 11. TWO-SIDED (opening=0) — the default, and the only mode the clip
+    # layer builds. Until now every case here passed an explicit +/-1, so
+    # the branch production actually uses had no unit coverage at all.
+    two = Hold(joint=3, tick=2000)
+    assert two.opening == 0, "two-sided must be the default"
+    assert two.ok(2000) and two.ok(2000 + HOLD_SAG_TOL_TICKS)
+    assert two.ok(2000 - HOLD_SAG_TOL_TICKS)
+    assert not two.ok(2000 + HOLD_SAG_TOL_TICKS + 1), "drifted OPEN passes"
+    assert not two.ok(2000 - HOLD_SAG_TOL_TICKS - 1), "drifted CLOSED passes"
+    # ...and it is never weaker than the one-sided form it defaults over,
+    # which is what makes the default safe: |d| >= d*opening for +/-1.
+    for act in range(1800, 2201, 7):
+        for d in (+1, -1):
+            assert two.sag(act) >= Hold(joint=3, tick=2000,
+                                        opening=d).sag(act)
+    # 12. describe() reads correctly in both modes — a message naming
+    # only "sagged toward its fold" would read as a bug the first time a
+    # two-sided hold tripped the other way.
+    assert "held at" in two.describe()
+    assert "moved" in two.describe(2100) and "sagged" not in two.describe(2100)
+    assert "sagged" in holds[0].describe(commanded[3] + 60)
+
     _selftest_in_motion(cals, commanded, opening)
     print("guards selftest OK")
 

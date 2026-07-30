@@ -62,7 +62,7 @@ from .monitor import parse_ids
 from .motion import EStop, halt_all
 from .posegate import PoseGate
 from .runner import ClipStopped, run_clip
-from .term import flush_input, read_key, require_interactive
+from .term import read_key, require_interactive
 
 SPEED_BASE = 200  # servo speed units at --speed 1.0 (gentler than jog's 300)
 SPEED_CAP = 400  # servo-side ceiling regardless of --speed
@@ -707,7 +707,10 @@ def run() -> int:
             # joint that settled 25 ticks off-plan is judged where it
             # actually is rather than where the plan assumed.
             outcome = run_clip(bus, cals, clip, gate=gate, strain=strain,
-                               trace=trace, poll_key=poll)
+                               trace=trace, poll_key=poll,
+                               # pose 0 is the arm's measured slump, so
+                               # edge 1 IS the leading settle onto rest.
+                               start_is_measured=True)
             print(f"\n{outcome.summary()}")
             print("routine complete — arm at rest, cutting torque")
             return 0

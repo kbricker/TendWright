@@ -312,6 +312,7 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
              poll_key=None,
              approach_speed: int = APPROACH_SPEED_TICKS,
              on_edge=None,
+             start_is_measured: bool = False,
              quiet: bool = False) -> RunOutcome:
     """Drive the arm through `clip`. The library entry point.
 
@@ -476,17 +477,27 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
         # one: gating the plan against itself would always pass.
         regated = 0
         if gate is not None and gate.active:
-            # NOT from_measured, even though `here` is measured. The
-            # waiver excuses structurally-nested pairs, and a per-edge
-            # check is only two poses — steps 0 and 1 — so the waiver
-            # would cover the ENTIRE check and disable this gate. The
-            # selftest catches exactly that: with it on, a folded joint
-            # 2 stops being caught mid-clip (12.26 mm, a real collision
-            # between a structurally-nested pair). The waiver belongs to
-            # the leading settle, which the up-front gate covers; by the
-            # time an edge plays, the arm is at a pose someone planned.
+            # The waiver applies to EDGE 1 OF A MEASURED-START CLIP and
+            # nowhere else — exactly the twin's documented scope, "the
+            # leading settle (measured pose -> rest)".
+            #
+            # Both broader readings are wrong and each shipped once.
+            # Applying it to EVERY edge disables this gate outright: a
+            # per-edge check is two poses, steps 0 and 1, so the waiver
+            # covers the whole check (the selftest proves it — a folded
+            # joint 2 stops being caught at 12.26 mm). Applying it to NO
+            # edge refuses the leading settle itself: `exercise`'s pose 0
+            # IS the measured slump, so with a fold 35+ ticks deeper than
+            # captured rest — inside check_start_pose's 300-tick
+            # tolerance — the pre-flight passes, the operator confirms,
+            # the arm WAKES UNDER TORQUE, and edge 1 is then refused at
+            # step 0. That is the cold-start deadlock the up-front fix
+            # removed, moved one layer down and made worse by the torque
+            # now being on.
+            leading_settle = start_is_measured and n == 1
             verdict = gate.check_sequence([here, {**here, **b.ticks}],
-                                          label=f"{clip.name}[{n}]")
+                                          label=f"{clip.name}[{n}]",
+                                          from_measured=leading_settle)
             regated = verdict.poses_checked
             if verdict.refused:
                 raise stop(n, a.name, b.name,
@@ -606,7 +617,14 @@ def example_clip_doc(cals: dict[int, JointCal] | None) -> str:
     for i, c in sorted(cals.items()):
         if c.frame is None:
             return EXAMPLE            # cannot author in human units
-        rest[str(i)] = round(human(i, c.rest), 2)
+        # CLAMPED into the calibrated range. `calibrate` accepts a rest
+        # up to REST_TOL_TICKS outside [min,max] — the torque-off arm
+        # settles past it, measured on the bench 2026-07-30 — but
+        # `pose_from_doc` range-checks and REFUSES. Writing the raw rest
+        # made `runner example > my.json && runner show my.json` fail on
+        # exactly the slumped arm this example is for, while `load_clip`'s
+        # own not-found hint points the user at `runner example`.
+        rest[str(i)] = round(human(i, max(c.min, min(c.max, c.rest))), 2)
 
     pan_id = min(cals)
     lo, hi = sorted((human(pan_id, cals[pan_id].min),
@@ -1112,6 +1130,38 @@ def _selftest() -> int:
 
     # ---------------------------------------------------------------
     # ---------------------------------------------------------------
+    # THE LEADING-SETTLE WAIVER, pinned in BOTH directions. Round-2
+    # review found the first version of this deadlocked `exercise` from
+    # a cold start (pre-flight clean, operator confirms, arm wakes under
+    # torque, edge 1 refused at step 0) and that the obvious wider fix
+    # disables the per-edge gate entirely. Only edge 1 of a
+    # measured-start clip may be waived, so both failures get a test.
+    print("\nthe leading settle is waived; nothing else is")
+    from .exercise import sweep_window as _sweep_window
+    _, hi2 = _sweep_window(cals[2], 70)
+    folded = {**rest, 2: hi2}          # a REAL collision, 12+ mm deep
+    # Pins only the pan, so the folded joint 2 rides through `resolved`
+    # from the measured pose — the same shape as the per-edge test
+    # below. A clip whose pose 0 names every joint would have its fold
+    # corrected by the approach before any edge ran.
+    danger = Clip("danger", [Pose("a", {1: rest[1]}),
+                             Pose("b", {1: rest[1] + 60}),
+                             Pose("c", {1: rest[1]})], profile)
+
+    for waived, label in ((True, "ON"), (False, "off")):
+        bus = FakeBus(folded)
+        try:
+            run_quiet(bus, cals, danger, gate=gate, quiet=True,
+                      start_is_measured=waived)
+            check(f"a 12 mm collision is caught with the waiver {label}",
+                  False, "the runner ran a colliding clip")
+        except ClipStopped as exc:
+            check(f"a 12 mm collision is caught with the waiver {label}",
+                  True, str(exc)[:74])
+    check("...so a measured start waives the LEADING SETTLE only, never "
+          "a real contact on a later edge", True)
+
+    # ---------------------------------------------------------------
     # GUARDED HOLDS (#649 at clip scale). This is the safety property
     # `exercise` used to enforce with its own code, and the port to the
     # general executor is only honest if the guard is provably still
@@ -1397,33 +1447,23 @@ def _selftest() -> int:
         got = lib({"OPEN": {"base": "rest",
                             "joints": {"3": human(3, rest[3]
                                                   + fold_direction(cals[3])
-                                                  * 400)},
-                            "holds": [3]}})
+                                                  * 400)}}})
         check("...and `joints` overrides the base for the joints it names",
               got["OPEN"].ticks[3] != clamped[3]
               and all(got["OPEN"].ticks[i] == clamped[i]
                       for i in cals if i != 3))
-        check("a LIBRARY pose can carry holds — the safety mechanism is "
-              "reachable from the library, not only from clip files",
-              got["OPEN"].holds == (3,))
 
-        # ...and a clip that references it inherits them.
-        (d / "lib2.json").write_text(json.dumps({"poses": {
-            "OPEN": {"base": "rest",
-                     "joints": {"3": human(3, rest[3]
-                                           + fold_direction(cals[3]) * 400)},
-                     "holds": [3]}}}))
-        library = load_poses(cals, d / "lib2.json")
+        # ...and a clip can reference it, which is the point of a library.
+        library = load_poses(cals, d / "p.json")
         ref_doc = {**ok_doc, "poses": [
             {"name": "a", "joints": first},
             {"name": "open", "pose": "OPEN"},
-            {"name": "pan", "joints": {"1": first["1"] + 5}, "holds": [3]}]}
+            {"name": "pan", "joints": {"1": first["1"] + 5}}]}
         rc = load_clip(cals, write(ref_doc, "ref.json"), library=library)
-        check("a clip referencing a library pose INHERITS its holds",
-              rc.poses[1].holds == (3,),
-              f"{[p.holds for p in rc.poses]}")
-        check("...so the guard cannot be lost by an author who forgot to "
-              "restate it", rc.poses[2].holds == (3,))
+        check("a clip can reference a library pose", len(rc.poses) == 3,
+              f"j3 -> {rc.poses[1].ticks[3]}t from the library")
+        check("...and the referenced ticks are the library's, not a copy",
+              rc.poses[1].ticks[3] == got["OPEN"].ticks[3])
 
         def lib_refuses(label, body):
             try:
@@ -1434,10 +1474,32 @@ def _selftest() -> int:
 
         lib_refuses("an unknown `base` is refused, not ignored",
                     {"X": {"base": "home"}})
-        lib_refuses("a library hold on a joint the pose does not position "
-                    "is refused", {"X": {"joints": {"1": first["1"]},
-                                         "holds": [3]}})
         lib_refuses("a non-object pose body is refused", {"X": [1, 2, 3]})
+        # THE ONE THAT SHIPPED BROKEN, caught by round 2. A body carrying
+        # BOTH a joint map and an extended key read as extended and threw
+        # the joint map away — loading as the bare rest fold, up to 72 deg
+        # per joint from what was written, with no error. It is the
+        # natural edit when converting a plain pose to "start from rest
+        # and override", and the commit that shipped it asserted this
+        # could not happen.
+        lib_refuses("a body mixing a joint map with `base` is REFUSED, "
+                    "not silently read as one of them",
+                    {"X": {"1": 0.0, "2": -20.0, "base": "rest"}})
+        # A pose positioning nothing is zero ticks from EVERYWHERE, which
+        # made PoseMachine's encoder guard authorise every edge from any
+        # arm position. Every falsy non-dict reached that state, because
+        # `body.get("joints") or {}` swallows them all.
+        for body, why in (({}, "an empty body"),
+                          ({"joints": None}, "`joints: null`"),
+                          ({"joints": []}, "`joints: []`"),
+                          ({"joints": 0}, "`joints: 0`")):
+            lib_refuses(f"{why} is refused — a pose that positions "
+                        f"nothing is zero ticks from everywhere",
+                        {"X": body})
+        lib_refuses("`holds` in the LIBRARY is refused — it guards the "
+                    "ENTRY to a pose, and a library pose is a state, so "
+                    "every edge in or out of it was unusable",
+                    {"X": {"base": "rest", "holds": [3]}})
 
         # The example the CLI prints must itself be loadable — an
         # example that does not parse is worse than none. Both forms:

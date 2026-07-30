@@ -22,8 +22,8 @@ import sys
 import time
 from pathlib import Path
 
-from .bus import (BenchError, FeetechBus, confirm,
-                  confirm_torque_cut, run_tool)
+from .bus import (BenchError, FeetechBus, confirm_torque_cut,
+                  run_tool)
 
 
 def parse_ids(spec: str) -> list[int]:
