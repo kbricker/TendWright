@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "crane-tour",
+  "_comment": "Every pose in the crane family, once, by name. Poses are `pose` references into poses.json — nothing here restates a joint angle, so re-measuring a pose changes what this clip does without this file being touched.",
+  "_route": "ONE HARD CONSTRAINT, then a choice.\n\nThe constraint: `posemachine validate` refuses all 22 direct REST <-> CRANE edges. Outbound the gripper scrapes the shoulder before the arm is clear of the fold; inbound — the deeper failure, up to 18 mm — the gripper descends before the elbow closes and is dragged across the table. So the tour enters AND leaves through STAGE, and there is no route that does not. See poses.json's STAGE note for the per-direction measurements.\n\nThe choice: every crane-to-crane edge gates clean, so the order of the middle is free. It walks as a comb — down each radius, back up to the high tier, out to the next — because that visits all nine sagittal poses once while changing one thing at a time, which is what makes it readable when you are watching the arm rather than the log. An earlier draft of this file justified the comb as a second hard constraint (a low-to-low crossing that dragged the jaw along the table). That WAS true of an earlier, lower pose grid; it is not true of this one, and claiming a safety reason for an aesthetic choice is worse than having no reason.",
+  "_slew": "The slew pair (CRANE_122 / CRANE_322) is toured last, from CRANE_222. Watch which way the arm actually swings on +45 — the pose file says outright that the sign-to-side mapping is unconfirmed, and this is the run that confirms it.",
+  "profile": {
+    "speed": 250,
+    "acceleration": 12
+  },
+  "poses": [
+    {"name": "rest",       "pose": "REST"},
+    {"name": "unfold",     "pose": "STAGE"},
+
+    {"name": "near-high",  "pose": "CRANE_211"},
+    {"name": "near-mid",   "pose": "CRANE_212"},
+    {"name": "near-low",   "pose": "CRANE_213"},
+    {"name": "near-up",    "pose": "CRANE_211"},
+
+    {"name": "mid-high",   "pose": "CRANE_221"},
+    {"name": "mid-mid",    "pose": "CRANE_222"},
+    {"name": "mid-low",    "pose": "CRANE_223"},
+    {"name": "mid-up",     "pose": "CRANE_221"},
+
+    {"name": "far-high",   "pose": "CRANE_231"},
+    {"name": "far-mid",    "pose": "CRANE_232"},
+    {"name": "far-low",    "pose": "CRANE_233"},
+    {"name": "far-up",     "pose": "CRANE_231"},
+
+    {"name": "centre",     "pose": "CRANE_222"},
+    {"name": "slew-plus",  "pose": "CRANE_122"},
+    {"name": "recentre",   "pose": "CRANE_222"},
+    {"name": "slew-minus", "pose": "CRANE_322"},
+
+    {"name": "home",       "pose": "CRANE_222"},
+    {"name": "refold",     "pose": "STAGE"},
+    {"name": "rest-again", "pose": "REST"}
+  ]
+}

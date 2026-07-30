@@ -213,10 +213,30 @@ class PoseGate:
                            report.poses_checked, True, waived)
         a, b = poses[0], poses[-1]
 
-        # The WORST contact, not the first one found. Order of discovery
-        # is an artefact of geom numbering, and reporting it made the
-        # gate name a 0.00 mm table graze while a 0.18 mm arm-through-arm
-        # fold went unmentioned in the same refusal.
+        # The WORST contact, not the first one found — order of discovery
+        # is an artefact of geom numbering.
+        #
+        # This ranking was HALF-WORKING from the day it was written
+        # (#699), because the dedupe it ranks over — `check_clip`'s, from
+        # #660 — is older and kept each pair's FIRST sighting: the depth
+        # this sorts on was the depth at which a pair ENTERED the 5 mm
+        # margin, not how deep it went. So
+        # this picked whichever pair happened to enter deepest, which is
+        # a quantity with no physical meaning — not the first pair found
+        # either, which would at least have been predictable.
+        #
+        # `twin._record` now keeps the deepest, and the effect is bigger
+        # than a corrected number: on the selftest's arm-through-arm case
+        # this reported `shoulder <-> wrist, 0.15 mm` — the 4th of 6
+        # pairs discovered — and now reports `shoulder <-> gripper,
+        # 46.38 mm`. A DIFFERENT PAIR as well as a different depth.
+        #
+        # Both figures re-measured through THIS function by reverting
+        # `_record`. Measure the old one anywhere else and you will not
+        # reproduce it: `check_trajectory` samples differently and gave
+        # `shoulder <-> gripper, 1.12 mm` for the same case. The new
+        # figure agrees across both paths to 0.001 mm, so checking only
+        # that one confirms nothing.
         c = max(report.contacts, key=lambda k: k.depth_mm)
         moved = sorted(i for i in b if b[i] != a.get(i))
         # Hitting the table and folding through itself are different

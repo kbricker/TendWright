@@ -196,8 +196,16 @@ def validate_edge(twin, a: Pose, b: Pose, profile: MotionProfile,
     report = twin.check_trajectory(frames)
     detail = ""
     if report.contacts:
-        c = report.contacts[0]
-        detail = f"{c.body_a} <-> {c.body_b} ({c.depth_mm:.1f} mm)"
+        # THE WORST CONTACT, NOT THE FIRST FOUND — discovery order is an
+        # artefact of geom numbering. This ranking is only meaningful
+        # because `twin._record` makes `depth_mm` the deepest the pair
+        # reaches; see that docstring for what it means when it doesn't,
+        # and do not re-derive the story here. An earlier version of this
+        # comment did, got it backwards, and stood one file away from the
+        # correct account contradicting it.
+        c = max(report.contacts, key=lambda k: k.depth_mm)
+        depth = (f"{c.depth_mm:.1f} mm" if c.depth_mm >= 0.05 else "touching")
+        detail = f"{c.body_a} <-> {c.body_b} ({depth})"
     verdict = EdgeVerdict(report.clean, report.poses_checked, detail)
     if cache is not None:
         cache.put(key, verdict)
@@ -303,6 +311,29 @@ def _selftest() -> int:
         want("a colliding edge is refused", not bad.clean)
         want("...and says what hit what", "Base" in bad.detail
              and "12.5" in bad.detail)
+        # WHICH contact it names, when there is more than one. Discovery
+        # order put a 0.0 mm graze first and a real fold second, and the
+        # report named the graze — so the fixture puts them in exactly
+        # that order and the assertion is that order does NOT decide.
+        class TwoContactTwin:
+            def check_trajectory(self, frames):
+                def c(a_, b_, d):
+                    return type("C", (), {"body_a": a_, "body_b": b_,
+                                          "depth_mm": d})()
+                return FakeReport(len(frames),
+                                  [c("table", "gripper", 0.0),
+                                   c("shoulder", "gripper", 0.28)])
+
+        two = validate_edge(TwoContactTwin(), a, b, prof,
+                            cache=EdgeCache(Path(td) / "t.json"),
+                            model_digest=D)
+        want("with several contacts it names the WORST, not the first "
+             "the collision engine happened to find",
+             "shoulder <-> gripper" in two.detail)
+        want("...because 'table' and 'shoulder' have opposite fixes, and "
+             "naming the wrong one sends the operator the wrong way",
+             "table" not in two.detail)
+
         again = validate_edge(CountingTwin(), a, b, prof, cache=c2,
                               model_digest=D)
         want("...and the REFUSAL is cached too, so a bad edge is not "

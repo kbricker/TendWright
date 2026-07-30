@@ -280,6 +280,39 @@ class PredictedContact:
     depth_mm: float
 
 
+def _record(contacts: list[PredictedContact],
+            index: dict[frozenset, int], c: PredictedContact) -> None:
+    """Remember the DEEPEST occurrence of each body pair, not the first.
+
+    A trajectory samples the same pair many times, and the two gate
+    entry points both deduped by keeping whichever sample came first.
+    That made `depth_mm` a SAMPLING-PHASE ARTEFACT rather than a
+    severity: a pair that closes gradually is first detected the instant
+    it enters the 5 mm margin, i.e. at 0.00 mm, and then keeps that 0.00
+    however deep it goes.
+
+    Everything downstream reads it as severity. `posegate.check_sequence`
+    and `edges.validate_edge` both rank with `max(..., key=depth_mm)` to
+    name the worst pair, so both were ranking on first-contact order.
+    Measured on the shipped pose library: 10 of 22 refused edges named
+    `shoulder <-> gripper (touching)` — first seen at 0.03 mm — while
+    `table <-> gripper` on the same trajectory reached 17.27 mm and was
+    recorded as 0.00. The report sent the operator to adjust the fold
+    while the real event was the gripper driven 17 mm through the bench.
+
+    `step` and `pose` travel with the depth, so "N mm deep at step S"
+    now names where it is WORST rather than where it was first grazed.
+    Nothing consumes `step` for control flow; both readers print it.
+    """
+    pair = frozenset({c.body_a, c.body_b})
+    at = index.get(pair)
+    if at is None:
+        index[pair] = len(contacts)
+        contacts.append(c)
+    elif c.depth_mm > contacts[at].depth_mm:
+        contacts[at] = c
+
+
 @dataclass
 class GateReport:
     poses_checked: int
@@ -607,7 +640,7 @@ class Twin:
         from sim.clip import DEFAULT_HZ, sample_edge
 
         contacts: list[PredictedContact] = []
-        seen_pairs: set[frozenset] = set()
+        worst_of: dict[frozenset, int] = {}
         clamps: dict[int, float] = {}
         checked = 0
         excused = 0
@@ -624,10 +657,7 @@ class Twin:
             for i, d in cl.items():
                 clamps[i] = max(clamps.get(i, 0.0), d)
             for c in found:
-                pair = frozenset({c.body_a, c.body_b})
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
-                    contacts.append(c)
+                _record(contacts, worst_of, c)
 
         check(dict(clip.poses[0].ticks), 0)
         for n, (a, b) in enumerate(clip.edges(), start=1):
@@ -641,7 +671,8 @@ class Twin:
                          settle_from_measured: bool = False) -> GateReport:
         """Interpolate between consecutive waypoints in tick space and
         collision-check every intermediate pose. Contacts are deduped by
-        body pair (first occurrence reported).
+        body pair, keeping the DEEPEST occurrence — see `_record` for
+        why the first one is the wrong answer.
 
         settle_from_measured: waypoint 0 is the arm's MEASURED slump
         rather than a planned pose, so structural nesting is not
@@ -650,7 +681,7 @@ class Twin:
         if not waypoints:
             return GateReport(0, [], {}, 0)
         contacts: list[PredictedContact] = []
-        seen_pairs: set[frozenset] = set()
+        worst_of: dict[frozenset, int] = {}
         clamps: dict[int, float] = {}
         checked = 0
         excused = 0
@@ -666,10 +697,7 @@ class Twin:
             for i, d in cl.items():
                 clamps[i] = max(clamps.get(i, 0.0), d)
             for c in found:
-                pair = frozenset({c.body_a, c.body_b})
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
-                    contacts.append(c)
+                _record(contacts, worst_of, c)
 
         step_ticks = step_deg / span_deg(1)
         check(waypoints[0], 0)
@@ -1021,6 +1049,45 @@ def cmd_selftest(twin: Twin) -> int:
          [slump, lift], False, True)
     pose("the run-1 bench collision is still predicted", lift, False)
     pose("rest is clean", rest, True)
+
+    # --- a reported depth is a SEVERITY, not a sampling phase ---
+    # Both readers rank pairs with max(..., key=depth_mm) to name the
+    # worst one. That is only meaningful if depth_mm is the worst depth
+    # the pair reached; deduping on first-seen made it the depth at
+    # which the pair entered the 5 mm margin, which for a gradual
+    # approach is 0.00 however deep it later goes.
+    # Re-walk the same trajectory independently of the dedupe under test
+    # and take each pair's true maximum.
+    # OUT AND BACK, so every pair's maximum is in the MIDDLE. A one-way
+    # sweep deepens monotonically to its endpoint, which makes "keep the
+    # deepest" and "keep the last" indistinguishable — measured: all
+    # three pairs peaked at the final sample, and an unconditional
+    # `contacts[at] = c` passed every assertion. The adjacent wrong
+    # implementation has to be fenced off, not just the original one.
+    route = [rest, lift, rest]
+    truth: dict[frozenset, float] = {}
+    STEPS = 60
+    for leg in range(len(route) - 1):
+        a_, b_ = route[leg], route[leg + 1]
+        for s in range(STEPS + 1):
+            f = s / STEPS
+            mid = {i: round(a_[i] + f * (b_.get(i, a_[i]) - a_[i]))
+                   for i in a_}
+            for k in twin.contacts_at(mid)[0]:
+                pair = frozenset({k.body_a, k.body_b})
+                truth[pair] = max(truth.get(pair, 0.0), k.depth_mm)
+    reported = twin.check_trajectory(route).contacts
+    # Or the loop below asserts NOTHING while the suite still prints OK.
+    # A recalibration that moves `rest` far enough for this edge to come
+    # clean would retire a 17 mm regression guard in silence.
+    want("the reporting-depth check has a colliding edge to run on",
+         bool(reported), True)
+    for c in reported:
+        deepest = truth.get(frozenset({c.body_a, c.body_b}), 0.0)
+        want(f"{c.body_a} <-> {c.body_b} is reported at its DEEPEST "
+             f"({c.depth_mm:.2f} mm vs {deepest:.2f} independently "
+             f"measured), not where it was first grazed",
+             c.depth_mm >= deepest - 0.5, True)
 
     # --- plan #660: the gate and the player must be the SAME motion ---
     # Not "do they read the same waypoints" (they always did) but "does

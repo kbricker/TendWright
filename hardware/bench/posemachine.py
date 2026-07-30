@@ -336,6 +336,169 @@ class PoseMachine:
             self.abort(f"{frm} -> {to} did not complete")
             raise
 
+    # -------------------------------------------------------- validation
+    def validate_all(self) -> dict[tuple[str, str], object]:
+        """Ask the twin about EVERY edge, with no arm and no bus.
+
+        The graph this machine offers is fully connected by default, on
+        the reasoning that the twin refuses what the geometry forbids.
+        That is sound at fire time and useless at authoring time: the
+        only way to learn that REST -> CRANE_211 can never fire was to
+        stand at the bench, resync, ask for it, and be told no. A pose
+        library is data, and data that is wrong should say so when it is
+        read, not when it is acted on.
+
+        So this walks the whole graph offline.
+
+        WHAT IT DOES NOT DO is spare the arm any work later. An earlier
+        version of this docstring claimed the edges it clears "do not
+        re-simulate at fire time", and that was false twice over:
+        `load_machine` builds no `EdgeCache`, so nothing survives the
+        process; and `go()` hands the edge to `run_clip`, whose per-edge
+        re-gate runs from the arm's MEASURED pose and is supposed to
+        re-simulate — that is the check that catches the arm not being
+        where the plan says. The verdicts here are memoised for this
+        object's own guard and nothing more.
+        """
+        if not self.gated:
+            # The whole method is "ask the twin". With no twin the honest
+            # answer is not a dict of Nones — a caller doing the obvious
+            # `sum(v.clean for v in validate_all().values())` gets an
+            # AttributeError instead of an answer to the question it
+            # asked. `validation_report` guards itself before calling.
+            raise BenchError(
+                "there is no twin, so no edge can be validated",
+                "this machine was built without a collision gate; fix "
+                "the cause (see PoseGate.reason) or accept that its "
+                "edges are unchecked")
+        return {(f, t): self.validate(f, t) for f, t in self.edges}
+
+    def validation_report(self) -> tuple[str, bool]:
+        """(report, ok). Not ok when some pose cannot be reached from
+        some other pose, in either direction, over CLEAN edges only.
+
+        A REFUSED EDGE IS NOT A FAILURE — it is the gate doing its job,
+        and a real library is full of them (in the shipped one, every
+        direct REST <-> CRANE move: the gripper scrapes the shoulder on
+        the way out of the fold, which is why STAGE exists). What IS a
+        failure is the arm being unable to get somewhere at all.
+
+        THAT IS A CONNECTIVITY QUESTION, NOT A DEGREE ONE, and the first
+        version of this asked the wrong one. It checked that each pose
+        had at least one clean edge in and one out, which every pose in
+        a PARTITIONED graph still has. Severing every STAGE <-> CRANE
+        edge while leaving REST <-> STAGE clean split this library into
+        two islands — {REST, STAGE} and the eleven crane poses, with the
+        arm unable to cross — and the report said 112 clear, 44 refused,
+        nothing unreachable, exit 0. That is not hypothetical: STAGE is
+        the library's single door, its refusals already ship at 0.0-0.3
+        mm, and a `calibrate capture` that settles rest a little deeper
+        would close it. So this walks the graph.
+        """
+        if not self.gated:
+            return ("no twin, so no edge was checked — this report would "
+                    "say nothing"), False
+        verdicts = self.validate_all()
+        refused = {e: v for e, v in verdicts.items() if not v.clean}
+        lines = [f"{len(self.poses)} pose(s), {len(verdicts)} edge(s): "
+                 f"{len(verdicts) - len(refused)} clear, {len(refused)} "
+                 f"refused by the twin"]
+        for name in sorted(self.poses):
+            out = sorted(t for (f, t) in refused if f == name)
+            if out:
+                lines.append(f"  {name} -/-> {', '.join(out)}")
+        if refused:
+            lines.append("")
+            lines.append("why, one example per refusing source:")
+            seen: set[str] = set()
+            for (f, t), v in sorted(refused.items()):
+                if f in seen:
+                    continue
+                seen.add(f)
+                lines.append(f"  {f} -> {t}: {v.detail or 'contact'}")
+
+        # ONE-WAY EDGES, called out because they are the surprising
+        # shape. A pair refused in both directions reads as "you cannot
+        # go that way" and an operator routes around it. A pair refused
+        # in only ONE direction lets the arm travel somewhere it cannot
+        # directly come back from, and the discovery happens after the
+        # move rather than before. That can be perfectly legitimate —
+        # the return leg samples a different path, because each joint
+        # runs its own speed profile — but it should never be a
+        # surprise, and nothing else in this toolkit would show it.
+        oneway = sorted((f, t) for (f, t) in refused
+                        if (t, f) in verdicts and verdicts[(t, f)].clean)
+
+        # Reachability over the CLEAN subgraph. ISLANDS, not a root and
+        # its complement: an earlier version walked out from
+        # sorted(poses)[0] and named everything it could not see, so
+        # WHICH SIDE OF A BREAK GOT NAMED was decided by alphabetical
+        # order. Add one fixture pose named APPROACH_BIN whose edges the
+        # twin refuses and the report says the arm can never reach the
+        # eleven crane poses, never mentioning the one that is actually
+        # broken. Listing the components says the same thing without the
+        # coin flip, and reads better besides.
+        clean: dict[str, list[str]] = {n: [] for n in self.poses}
+        back: dict[str, list[str]] = {n: [] for n in self.poses}
+        for (f, t), v in verdicts.items():
+            if v.clean:
+                clean[f].append(t)
+                back[t].append(f)
+
+        def reach(adj: dict[str, list[str]], root: str) -> set[str]:
+            seen, stack = {root}, [root]
+            while stack:
+                for nxt in adj[stack.pop()]:
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        stack.append(nxt)
+            return seen
+
+        # Strongly-connected components: two poses share one exactly when
+        # each can reach the other, which is the property "the arm can go
+        # there and come back" wants.
+        islands: list[list[str]] = []
+        placed: set[str] = set()
+        for name in sorted(self.poses):
+            if name in placed:
+                continue
+            group = sorted(reach(clean, name) & reach(back, name))
+            placed.update(group)
+            islands.append(group)
+        islands.sort(key=lambda g: (-len(g), g[0]))
+
+        ok = len(islands) <= 1
+        if not ok:
+            lines.append("")
+            lines.append(f"UNREACHABLE — the library is not one connected "
+                         f"workspace but {len(islands)} islands, and the arm "
+                         f"cannot cross between them")
+            for group in islands:
+                lines.append(f"  {len(group)} pose(s): {', '.join(group)}")
+
+        if oneway:
+            lines.append("")
+            # "via another pose" is only true when there IS one. In a
+            # two-pose library a one-way edge means the way back does not
+            # exist, and the island list above has already said so —
+            # these two sections are computed separately and must not
+            # contradict each other.
+            # PER PAIR, not one verdict for the section. Whether there is
+            # a way back is a property of the pair — same island means
+            # some clean route exists — and an `all()` over the list let
+            # one dead-end pair print " and there is no way back" above a
+            # pair the island list two lines up says is fine.
+            island_of = {n: i for i, g in enumerate(islands) for n in g}
+            lines.append("one-way: the arm can make these moves but not "
+                         "the reverse")
+            for f, t in oneway:
+                back_via = ("the way back is via another pose"
+                            if island_of[f] == island_of[t]
+                            else "THERE IS NO WAY BACK")
+                lines.append(f"  {t} -> {f} is clear, {f} -> {t} is not — "
+                             f"{back_via}")
+        return "\n".join(lines), ok
+
     # ------------------------------------------------------------ human
     def describe(self, bus=None) -> str:
         lines = [f"{len(self.poses)} pose(s), {len(self.edges)} edge(s); "
@@ -546,6 +709,173 @@ def _selftest(cal_path: Path) -> int:
         want("a dead servo during a guard propagates as BenchError", False,
              "wrapped in FsmError — the CLI would print a traceback")
 
+    print("\nthe whole graph is answerable OFFLINE, before anyone stands "
+          "at the bench")
+
+    # A `want` detail must never be the thing that breaks. Computing it
+    # eagerly — rep.splitlines()[1], [ln for ln in ... ][0] — turned a
+    # REGRESSION into an IndexError traceback partway through the run,
+    # so the check it was guarding printed no FAIL and every later check
+    # never ran. The failure mode this file exists to catch was the one
+    # it could not report.
+    def first(lines: str, needle: str) -> str:
+        return next((ln.strip() for ln in lines.splitlines()
+                     if needle in ln), f"(no line containing {needle!r})")
+
+    class FakeReport:
+        def __init__(self, clean):
+            self.clean = clean
+            self.poses_checked = 3
+            # TWO contacts, shallowest first, because the reporter must
+            # name the worst rather than the first — see sim/edges.py.
+            self.contacts = [] if clean else [
+                type("C", (), {"body_a": "table", "body_b": "gripper",
+                               "depth_mm": 0.0})(),
+                type("C", (), {"body_a": "shoulder", "body_b": "gripper",
+                               "depth_mm": 1.5})()]
+
+    class ScriptedTwin:
+        """Refuses exactly the edges named; clears everything else."""
+
+        def __init__(self, refuse):
+            self.refuse = refuse
+            self.seen = 0
+
+        def check_trajectory(self, frames):
+            self.seen += 1
+            # The edge is identified by its endpoints, which is all the
+            # frames carry — first and last.
+            key = (tuple(sorted(frames[0].items())),
+                   tuple(sorted(frames[-1].items())))
+            return FakeReport(key not in self.refuse)
+
+    def scripted(poses_in, edges_in, refuse_pairs):
+        refuse = {(tuple(sorted(poses_in[f].ticks.items())),
+                   tuple(sorted(poses_in[t].ticks.items())))
+                  for f, t in refuse_pairs}
+        twin = ScriptedTwin(refuse)
+        gate = FakeGate(MotionProfile(speed=300, acceleration=15))
+        gate.twin = twin
+        return PoseMachine(cals, poses_in, edges_in, gate=gate), twin
+
+    # THE SHAPE OF THE REAL LIBRARY, in miniature: a direct move that the
+    # geometry forbids, and a third pose that bridges it. This is not a
+    # contrived fixture — REST <-> CRANE is refused on the real arm and
+    # STAGE is what makes the library connected anyway.
+    trio = {**poses, "STAGE": Pose("STAGE", {**rest, 3: rest[3] - 800})}
+    trio_edges = [(a, b) for a in sorted(trio) for b in sorted(trio)
+                  if a != b]
+    m3, twin3 = scripted(trio, trio_edges, [("REST", "PAN"), ("PAN", "REST")])
+    rep3, ok3 = m3.validation_report()
+    want("a refused edge is reported at VALIDATION time, with no bus and "
+         "no arm", "REST -/-> PAN" in rep3, first(rep3, "-/->"))
+    want("...saying what hit what, not just that it said no",
+         "shoulder <-> gripper" in rep3,
+         first(rep3, "shoulder <-> gripper"))
+    # GREPPED ON THE REPORT, not on a `first()` result. `first` returns a
+    # placeholder when the needle is missing, and a placeholder contains
+    # no "table" either — so the negative grep passed with the fix
+    # reverted, printing the absence of evidence as its evidence. Every
+    # other `first()` here is a POSITIVE grep and fails safe; this was
+    # the one negative one.
+    want("...naming the WORST contact, not the first one found — the "
+         "fixture reports a 0.0 mm table graze ahead of the real fold",
+         "shoulder <-> gripper" in rep3 and "table <-> gripper" not in rep3,
+         first(rep3, "shoulder <-> gripper"))
+    want("...and the clear edges are counted as clear",
+         "4 clear, 2 refused" in rep3, first(rep3, "edge(s)"))
+    want("...while a refusal alone is NOT a failure, because the bridge "
+         "pose keeps both ends reachable", ok3)
+
+    # Asserting the twin is not asked TWICE proves only that `validate`
+    # memoises, which predates this method — the same assertion passes
+    # with `validate_all` gutted to `return {}`. So check what the method
+    # itself owes: an entry per edge, and the SAME verdict object the
+    # guard will later read, so the two can never disagree.
+    before = twin3.seen
+    all3 = m3.validate_all()
+    want("validate_all answers for every edge in the graph",
+         set(all3) == set(m3.edges), f"{len(all3)}/{len(m3.edges)}")
+    want("...handing back the very verdicts the guard reads, so an edge "
+         "cannot be cleared here and re-judged there",
+         all(all3[e] is m3.validate(*e) for e in m3.edges))
+    want("...without re-simulating what it already knows",
+         twin3.seen == before, f"{before} -> {twin3.seen}")
+
+    m5, _ = scripted(trio, trio_edges, [("REST", "PAN")])
+    rep5, ok5 = m5.validation_report()
+    want("an edge refused in ONE direction only is called out as one-way",
+         "one-way" in rep5 and "PAN -> REST is clear" in rep5,
+         first(rep5, "is clear"))
+    want("...and it is a warning, not a failure — a one-way edge is legal",
+         ok5)
+    want("...while a pair refused BOTH ways is not called one-way",
+         "one-way" not in rep3)
+
+    # Take the bridge away and the same two refusals DO wall a pose off.
+    m4, _ = scripted(poses, edges, [("REST", "PAN"), ("PAN", "REST")])
+    rep4, ok4 = m4.validation_report()
+    want("with no route around it, a walled-off pose IS a failure", not ok4)
+    want("...naming BOTH sides, so the report does not depend on which "
+         "pose the walk happened to start from",
+         "1 pose(s): PAN" in rep4 and "1 pose(s): REST" in rep4,
+         first(rep4, "islands"))
+
+    # THE PARTITION. Every pose still has a clean edge in and a clean
+    # edge out, so the degree check this replaced said the library was
+    # fine — while the arm could not cross between the two halves.
+    split = {**trio, "FAR": Pose("FAR", {**rest, 1: rest[1] - 300})}
+    split_edges = [(a, b) for a in sorted(split) for b in sorted(split)
+                   if a != b]
+    cut = [(a, b) for a in ("PAN", "STAGE") for b in ("FAR", "REST")]
+    cut += [(b, a) for a, b in cut]
+    m6, _ = scripted(split, split_edges, cut)
+    rep6, ok6 = m6.validation_report()
+    everyone_has_edges = all(
+        any(t == n and v.clean for (f, t), v in m6.validate_all().items())
+        and any(f == n and v.clean for (f, t), v in m6.validate_all().items())
+        for n in split)
+    want("a PARTITIONED graph is a failure even though every pose still "
+         "has a clean edge in and out", not ok6 and everyone_has_edges)
+    want("...saying the library is not one connected workspace",
+         "not one connected workspace" in rep6, first(rep6, "UNREACHABLE"))
+    want("...and listing BOTH islands, so the operator sees the shape of "
+         "the cut rather than one side of it",
+         "2 pose(s): PAN, STAGE" in rep6 and "2 pose(s): FAR, REST" in rep6,
+         first(rep6, "pose(s): "))
+
+    # BOTH KINDS OF ONE-WAY EDGE IN ONE REPORT. FAR is a SOURCE — every
+    # edge INTO it is refused, so the arm can leave it and never return
+    # to it — while REST -> PAN is refused with a clean route through
+    # STAGE. A single verdict for the whole section printed "there is no
+    # way back" over the pair that plainly had one, directly beneath an
+    # island list showing the two together.
+    mixed_cut = [("REST", "PAN")] + [(n, "FAR") for n in ("PAN", "REST",
+                                                          "STAGE")]
+    m8, _ = scripted(split, split_edges, mixed_cut)
+    rep8, _ = m8.validation_report()
+    ways = [ln.strip() for ln in rep8.splitlines() if " is clear," in ln]
+    want("a one-way pair WITH a detour and one WITHOUT are described "
+         "separately in the same report",
+         any("PAN -> REST is clear" in w and "via another pose" in w
+             for w in ways)
+         and any("FAR -> REST is clear" in w and "NO WAY BACK" in w
+                 for w in ways),
+         " | ".join(ways[:2]))
+
+    ungated = PoseMachine(cals, poses, edges)
+    rep7, ok7 = ungated.validation_report()
+    want("a gate-less machine refuses to pretend it validated anything",
+         not ok7 and "no edge was checked" in rep7, rep7)
+    try:
+        ungated.validate_all()
+        want("...and validate_all REFUSES rather than answering None for "
+             "every edge, which a caller would read as a verdict", False)
+    except BenchError as exc:
+        want("...and validate_all REFUSES rather than answering None for "
+             "every edge, which a caller would read as a verdict", True,
+             str(exc))
+
     print("\nnear-identical poses are reported, not silently tolerated")
     close = {**poses, "NEARLY": Pose("NEARLY", {**rest, 1: rest[1] + 3})}
     m2 = PoseMachine(cals, close, [("REST", "NEARLY")])
@@ -562,7 +892,7 @@ def run() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, prog="python -m hardware.bench.posemachine",
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("show", "selftest"))
+    parser.add_argument("command", choices=("show", "validate", "selftest"))
     parser.add_argument("--cal", default="calibration.json")
     args = parser.parse_args()
 
@@ -571,6 +901,13 @@ def run() -> int:
         return _selftest(cal_path)
 
     machine = load_machine(cal_path)
+    if args.command == "validate":
+        report, ok = machine.validation_report()
+        print(report)
+        print("\nno arm was touched — every verdict here came from the "
+              "twin. A refused edge is the gate working; an UNREACHABLE "
+              "pose is an authoring bug.", file=sys.stderr)
+        return 0 if ok else 1
     print(machine.describe())
     print("\nno bus was opened — `at`/`allowed` need the encoders, and "
           "this command deliberately does not touch the arm.",

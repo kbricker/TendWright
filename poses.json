@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "_comment": "The named pose library. Poses are DEGREES per calibration.json's frames (gripper: percent open). Every entry names all six joints — a library pose is an FSM STATE, so it must say where the whole arm is. `base: \"rest\"` reads the calibrated rest instead of restating it.",
+
+  "_crane": "THE CRANE FAMILY. Kyle's framing (2026-07-29): the arm is a crane, and a crane has three controls — slew, radius, hoist. That decomposition is exact on this arm, which is why the family is a family and not a pile of poses:\n\n  slew   = j1. Rotates the whole reach about the base. It changes nothing about the arm's SHAPE, so it cannot create a self-collision that the same shape at another slew does not already have.\n  radius = j2. How far out the hook hangs, exactly as a jib does.\n  hoist  = j3, WITH j4 = 180 - j2 - j3. That constraint is the whole trick: j2, j3 and j4 all rotate about the same axis in the same sense, so their sum IS the gripper's angle from vertical, and forcing the sum to 180 keeps the gripper hanging PLUMB DOWN at every pose in the family. Change j3 alone and the hook swings; change j3 and j4 together and it drops straight down.\n\nNAMING: CRANE_<slew><radius><hoist>, one digit each.\n  slew   1 = j1 +45, 2 = j1 0 (centred), 3 = j1 -45\n  radius 1 = near (j2 -10), 2 = mid (j2 +15), 3 = far (j2 +30)\n  hoist  1 = high, 2 = mid, 3 = low\n\nThe hoist tiers ARE a common set of heights — 60 / 46 / 35 mm of nominal jaw clearance, matched to within 0.4 mm across all three radii — which took solving j3 per radius rather than using one ladder everywhere. That is what makes CRANE_213 and CRANE_233 comparable, and an earlier draft that used one ladder had them 4.3 mm apart while claiming they were not.",
+
+  "_clearance": "CLEARANCE IS NOT THE NOMINAL NUMBER. `hardware/bench/motion.py` calls a joint ARRIVED 25 ticks off, and on j2, j3 and j4 all three can be off in the direction that lowers the jaw — which is also the direction the real arm sags under gravity (checked against the model's own gravity bias on all three joints), so the errors aim together rather than cancelling. Sweeping that settle box (3^3 corners) and the gripper's whole travel (the jaw's low point is NOT monotonic in j6 — 10% open hangs lower than 20%), the worst JAW clearance at each tier is:\n\n  hoist 1  nominal 60 mm  ->  worst 45 mm\n  hoist 2  nominal 46 mm  ->  worst 31 mm\n  hoist 3  nominal 35 mm  ->  worst 20 mm\n\nWidening the sweep to all six joints changes those by under 0.01 mm, and no corner clamps against the calibrated range, so they are not optimistic.\n\nWHICH NUMBER ACTUALLY GOVERNS: not the jaw. The `shoulder` sits at a FIXED 16.2 mm at every pose in this family, below even the hoist-3 worst case, so the library's real floor is 16.2 mm — a constant, against the twin's 5 mm contact margin, giving ~11 mm of headroom everywhere. The jaw figures above are what varies with hoist and what a payload eats into; the shoulder is what a change to the arm's mounting height eats into. Do not read the hoist-3 number as the library's margin.\n\nWHY THE GRID WAS RE-DERIVED: the first draft solved for nominal clearance only. Its hoist-3 tier read as 18 mm and was 6.9 mm once the settle box was spent — inside the region where the 5 mm contact margin is the only thing left.\n\nWHAT THIS MEANS FOR GRASPING: 35 mm is as low as this family goes safely, which is above where a part sitting on the table is. Reaching an actual object needs a tighter arrival check than 25 ticks, or an approach measured against the table rather than commanded open-loop. Do not fix it by authoring a lower pose.",
+
+  "_measured": "Every number in the notes is MEASURED off the twin (the vendored MuJoCo model), not estimated. Three separate figures were estimated first and all three were wrong, so:\n\n  * RADIUS is the rig tool point — the moving-jaw body origin — reproducible with `uv run python -m sim.rig where --deg=<j1,j2,j3,j4,j5,j6>`. It is NOT the outer edge of the jaws, which sits ~18 mm further out.\n  * The jaw hangs ~82 mm BELOW the tool point, so the tool-point HEIGHT a forward-kinematics readout gives you is not the clearance.\n  * The `shoulder` body sits 16.2 mm above the table at every pose in this family, and it is the lowest MOVING part of the arm at hoist 1 and hoist 2 AND hoist 3 (the jaw is at 35 mm even at its lowest tier). It is a fixed floor, not a function of the pose. A `base` geom sits lower still, at -2.4 mm, but it is VISUAL ONLY — every geom on that body is contype=0/conaffinity=0, so it can never generate a contact. The `{base, table}` entry in the twin's allowed-pair list is therefore dead for this model: do not read it as a mounting-height check that exists.\n\nRe-measure after any recalibration; do not trust these if calibration.json has moved.",
+
+  "_envelope": "THE REACH LIMIT IS A TRADE, NOT A WALL. Plumb-down costs height: j4 saturates at +98.4 deg, so j2 + j3 >= 81.6, and the highest the jaw can hang falls as the radius grows. Measured ceilings, at j3 pinned to that limit:\n\n  j2 -10  ->  85 mm      j2 +30  ->  71 mm      j2 +50  ->  45 mm\n  j2 +15  ->  82 mm      j2 +40  ->  60 mm\n\nThe family stops at j2 +30 so that all three radii can carry the same 60/46/35 tiers; +40 and +50 are perfectly usable and reach 262 and 276 mm, they just cannot hoist as high. An earlier draft of this note claimed +40 put the jaw ~15 mm off the table and was outside the envelope. That was wrong by 45 mm and would have talked someone out of a reach that works.",
+
+  "_notmodelled": "THE TWIN MODELS THE ARM AND THE TABLE. It does not model the bench, the cameras, any fixture, or ANYTHING THE GRIPPER IS HOLDING. A part protruding below the jaws is invisible to every verdict in this file, and CRANE_x13 is the tier you would be holding it at. Fixtures are plan 714.4.",
+
+  "poses": {
+    "REST": {
+      "base": "rest",
+      "_note": "The captured fold, read from calibration.json rather than restated — a `calibrate capture` moves this pose and the library follows. Torque-off home; every clip starts and ends here. Not a crane pose: it does not satisfy the plumb constraint and is not meant to."
+    },
+
+    "STAGE": {
+      "base": "rest",
+      "joints": {"3": 90},
+      "_note": "THE DOOR BETWEEN REST AND THE CRANE FAMILY. All 22 direct REST<->CRANE edges are refused — every crane pose, both directions, with no exception — and the two directions fail for DIFFERENT reasons, which took a corrected reporter to see:\n\n  OUTBOUND (REST -> CRANE), all 11: shoulder <-> gripper, 3.6 to 8.3 mm. Leaving the fold, the interpolation swings the shoulder up while the gripper is still tucked against it.\n  INBOUND (CRANE -> REST), 10 of 11: the GRIPPER THROUGH THE TABLE, 6.3 to 18.0 mm. Folding back, the gripper descends before the elbow closes and is dragged across the bench. Only CRANE_231 -> REST is shoulder-dominated.\n\nThe inbound half is the deeper and more damaging failure, and an earlier draft of this note described only the outbound one — which would have sent anyone widening the fold to clear the shoulder while the real event was the jaw ploughing the table.\n\nSTAGE fixes both with ONE joint moved — the elbow opened from 162 to 90. Outbound it unfolds the gripper clear before anything heavy rotates; inbound it closes the elbow while the arm is still high, so the gripper comes down inside the fold rather than across the table. Distal-first, the same principle `exercise` unfolds by. Every edge into and out of it gates clean.\n\nOne joint, literally: an earlier draft also opened the gripper here, which made the note false and meant an operator recovering from BETWEEN could jog j3 to 90, `resync`, and still be told they were nowhere — j6 was 144 ticks off, far outside the 25-tick at-pose tolerance. The gripper move was not load-bearing; the edges gate clean without it.\n\nWritten as `base: \"rest\"` plus an override on purpose: STAGE is defined RELATIVE to the captured fold, so a `calibrate capture` moves it with everything else instead of stranding it at an old rest. Like REST, it is not a crane pose and does not satisfy the plumb constraint."
+    },
+
+    "CRANE_211": {
+      "joints": {"1": 0, "2": -10, "3": 101.9, "4": 88.1, "5": 0, "6": 20},
+      "_note": "slew 0, radius 167 mm, jaw 60 mm above the table (48 mm worst case). Near and high — the tightest crane pose, and the one that sweeps the least floor on the way to anywhere."
+    },
+    "CRANE_212": {
+      "joints": {"1": 0, "2": -10, "3": 107.9, "4": 82.1, "5": 0, "6": 20},
+      "_note": "slew 0, radius 166 mm, jaw 46 mm above the table (34 mm worst case)."
+    },
+    "CRANE_213": {
+      "joints": {"1": 0, "2": -10, "3": 112.5, "4": 77.5, "5": 0, "6": 20},
+      "_note": "slew 0, radius 164 mm, jaw 35 mm above the table (23 mm worst case). The lowest tier at the near radius."
+    },
+
+    "CRANE_221": {
+      "joints": {"1": 0, "2": 15, "3": 75.9, "4": 89.1, "5": 0, "6": 20},
+      "_note": "slew 0, radius 217 mm, jaw 60 mm above the table (46 mm worst case)."
+    },
+    "CRANE_222": {
+      "joints": {"1": 0, "2": 15, "3": 81.9, "4": 83.1, "5": 0, "6": 20},
+      "_note": "slew 0, radius 216 mm, jaw 46 mm above the table (32 mm worst case). The middle of the workspace — the default staging pose for a reach."
+    },
+    "CRANE_223": {
+      "joints": {"1": 0, "2": 15, "3": 86.6, "4": 78.4, "5": 0, "6": 20},
+      "_note": "slew 0, radius 215 mm, jaw 35 mm above the table (21 mm worst case)."
+    },
+
+    "CRANE_231": {
+      "joints": {"1": 0, "2": 30, "3": 56.0, "4": 94.0, "5": 0, "6": 20},
+      "_note": "slew 0, radius 245 mm, jaw 60 mm above the table (45 mm worst case). Furthest reach in the family — see _envelope for why the family stops here and not further."
+    },
+    "CRANE_232": {
+      "joints": {"1": 0, "2": 30, "3": 62.0, "4": 88.0, "5": 0, "6": 20},
+      "_note": "slew 0, radius 245 mm, jaw 46 mm above the table (31 mm worst case)."
+    },
+    "CRANE_233": {
+      "joints": {"1": 0, "2": 30, "3": 66.7, "4": 83.3, "5": 0, "6": 20},
+      "_note": "slew 0, radius 244 mm, jaw 35 mm above the table (20 mm worst case). The lowest, furthest pose — the tightest clearance in the library."
+    },
+
+    "CRANE_122": {
+      "joints": {"1": 45, "2": 15, "3": 81.9, "4": 83.1, "5": 0, "6": 20},
+      "_note": "CRANE_222 slewed +45. Identical shape, radius and jaw height — only rotated about the base. WHICH PHYSICAL SIDE +45 SWINGS TO IS NOT CONFIRMED against the bench yet: the calibration frame says + = CCW from above, sim/rig.py puts +45 toward -Y. Named by SIGN until somebody watches it move."
+    },
+    "CRANE_322": {
+      "joints": {"1": -45, "2": 15, "3": 81.9, "4": 83.1, "5": 0, "6": 20},
+      "_note": "CRANE_222 slewed -45. The mirror of CRANE_122."
+    }
+  }
+}
