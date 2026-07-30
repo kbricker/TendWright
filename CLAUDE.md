@@ -56,6 +56,10 @@ spec `spec-tendwright-overview`).
   own. Account for that when a long soak runs: a service restarting mid-run is
   a confound.
 - Full lab topology — every device, address, and the command that actuates it — is in **`docs/lab-inventory.md`**.
+- **What the cameras can actually read** — measured tag sizes, the ~4 px/cell
+  detection floor, which camera answers which question, and what fits on the
+  arm — is in **`docs/tag-sensing.md`**. Read it before sizing or placing a
+  tag; both of the mistakes it records came from reasoning past a measurement.
 - Access: `ssh cell1` (alias in `~/.ssh/config`; key auth, works for Kyle and
   spark — same Windows user). User `kyle` is in `dialout`.
 - Two more identical UM350s are spares/future roles (MES box etc.), not yet
