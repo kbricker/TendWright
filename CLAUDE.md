@@ -49,6 +49,7 @@ spec `spec-tendwright-overview`).
 - `unattended-upgrades` is **active and enabled**, so packages update on their
   own. Account for that when a long soak runs: a service restarting mid-run is
   a confound.
+- Full lab topology — every device, address, and the command that actuates it — is in **`docs/lab-inventory.md`**.
 - Access: `ssh cell1` (alias in `~/.ssh/config`; key auth, works for Kyle and
   spark — same Windows user). User `kyle` is in `dialout`.
 - Two more identical UM350s are spares/future roles (MES box etc.), not yet
