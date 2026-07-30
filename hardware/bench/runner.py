@@ -1372,6 +1372,73 @@ def _selftest() -> int:
                     {"name": "sweepB", "joints": {"1": first["1"] + 8},
                      "holds": [3]}]})
 
+        # ---- THE POSE LIBRARY (poses.json). Nothing had ever loaded
+        # one: the loader existed, no library was ever authored, and the
+        # only coverage was a negative test. These pin the two things a
+        # real library needs to say.
+        print("\nthe pose LIBRARY")
+        from sim.clip import load_poses
+
+        def lib(body, name="p.json"):
+            p = d / name
+            p.write_text(json.dumps({"poses": body}))
+            return load_poses(cals, p)
+
+        got = lib({"REST": {"base": "rest"}})
+        clamped = {i: max(c.min, min(c.max, c.rest)) for i, c in cals.items()}
+        check("a pose can be the CALIBRATED rest, not a copy of it",
+              got["REST"].ticks == clamped,
+              "base: rest -> the arm's own captured pose")
+        check("...which is the point: re-capturing rest moves the pose, "
+              "instead of leaving the library pointing at a stale copy",
+              all(abs(got["REST"].ticks[i] - cals[i].rest) <= 25
+                  for i in cals))
+
+        got = lib({"OPEN": {"base": "rest",
+                            "joints": {"3": human(3, rest[3]
+                                                  + fold_direction(cals[3])
+                                                  * 400)},
+                            "holds": [3]}})
+        check("...and `joints` overrides the base for the joints it names",
+              got["OPEN"].ticks[3] != clamped[3]
+              and all(got["OPEN"].ticks[i] == clamped[i]
+                      for i in cals if i != 3))
+        check("a LIBRARY pose can carry holds — the safety mechanism is "
+              "reachable from the library, not only from clip files",
+              got["OPEN"].holds == (3,))
+
+        # ...and a clip that references it inherits them.
+        (d / "lib2.json").write_text(json.dumps({"poses": {
+            "OPEN": {"base": "rest",
+                     "joints": {"3": human(3, rest[3]
+                                           + fold_direction(cals[3]) * 400)},
+                     "holds": [3]}}}))
+        library = load_poses(cals, d / "lib2.json")
+        ref_doc = {**ok_doc, "poses": [
+            {"name": "a", "joints": first},
+            {"name": "open", "pose": "OPEN"},
+            {"name": "pan", "joints": {"1": first["1"] + 5}, "holds": [3]}]}
+        rc = load_clip(cals, write(ref_doc, "ref.json"), library=library)
+        check("a clip referencing a library pose INHERITS its holds",
+              rc.poses[1].holds == (3,),
+              f"{[p.holds for p in rc.poses]}")
+        check("...so the guard cannot be lost by an author who forgot to "
+              "restate it", rc.poses[2].holds == (3,))
+
+        def lib_refuses(label, body):
+            try:
+                lib(body, f"{abs(hash(label)) % 9999}p.json")
+                check(label, False, "it loaded")
+            except BenchError as exc:
+                check(label, True, str(exc)[:88])
+
+        lib_refuses("an unknown `base` is refused, not ignored",
+                    {"X": {"base": "home"}})
+        lib_refuses("a library hold on a joint the pose does not position "
+                    "is refused", {"X": {"joints": {"1": first["1"]},
+                                         "holds": [3]}})
+        lib_refuses("a non-object pose body is refused", {"X": [1, 2, 3]})
+
         # The example the CLI prints must itself be loadable — an
         # example that does not parse is worse than none. Both forms:
         # the generic template and the calibration-anchored one.

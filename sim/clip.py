@@ -364,13 +364,79 @@ def pose_from_doc(cals: dict, name: str, body: dict) -> Pose:
     return Pose(name, ticks)
 
 
+def library_pose(cals: dict, name: str, body: dict,
+                 where: str = "poses.json") -> Pose:
+    """One entry of the pose library. Two body shapes, both supported.
+
+        "PICK":  {"1": 0, "2": -20, "3": 90, ...}       plain joint map
+        "CLEAR": {"base": "rest", "joints": {"3": 90}, "holds": [3]}
+
+    The plain map is the original form and still means exactly what it
+    did. The extended form exists for two things the plain one cannot
+    say, both of which a real library needs:
+
+    **`base: "rest"` starts from the CALIBRATED rest pose.** Without it,
+    authoring REST means copying six numbers out of calibration.json
+    into a second file — and then a `calibrate capture` silently moves
+    the arm's real rest while the library keeps pointing at the old one.
+    That is the same duplication #660 spent its whole life removing, so
+    the library reads the value rather than restating it. Anything not
+    overridden by `joints` carries the calibrated rest through.
+
+    **`holds` names the joints that must physically BE where this pose
+    puts them** (see `Pose.holds`). A library pose that is only safe
+    with the elbow open needs to say so wherever it is used; without
+    this, the guard the executor enforces is reachable from clip files
+    and not from the library, which is backwards — the library is the
+    part meant to be reused.
+    """
+    if not isinstance(body, dict):
+        raise BenchError(f"{where}: pose '{name}' is not an object",
+                         "a pose is a joint map, or an object with "
+                         "`base`/`joints`/`holds`")
+    # Joint keys are numeric strings, so these three names can never
+    # collide with one — the two forms are distinguishable without a
+    # version flag or a guess.
+    if not any(k in body for k in ("base", "joints", "holds")):
+        return pose_from_doc(cals, name, body)
+
+    ticks: dict[int, int] = {}
+    base = body.get("base")
+    if base is not None:
+        if base != "rest":
+            raise BenchError(
+                f"{where}: pose '{name}' has base {base!r}",
+                'the only base is "rest", the pose captured by '
+                '`calibrate capture`')
+        # CLAMPED, because a pose is a commandable target and the
+        # calibration loader tolerates a rest slightly outside
+        # [min,max] (the slump settles past it — measured 2026-07-30).
+        # Commands must not go outside the range; see `clamp_goal`.
+        ticks = {i: max(c.min, min(c.max, c.rest)) for i, c in cals.items()}
+
+    named = body.get("joints") or {}
+    if not isinstance(named, dict):
+        raise BenchError(f"{where}: pose '{name}' has a non-object `joints`")
+    ticks.update(pose_from_doc(cals, name, named).ticks)
+    holds = _holds_from_doc(where, name, body.get("holds"), set(cals))
+    missing = sorted(j for j in holds if j not in ticks)
+    if missing:
+        raise BenchError(
+            f"{where}: pose '{name}' holds joint(s) {missing} without "
+            f"positioning them",
+            'add them to `joints`, or give the pose `"base": "rest"` so '
+            'every joint has a value')
+    return Pose(name, ticks, holds)
+
+
 def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
     """Named poses as DATA, in human units, validated against the
     calibrated range on load.
 
     Authored in degrees (and gripper percent) rather than ticks so that
     a pose file is readable and reviewable — a wall of tick counts is
-    neither, and this file is meant to be edited by hand."""
+    neither, and this file is meant to be edited by hand. See
+    `library_pose` for the two body shapes."""
     if not path.exists():
         return {}
     try:
@@ -378,8 +444,12 @@ def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
     except (OSError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path.name}: {exc}",
                          "poses.json must be valid JSON") from exc
-    return {name: pose_from_doc(cals, name, body)
-            for name, body in (doc.get("poses") or {}).items()}
+    entries = doc.get("poses")
+    if entries is not None and not isinstance(entries, dict):
+        raise BenchError(f"{path.name}: `poses` must be an object",
+                         'e.g. {"poses": {"REST": {"base": "rest"}}}')
+    return {name: library_pose(cals, name, body, path.name)
+            for name, body in (entries or {}).items()}
 
 
 # ---------------------------------------------------------- clip library
@@ -496,6 +566,7 @@ def load_clip(cals: dict, path: Path | str,
         if not isinstance(entry, dict):
             raise BenchError(f"{path.name}: pose {n} is not an object")
         label = str(entry.get("name") or f"p{n}")
+        inherited_holds: tuple[int, ...] = ()
         if "pose" in entry and "joints" in entry:
             # Silently merging them would make the file's meaning depend
             # on a precedence rule nobody wrote down.
@@ -512,6 +583,14 @@ def load_clip(cals: dict, path: Path | str,
                     f"which is not in poses.json",
                     f"known poses: {known}")
             named = library[ref].ticks
+            # A library pose's HOLDS come with it. If the library says
+            # this pose is only safe with the elbow open, every clip
+            # that uses it inherits that — otherwise the guard would
+            # depend on each author remembering to restate it, which is
+            # exactly the property the library exists to remove. An
+            # explicit `holds` on the entry still wins, so a clip can
+            # add to it; it just cannot silently lose it.
+            inherited_holds = library[ref].holds
         elif "joints" in entry:
             named = pose_from_doc(cals, label, entry["joints"] or {}).ticks
         else:
@@ -535,6 +614,8 @@ def load_clip(cals: dict, path: Path | str,
                 f"{path.name}: pose '{label}' names joint(s) {extra}, "
                 f"which are not calibrated")
         holds = _holds_from_doc(path.name, label, entry.get("holds"), want)
+        if inherited_holds:
+            holds = tuple(sorted(set(holds) | set(inherited_holds)))
         # A hold must be INTRODUCED by a pose that states the position
         # it is asserting, and may then be inherited by poses that keep
         # holding it. Without this rule carry-forward silently supplies
