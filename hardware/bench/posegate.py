@@ -157,13 +157,31 @@ class PoseGate:
                                    label="jog-step")
 
     def check_sequence(self, poses: list[dict[int, int]],
-                       label: str = "sequence") -> Verdict:
+                       label: str = "sequence",
+                       from_measured: bool = False) -> Verdict:
         """Gate a whole walk through poses, not just one step.
 
         `teach replay` knows its entire trajectory in advance, so it can
         be told before it commits rather than partway through — which is
         also the only way to catch the APPROACH to the first frame, a
         move nobody recorded and the one most likely to surprise.
+
+        `from_measured` says poses[0] is where the arm ACTUALLY IS, read
+        from the encoders, rather than a pose anyone proposed. It must
+        then not be adjudicated as a plan — measured 2026-07-30 on the
+        real arm, and the reason is physical: a torque-off SO-ARM100
+        settles slightly deeper into its fold than the pose captured as
+        `rest`, and at full fold the gripper genuinely RESTS AGAINST the
+        shoulder. The twin agrees with the arm and reports 0.44 mm of
+        contact; 4 ticks of wrist opening clears it.
+
+        Refusing that is refusing reality, and it is unrecoverable: the
+        arm cannot move out of a pose it is not allowed to start from,
+        so every clip would be refused from a cold start forever. What
+        CAN be judged is the motion away from it, which is what the rest
+        of the sequence is. `exercise` has always passed this; `runner`
+        did not, and its first real move on the bench was refused at
+        step 0 because of it.
         """
         if not self.active:
             return Verdict(True, f"not checked ({self.reason})", 0, False)
@@ -176,9 +194,10 @@ class PoseGate:
 
         from sim.clip import Clip, Pose
 
-        report = self._twin.check_clip(Clip(
-            label, [Pose(f"p{n}", dict(p)) for n, p in enumerate(poses)],
-            self._profile))
+        report = self._twin.check_clip(
+            Clip(label, [Pose(f"p{n}", dict(p)) for n, p in enumerate(poses)],
+                 self._profile),
+            settle_from_measured=from_measured)
         if report.clean:
             return Verdict(True, f"clear ({report.poses_checked} poses)",
                            report.poses_checked, True)

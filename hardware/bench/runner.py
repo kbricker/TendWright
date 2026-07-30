@@ -235,7 +235,11 @@ def gate_clip(gate, start: dict[int, int], clip) -> 'Verdict':  # noqa: F821
     resolved = clip.resolved(start)
     return gate.check_sequence(
         [dict(start)] + [dict(p.ticks) for p in resolved.poses],
-        label=clip.name)
+        label=clip.name,
+        # `start` came off the encoders, so it is a FACT, not a proposal
+        # — see PoseGate.check_sequence. Judging it as a plan refuses the
+        # arm's own resting slump and leaves no move able to fix it.
+        from_measured=True)
 
 
 # ------------------------------------------------------------- execution
@@ -472,6 +476,15 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
         # one: gating the plan against itself would always pass.
         regated = 0
         if gate is not None and gate.active:
+            # NOT from_measured, even though `here` is measured. The
+            # waiver excuses structurally-nested pairs, and a per-edge
+            # check is only two poses — steps 0 and 1 — so the waiver
+            # would cover the ENTIRE check and disable this gate. The
+            # selftest catches exactly that: with it on, a folded joint
+            # 2 stops being caught mid-clip (12.26 mm, a real collision
+            # between a structurally-nested pair). The waiver belongs to
+            # the leading settle, which the up-front gate covers; by the
+            # time an edge plays, the arm is at a pose someone planned.
             verdict = gate.check_sequence([here, {**here, **b.ticks}],
                                           label=f"{clip.name}[{n}]")
             regated = verdict.poses_checked
