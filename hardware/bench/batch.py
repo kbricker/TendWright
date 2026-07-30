@@ -133,11 +133,11 @@ def health(cal: str, port: str | None) -> tuple[bool, str]:
     next run anyway — this reports it as a health failure rather than as
     a mysterious run failure."""
     from .bus import FeetechBus
-    from .calibrate import load_calibration
+    from .calibrate import load_joint_calibration
     from .exercise import PREFLIGHT_REST_TOL_TICKS
 
     try:
-        cals = load_calibration(Path(cal))
+        cals = load_joint_calibration(Path(cal))
         with FeetechBus(port) as bus:
             worst, worst_id = 0, 0
             for i, c in sorted(cals.items()):

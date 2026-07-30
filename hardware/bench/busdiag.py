@@ -50,7 +50,7 @@ import time
 from collections import Counter, defaultdict
 
 from .bus import (REG_PRESENT_TEMPERATURE, BenchError, FeetechBus,
-                  run_tool)
+                  require_present, run_tool)
 from .monitor import parse_ids
 
 # A joint's temperature over a minute-long read loop with no motion is
@@ -401,9 +401,8 @@ def run() -> int:
     b_dirty: list[int] = []
 
     with FeetechBus(args.port) as bus:
-        missing = [i for i in ids if bus.ping(i) is None]
-        if missing:
-            raise BenchError(f"no answer from servo IDs {missing}")
+        require_present(bus, ids,
+                        "run the scan tool to see what is on the bus")
         print(f"bus diagnostic on {bus.port_name}, joints {ids}")
         print("READ ONLY — no motion, no torque change, no register write.\n")
 

@@ -121,12 +121,12 @@ def run() -> int:
     # Calibrated joint: soft limits default to the CALIBRATED range and
     # positions display in the ratified frame. Lazy import for symmetry
     # with monitor (whose parse_ids IS module-imported by calibrate);
-    # #637 gives load_calibration a shared home.
+    # #637 gives load_joint_calibration a shared home.
     cal = None
     cal_path = Path(args.cal)
     if cal_path.exists():
-        from .calibrate import load_calibration
-        cal = load_calibration(cal_path).get(args.servo_id)
+        from .calibrate import load_joint_calibration
+        cal = load_joint_calibration(cal_path).get(args.servo_id)
     frame = cal.frame if cal else None
 
     soft_min = args.soft_min if args.soft_min is not None else (

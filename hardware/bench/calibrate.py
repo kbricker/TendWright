@@ -37,7 +37,8 @@ from pathlib import Path
 
 from hardware.units import DegFrame, Frame, frame_from_dict, frame_to_dict
 
-from .bus import POSITION_RANGE, BenchError, FeetechBus, confirm, run_tool
+from .bus import (POSITION_RANGE, BenchError, FeetechBus,
+                  confirm_torque_cut, require_present, run_tool)
 from .monitor import parse_ids
 from .term import flush_input, read_key
 
@@ -133,7 +134,7 @@ def _joint_ok(cal: JointCal) -> bool:
             and _rest_ok(cal.min, cal.max, cal.rest))
 
 
-def load_calibration(path: Path) -> dict[int, JointCal]:
+def load_joint_calibration(path: Path) -> dict[int, JointCal]:
     """Load + strictly validate a calibration file -> {joint id: JointCal}."""
     bad = BenchError(
         f"{path} is not a valid calibration file",
@@ -324,13 +325,11 @@ def capture(args: argparse.Namespace) -> int:
     except OSError as exc:
         raise BenchError(f"cannot write next to {out}: {exc}",
                          "pick a writable --out location") from exc
-    existing = load_calibration(out) if out.exists() else {}
+    existing = load_joint_calibration(out) if out.exists() else {}
 
     with FeetechBus(args.port) as bus:
-        missing = [i for i in ids if bus.ping(i) is None]
-        if missing:
-            raise BenchError(f"no answer from servo IDs {missing}",
-                             "run the scan tool to see what is on the bus")
+        require_present(bus, ids,
+                        "run the scan tool to see what is on the bus")
 
         redo = sorted(set(ids) & set(existing))
         if redo:
@@ -338,9 +337,7 @@ def capture(args: argparse.Namespace) -> int:
                   f"the other {len(existing) - len(redo)}")
         print("this tool stays TORQUE OFF throughout — it cannot move the "
               "arm; you move the joints by hand.")
-        print(f"about to cut torque on servos {ids} — if the arm is raised "
-              f"it WILL drop under gravity.")
-        if not args.yes and not confirm("support the arm, then type y to continue: "):
+        if not confirm_torque_cut(ids, args.yes):
             print("aborted")
             return 1
 
@@ -436,7 +433,7 @@ def show(args: argparse.Namespace) -> int:
     if not path.exists():
         raise BenchError(f"no such file: {path}",
                          "run calibrate capture first")
-    cals = load_calibration(path)
+    cals = load_joint_calibration(path)
     print(f"{path} — {len(cals)} joint(s)")
     print_table(cals)
     missing = sorted(set(JOINT_NAMES) - set(cals))

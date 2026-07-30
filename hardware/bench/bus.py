@@ -313,3 +313,69 @@ run_tool = make_run_tool(
 def confirm(prompt: str) -> bool:
     """y/yes confirmation (EOFError handled by run_tool)."""
     return input(prompt).strip().lower() in ("y", "yes")
+
+
+# --------------------------------------------------- shared safety prompts
+#
+# These three used to be copy-pasted across the tools, which plan #712.3
+# named as a safety-messaging risk before it happened and then watched
+# happen: the held-torque prompt was duplicated into `runner` on
+# 2026-07-27 and the two copies had already drifted apart by 2026-07-30.
+# They live here because every tool that can move the arm already
+# imports this module.
+
+def require_present(bus, ids: list[int], why: str) -> None:
+    """Refuse to proceed unless every joint answers a ping.
+
+    `why` is the caller's hint — what this particular tool needs the
+    missing servos FOR — because "run scan" alone does not tell an
+    operator whether the joint matters to what they just asked for.
+    """
+    missing = [i for i in ids if bus.ping(i) is None]
+    if missing:
+        raise BenchError(f"no answer from servo IDs {missing}", why)
+
+
+def confirm_torque_cut(ids, yes: bool = False) -> bool:
+    """Warn that cutting torque DROPS a raised arm, then ask.
+
+    Returns False if the operator declined; the caller prints its own
+    "aborted" and chooses its exit code. `yes` skips the prompt but
+    never the warning — an operator passing --yes should still see in
+    the log what was about to happen.
+    """
+    print(f"about to cut torque on servos {sorted(ids)} — if the arm is "
+          f"raised it WILL drop under gravity.")
+    return yes or confirm("support the arm, then type y to continue: ")
+
+
+def held_torque_cut(why: str, unattended: bool = False) -> None:
+    """The arm is (or may be) HOLDING under torque. Never drop it on an
+    unwarned operator: hold until they have a hand on it, then let the
+    caller's cleanup cut torque. A Ctrl+C anywhere in here (not just at
+    the input) skips ahead to that same cleanup.
+
+    UNATTENDED SKIPS THE WAIT. The prompt protects a human standing at
+    the bench; on a remote run there is nobody at this terminal to warn,
+    so waiting achieves nothing and costs something — the servos stay
+    energized and heating while a prompt no one will answer sits open,
+    and the run cannot report until it is killed. Cutting promptly and
+    saying so out loud is the honest behaviour when the warning has no
+    audience. It is a separate flag rather than an isatty() test on
+    purpose: a forced pty (`ssh -tt`) reports a terminal that has no
+    human behind it, so the machine cannot infer this and the operator
+    must declare it.
+    """
+    from .term import flush_input
+    if unattended:
+        print(f"\n{why} — the arm was HOLDING under torque; cutting now "
+              "(--unattended: nobody is at this terminal to warn, and the "
+              "arm will settle to its slump pose).", file=sys.stderr)
+        return
+    try:
+        print(f"\n{why} — the arm is HOLDING under torque. get a hand on "
+              "it — it drops when torque cuts.", file=sys.stderr)
+        flush_input()
+        input("press Enter to cut torque: ")
+    except (EOFError, KeyboardInterrupt):
+        pass  # fall through to the caller's torque cut

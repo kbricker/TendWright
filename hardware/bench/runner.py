@@ -96,8 +96,9 @@ import serial
 
 from hardware.units import fmt_ticks, span_deg
 
-from .bus import BenchError, FeetechBus, confirm, run_tool
-from .calibrate import JointCal, load_calibration
+from .bus import (BenchError, FeetechBus, confirm, held_torque_cut,
+                  require_present, run_tool)
+from .calibrate import JointCal, load_joint_calibration
 from .guards import (ENTRY_PHASE, MOTION_PHASE, StrainWatch, check_holds,
                      holds_for)
 from .motion import EStop, halt_all, wait_settle
@@ -628,7 +629,7 @@ def _load(args) -> tuple[dict[int, JointCal], 'Clip']:  # noqa: F821
         raise BenchError(f"no calibration at {cal_path}",
                          "run `calibrate capture` first — a clip is authored "
                          "in degrees, which only a calibration can convert")
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     clip = load_clip(cals, Path(args.clip))
     # Here rather than only in `run_clip`, so `runner show` — the
     # command whose whole job is judging a file without touching the
@@ -682,11 +683,9 @@ def cmd_run(args) -> int:
         require_interactive()
 
     with FeetechBus(args.port) as bus:
-        missing = [i for i in ids if bus.ping(i) is None]
-        if missing:
-            raise BenchError(f"no answer from servo IDs {missing}",
-                             "a clip drives every calibrated joint; run "
-                             "`scan` to see what the bus can hear")
+        require_present(bus, ids,
+                        "a clip drives every calibrated joint; run "
+                        "`scan` to see what the bus can hear")
 
         print(describe_clip(clip, cals))
 
@@ -772,7 +771,7 @@ def cmd_run(args) -> int:
                       "cutting torque")
             else:
                 print("clip complete — the arm is HOLDING away from rest")
-                _held_torque_cut(args.unattended)
+                held_torque_cut("clip complete", args.unattended)
             return 0
         except ClipStopped as exc:
             print(f"\nSTOPPED: {exc}", file=sys.stderr)
@@ -786,21 +785,21 @@ def cmd_run(args) -> int:
             if exc.hint:
                 print(f"hint:  {exc.hint}", file=sys.stderr)
             print(strain.summary(), file=sys.stderr)
-            _held_torque_cut(args.unattended)
+            held_torque_cut("stopped", args.unattended)
             return 3
         except (BenchError, serial.SerialException):
             try:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            _held_torque_cut(args.unattended)
+            held_torque_cut("error", args.unattended)
             raise
         except KeyboardInterrupt:
             try:
                 halt_all(bus, ids)
             except KeyboardInterrupt:
                 pass
-            _held_torque_cut(args.unattended)
+            held_torque_cut("interrupted", args.unattended)
             raise
         finally:
             bus.safe_torque_off(ids)
@@ -831,28 +830,6 @@ def _near_rest(bus, cals: dict[int, JointCal]) -> bool:
                    <= PREFLIGHT_REST_TOL_TICKS for i, c in cals.items())
     except (BenchError, serial.SerialException):
         return False
-
-
-def _held_torque_cut(unattended: bool = False) -> None:
-    """Never drop a holding arm on an unwarned operator.
-
-    Unless there is no operator: on a remote run the prompt has no
-    audience, so waiting only keeps the servos energized behind a
-    question nobody will answer, and the run cannot report until
-    something kills it. Cut, and say why."""
-    from .term import flush_input
-    if unattended:
-        print("\nthe arm was HOLDING under torque; cutting now "
-              "(--unattended: nobody is at this terminal to warn).",
-              file=sys.stderr)
-        return
-    try:
-        print("\nthe arm is HOLDING under torque. get a hand on it — it "
-              "drops when torque cuts.", file=sys.stderr)
-        flush_input()
-        input("press Enter to cut torque: ")
-    except (EOFError, KeyboardInterrupt):
-        pass
 
 
 def run() -> int:
@@ -897,7 +874,7 @@ def run() -> int:
     args.yes = getattr(args, "yes", False) or getattr(args, "unattended", False)
     if args.command == "example":
         cal_path = Path(args.cal)
-        cals = load_calibration(cal_path) if cal_path.exists() else None
+        cals = load_joint_calibration(cal_path) if cal_path.exists() else None
         print(example_clip_doc(cals), end="")
         return 0
     return cmd_show(args) if args.command == "show" else cmd_run(args)
@@ -932,7 +909,7 @@ def _selftest() -> int:
         print("  no calibration.json here — cannot exercise the runner")
         return 1
 
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     rest = {i: c.rest for i, c in cals.items()}
     ids = sorted(cals)
     profile = MotionProfile(speed=300, acceleration=15)

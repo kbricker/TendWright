@@ -284,7 +284,7 @@ def open_camera(index: int, width: int, height: int,
     return cap
 
 
-def load_calibration(path: str | None):
+def load_camera_calibration(path: str | None):
     if not path:
         return None, None
     try:
@@ -347,7 +347,7 @@ def run() -> int:
                          "0 means unpaced; omit the flag for the "
                          f"{PREVIEW_FPS_DEFAULT:g} fps default")
 
-    K, dist = load_calibration(args.calib)
+    K, dist = load_camera_calibration(args.calib)
     detector = Detector(families=TAG_FAMILY)
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)

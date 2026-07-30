@@ -44,7 +44,7 @@ from hardware.units import fmt_ticks, span_deg
 from orchestrator.fsm import Refused, StateMachine, Transition
 
 from .bus import BenchError, run_tool
-from .calibrate import JointCal, load_calibration
+from .calibrate import JointCal, load_joint_calibration
 from .motion import SETTLE_TOL_TICKS
 from .posegate import PoseGate
 
@@ -369,7 +369,7 @@ def load_machine(cal_path: Path, edges: list[tuple[str, str]] | None = None,
     """
     from sim.clip import load_poses
 
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     poses = load_poses(cals)
     if not poses:
         raise BenchError(
@@ -410,7 +410,7 @@ def _selftest(cal_path: Path) -> int:
         return 1
     from orchestrator.fsm import FsmError, GuardsRefused
 
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     rest = {i: c.rest for i, c in cals.items()}
     pan = {**rest, 1: rest[1] + 300}
     poses = {"REST": Pose("REST", dict(rest)), "PAN": Pose("PAN", dict(pan))}

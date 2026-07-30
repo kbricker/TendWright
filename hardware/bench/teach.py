@@ -24,7 +24,8 @@ from pathlib import Path
 
 from hardware.units import span_deg
 
-from .bus import BenchError, FeetechBus, confirm, run_tool
+from .bus import (BenchError, FeetechBus, confirm,
+                  confirm_torque_cut, require_present, run_tool)
 from .monitor import parse_ids
 from .motion import wait_settle
 from .term import read_key
@@ -44,14 +45,9 @@ def record(args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)  # fail HERE, not after recording
 
     with FeetechBus(args.port) as bus:
-        present = [i for i in ids if bus.ping(i) is not None]
-        if sorted(present) != sorted(ids):
-            missing = sorted(set(ids) - set(present))
-            raise BenchError(f"no answer from servo IDs {missing}",
-                             "recording needs every joint; run the scan tool")
-        print(f"about to cut torque on servos {ids} — if the arm is raised "
-              f"it WILL drop under gravity.")
-        if not args.yes and not confirm("support the arm, then type y to continue: "):
+        require_present(bus, ids,
+                        "recording needs every joint; run the scan tool")
+        if not confirm_torque_cut(ids, args.yes):
             print("aborted")
             return 1
         for servo_id in ids:
@@ -178,9 +174,9 @@ def replay(args: argparse.Namespace) -> int:
         raise BenchError("--speed must be between 0.05 and 1.0")
 
     with FeetechBus(args.port) as bus:
-        missing = [i for i in ids if bus.ping(i) is None]
-        if missing:
-            raise BenchError(f"no answer from servo IDs {missing}")
+        require_present(bus, ids,
+                        "replay drives every recorded joint; run the "
+                        "scan tool to see what the bus can hear")
 
         current = [bus.read_position(i) for i in ids]
         first = frames[0]

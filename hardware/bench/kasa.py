@@ -252,11 +252,11 @@ def arm_rest_check(cal_path: str = "calibration.json",
     """
     try:
         from .bus import FeetechBus
-        from .calibrate import REST_TOL_TICKS, load_calibration
+        from .calibrate import REST_TOL_TICKS, load_joint_calibration
     except Exception as exc:                    # SDK missing, wrong platform
         return False, f"cannot load the servo stack to check the arm ({exc})"
     try:
-        cals = load_calibration(Path(cal_path))
+        cals = load_joint_calibration(Path(cal_path))
     except Exception as exc:
         return False, f"cannot read {cal_path} ({exc})"
     if not cals:

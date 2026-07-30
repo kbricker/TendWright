@@ -90,7 +90,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from hardware.bench.calibrate import JointCal, load_calibration
+from hardware.bench.calibrate import JointCal, load_joint_calibration
 from hardware.errors import BenchError
 from hardware.units import DegFrame, RAD_PER_TICK, fmt_ticks, span_deg
 
@@ -332,7 +332,7 @@ class Twin:
         # Half each, because MuJoCo sums them per pair (see _GEOM_MARGIN_M).
         self.model.geom_margin[:] = _GEOM_MARGIN_M
         self.data = mujoco.MjData(self.model)
-        self.cals = load_calibration(Path(cal_path))
+        self.cals = load_joint_calibration(Path(cal_path))
         missing = sorted(set(JOINT_MAPS) - set(self.cals))
         if missing:
             raise BenchError(

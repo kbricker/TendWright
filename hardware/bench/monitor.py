@@ -22,7 +22,8 @@ import sys
 import time
 from pathlib import Path
 
-from .bus import BenchError, FeetechBus, confirm, run_tool
+from .bus import (BenchError, FeetechBus, confirm,
+                  confirm_torque_cut, run_tool)
 
 
 def parse_ids(spec: str) -> list[int]:
@@ -68,14 +69,14 @@ def run() -> int:
     ids = parse_ids(args.ids)
     # Lazy import: calibrate imports parse_ids from THIS module — a
     # module-level import back the other way would be a cycle. (The
-    # loader's proper shared home is #637's load_calibration move.)
+    # loader's proper shared home is #637's load_joint_calibration move.)
     frames = {}
     cal_path = Path(args.cal)
     if not args.raw and cal_path.exists():
-        from .calibrate import load_calibration
+        from .calibrate import load_joint_calibration
         try:
             frames = {i: c.frame for i, c in
-                      load_calibration(cal_path).items()
+                      load_joint_calibration(cal_path).items()
                       if c.frame is not None}
         except BenchError as exc:
             print(f"warning: {cal_path} unusable ({exc}) — printing raw "
@@ -89,9 +90,7 @@ def run() -> int:
         if missing:
             print(f"warning: no answer from IDs {missing}", file=sys.stderr)
 
-        print(f"about to cut torque on {present} — if the arm is raised it "
-              f"WILL drop under gravity.")
-        if not args.yes and not confirm("support the arm, then type y to continue: "):
+        if not confirm_torque_cut(present, args.yes):
             print("aborted")
             return 1
         for servo_id in present:

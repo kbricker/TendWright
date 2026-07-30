@@ -53,9 +53,10 @@ import serial
 
 from hardware.units import DEG_PER_TICK, fmt_ticks
 
-from .bus import BenchError, FeetechBus, confirm, run_tool
+from .bus import (BenchError, FeetechBus, confirm, held_torque_cut,
+                  require_present, run_tool)
 from .calibrate import (JOINT_NAMES, JointCal, fold_direction,
-                        load_calibration)
+                        load_joint_calibration)
 from .guards import StrainWatch
 from .monitor import parse_ids
 from .motion import EStop, halt_all
@@ -223,36 +224,6 @@ def check_start_pose(bus: FeetechBus, cals: dict[int, JointCal],
             )
 
 
-def held_torque_cut(why: str, unattended: bool = False) -> None:
-    """The arm is (or may be) holding under torque somewhere mid-routine.
-    Never drop it on an unwarned operator: hold until they have a hand on
-    it, then let the caller's cleanup cut torque. A Ctrl+C anywhere in
-    here (not just at the input) skips ahead to that same cleanup.
-
-    UNATTENDED SKIPS THE WAIT. The prompt protects a human standing at
-    the bench; on a remote run there is nobody at this terminal to warn,
-    so waiting achieves nothing and costs something — the servos stay
-    energized and heating while a prompt no one will answer sits open,
-    and the run cannot report until it is killed. Cutting promptly and
-    saying so out loud is the honest behaviour when the warning has no
-    audience. It is a separate flag rather than an isatty() test on
-    purpose: a forced pty (`ssh -tt`) reports a terminal that has no
-    human behind it, so the machine cannot infer this and the operator
-    must declare it."""
-    if unattended:
-        print(f"\n{why} — the arm was HOLDING under torque; cutting now "
-              "(--unattended: nobody is at this terminal to warn, and the "
-              "arm will settle to its slump pose).", file=sys.stderr)
-        return
-    try:
-        print(f"\n{why} — the arm is HOLDING under torque. get a hand on "
-              "it — it drops when torque cuts.", file=sys.stderr)
-        flush_input()
-        input("press Enter to cut torque: ")
-    except (EOFError, KeyboardInterrupt):
-        pass  # fall through to the caller's torque cut
-
-
 def _selftest(cal_path: Path) -> int:
     """The #660 acceptance for this routine, off the bench.
 
@@ -277,7 +248,7 @@ def _selftest(cal_path: Path) -> int:
         return 1
     from sim.clip import MotionProfile, sample_clip
 
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     # `run` checks this after argument parsing; the selftest returns
     # before reaching that, and a calibration missing a clearance joint
     # would then reach `cals[j]` inside exercise_clip as a bare
@@ -521,7 +492,7 @@ def run() -> int:
             "this tool refuses to move an uncalibrated arm — run "
             "`calibrate capture` first (or point --cal at the file)",
         )
-    cals = load_calibration(cal_path)
+    cals = load_joint_calibration(cal_path)
     uncaptured = sorted(set(JOINT_NAMES) - set(cals))
     if uncaptured:
         raise BenchError(
@@ -556,13 +527,9 @@ def run() -> int:
             )
 
     with FeetechBus(args.port) as bus:
-        missing = [i for i in ids if bus.ping(i) is None]
-        if missing:
-            raise BenchError(
-                f"no answer from servo IDs {missing}",
-                "every calibrated joint must be on the bus to be held "
-                "during sweeps — run the scan tool",
-            )
+        require_present(bus, ids,
+                        "every calibrated joint must be on the bus to be "
+                        "held during sweeps — run the scan tool")
 
         check_start_pose(bus, cals, ids)
         # The arm is verified at rest, where torque-off is a no-drop
