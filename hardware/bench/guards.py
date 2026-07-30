@@ -57,21 +57,47 @@ MOTION_PHASE = "in-motion invariant"
 
 @dataclass(frozen=True)
 class Hold:
-    """A joint that must physically BE open for the next move to be safe.
+    """A joint that must physically BE where it was told for the next
+    move to be safe.
 
     `opening` is the tick direction that opens this joint away from its
-    fold (+1 or -1), so the check can be one-sided: sagging back toward
-    the fold fails, opening further does not."""
+    fold (+1 or -1), which makes the check ONE-SIDED: sagging back
+    toward the fold fails, opening further does not.
+
+    **`opening=0` means TWO-SIDED — any deviation fails — and that is
+    the safe default for a joint whose fold direction is not a
+    meaningful concept.** The one-sided form is a deliberate relaxation
+    that is only sound where "further open" is genuinely safer, which is
+    true of the elbow and wrist holding clearance above the table and is
+    NOT true in general:
+
+      * `fold_direction` derives its answer from whether rest sits above
+        or below the range midpoint. On this arm that margin is 82 ticks
+        for j1 and 93 for j5 — a re-`calibrate capture` that moves rest
+        across the midpoint silently REVERSES which failure the guard
+        catches, with no error and no visible change.
+      * j5 is a continuous roll. It has no fold.
+      * A one-sided hold on the gripper (j6) passes when the jaws fly
+        WIDE OPEN and fails only when they clamp harder — the exact
+        inverse of the failure worth guarding when holding a part.
+
+    So: derive the direction only where it is known to be right, and
+    otherwise say nothing and get the two-sided check.
+    """
 
     joint: int
     tick: int
-    opening: int
+    opening: int = 0
     frame: Frame | None = None
     tol: int = HOLD_SAG_TOL_TICKS
 
     def sag(self, actual: int) -> int:
-        """Ticks the joint has fallen back toward its fold (<=0 = open
-        at least as far as commanded)."""
+        """How far the joint is from where it must be, in ticks.
+
+        One-sided when an opening direction is known (<=0 means "open at
+        least as far as commanded"); plain distance when it is not."""
+        if self.opening == 0:
+            return abs(self.tick - actual)
         return (self.tick - actual) * self.opening
 
     def ok(self, actual: int) -> bool:
@@ -80,10 +106,13 @@ class Hold:
     def describe(self, actual: int | None = None) -> str:
         want = fmt_ticks(self.frame, self.tick)
         if actual is None:
-            return f"joint {self.joint} open to {want}"
+            verb = "open to" if self.opening else "held at"
+            return f"joint {self.joint} {verb} {want}"
+        moved = ("sagged {:.1f} deg toward its fold"
+                 if self.opening else "moved {:.1f} deg off")
         return (f"joint {self.joint} reads {fmt_ticks(self.frame, actual)}, "
-                f"needs {want} (sagged {span_deg(self.sag(actual)):.1f} deg "
-                f"toward its fold, limit {span_deg(self.tol):.1f})")
+                f"needs {want} ({moved.format(span_deg(self.sag(actual)))}, "
+                f"limit {span_deg(self.tol):.1f})")
 
 
 class GuardViolation(BenchError):
@@ -119,8 +148,13 @@ def check_holds(bus, holds: list[Hold], phase: str, why: str = "") -> None:
 def holds_for(cals, hold_ticks: dict[int, int],
               opening: dict[int, int]) -> list[Hold]:
     """Build Holds from a commanded pose plus each joint's opening
-    direction, carrying frames so violations read in human units."""
-    return [Hold(joint=i, tick=t, opening=opening[i],
+    direction, carrying frames so violations read in human units.
+
+    A joint absent from `opening` gets the TWO-SIDED check (see `Hold`),
+    so `{}` means "guard every one of these in both directions". That is
+    the safe reading of a missing direction — the alternative would be
+    to invent one."""
+    return [Hold(joint=i, tick=t, opening=opening.get(i, 0),
                  frame=cals[i].frame if i in cals else None)
             for i, t in sorted(hold_ticks.items())]
 

@@ -67,6 +67,11 @@ class CellFsm(StateMachine):
               "UNLOADING", "PART_DONE", "FAULT", "RECOVERING", "HALTED")
     INITIAL = "IDLE"
     TRANSITIONS = _make_transitions()
+    # HALTED is absorbing — the transition table already refuses every
+    # event out of it, and this closes the other door: `interrupt` is an
+    # ungated state change for when reality moved on, and nothing that
+    # happens in the cell un-halts a machine that was halted for safety.
+    ABSORBING = ("HALTED",)
 
     SENSOR_POLL = 0.05  # s between sensor samples
     SENSOR_DEBOUNCE = 3  # consecutive agreeing samples to accept a reading

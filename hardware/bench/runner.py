@@ -39,6 +39,21 @@ questions.
      joint moved, so verify reality against the plan rather than
      assuming the plan happened.
 
+  3. THE POSE'S GUARDED HOLDS, FROM THE ENCODERS — a third mechanism,
+     answering a third question. The gate asks "would this path
+     collide?"; a hold asks "is the arm in the state this move DEPENDS
+     on?" A shoulder sweep is only safe while the elbow and wrist are
+     physically 90 degrees open, and the twin cannot tell you whether
+     they are — it can only tell you what happens if they are.
+
+     `Pose.holds` names those joints; `run_clip` reads them back before
+     the edge is committed and again on every settle sample while it
+     plays. `check_hold_structure` refuses, before anything energizes,
+     a clip whose holds could not be honoured. This is what `exercise`
+     used to do in its own code, moved into the clip so that any
+     routine can say it — and so the executor enforces it because the
+     CLIP says so, not because a particular tool remembered to.
+
 WHAT HAPPENS MID-CLIP WHEN SOMETHING REFUSES. It halts every joint in
 place, holds under torque, and STOPS. It does not attempt to return to
 rest, to the previous pose, or to anything else. Three reasons, and they
@@ -83,7 +98,8 @@ from hardware.units import fmt_ticks, span_deg
 
 from .bus import BenchError, FeetechBus, confirm, run_tool
 from .calibrate import JointCal, load_calibration
-from .guards import StrainWatch
+from .guards import (ENTRY_PHASE, MOTION_PHASE, StrainWatch, check_holds,
+                     holds_for)
 from .motion import EStop, halt_all, wait_settle
 
 # The move to pose 0 is the one nobody authored: it starts from wherever
@@ -108,6 +124,7 @@ class EdgeResult:
     seconds: float
     drift_ticks: int = 0        # how far off-plan the arm was at entry
     regated_poses: int = 0      # poses the per-edge gate checked
+    held: tuple[int, ...] = ()  # joints guarded from the encoders
 
 
 @dataclass
@@ -189,6 +206,17 @@ def describe_clip(clip, cals: dict[int, JointCal]) -> str:
         lines.append(f"  [{n}] {a.name} -> {b.name}  "
                      f"({edge_duration(clip.profile, a, b):.1f}s)  "
                      f"{', '.join(parts) or 'no movement'}")
+        # Holds are a safety precondition of the move, so they belong in
+        # the plan the operator reads BEFORE saying yes — not only in the
+        # message they get when one fails.
+        if b.holds:
+            def _at(j: int) -> str:
+                frame = cals[j].frame if j in cals else None
+                return f"j{j} {fmt_ticks(frame, b.ticks[j])}"
+
+            held = ", ".join(_at(j) for j in b.holds)
+            lines.append(f"        guarded: {held} (verified from the "
+                         f"encoders on entry and throughout)")
     return "\n".join(lines)
 
 
@@ -213,6 +241,63 @@ def gate_clip(gate, start: dict[int, int], clip) -> 'Verdict':  # noqa: F821
 def _drift(a: dict[int, int], b: dict[int, int]) -> int:
     """Worst per-joint difference between two poses, in ticks."""
     return max((abs(a[i] - b.get(i, a[i])) for i in a), default=0)
+
+
+def check_hold_structure(clip, cals: dict[int, JointCal]) -> None:
+    """Refuse a clip whose guarded holds cannot mean anything.
+
+    PRECONDITION: `clip` must be RESOLVED (every pose complete). On an
+    unresolved clip a hold whose joint the previous pose does not pin
+    reads as "this edge moves it" and would be falsely refused. Both
+    call sites resolve first — `run_clip` against the measured pose,
+    `_load` because `load_clip` resolves by carry-forward.
+
+    A hold on pose B says "these joints must ALREADY be where B puts
+    them, verified from the encoders, before the edge into B is
+    commanded, and must stay there while it plays." Three ways to author
+    that so it cannot be honoured, all refused here — before the arm
+    energizes, because discovering it on edge 7 leaves the arm parked
+    mid-routine for a mistake that was visible in the file:
+
+    * **The held joint MOVES on the edge it guards.** Then the entry
+      check would demand the joint be at a position the edge is about
+      to drive it away from, and the in-motion check would fail by
+      construction the moment it started travelling. This is a
+      contradiction, not a tight tolerance.
+    * **Pose 0 declares holds.** Pose 0 is reached by the approach —
+      the one move nobody authored, from wherever the arm was left.
+      There is no prior pose to have satisfied the hold, so there is
+      nothing to verify.
+    * **The held joint is not calibrated.** The guard would need to read
+      an encoder the toolkit has no frame for, and would fail with a
+      bare KeyError mid-run — the exact outcome this function exists to
+      prevent.
+    """
+    for p in clip.poses:
+        unknown = sorted(j for j in p.holds if j not in cals)
+        if unknown:
+            raise BenchError(
+                f"clip '{clip.name}': pose '{p.name}' holds joint(s) "
+                f"{unknown}, which are not calibrated",
+                f"a guard reads that joint's encoder and compares it in "
+                f"human units; run `calibrate capture --ids "
+                f"{','.join(str(j) for j in unknown)}`, or drop it from "
+                f"the hold")
+    if clip.poses and clip.poses[0].holds:
+        raise BenchError(
+            f"clip '{clip.name}': the first pose ('{clip.poses[0].name}') "
+            f"holds joint(s) {list(clip.poses[0].holds)}",
+            "pose 0 is reached by the approach move from wherever the arm "
+            "is sitting, so a hold there has nothing to check against — "
+            "open the joints in pose 0 and hold them from pose 1 on")
+    for n, (a, b) in enumerate(clip.edges(), start=1):
+        moved = [j for j in b.holds if a.ticks.get(j) != b.ticks[j]]
+        if moved:
+            raise BenchError(
+                f"clip '{clip.name}' edge {n} ({a.name} -> {b.name}) holds "
+                f"joint(s) {moved} while also moving them",
+                "a hold is a joint that must STAY PUT for this move to be "
+                "safe; move it on its own edge first, then hold it")
 
 
 def run_clip(bus, cals: dict[int, JointCal], clip, *,
@@ -254,6 +339,10 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
     # gated or commanded — so the gate and the servos are handed the
     # same complete poses. See Clip.resolved.
     clip = clip.resolved({i: bus.read_position(i) for i in ids})
+    # Refused BEFORE the approach energizes anything: a hold that cannot
+    # be honoured is a file mistake, and finding it mid-routine parks the
+    # arm between poses for no reason.
+    check_hold_structure(clip, cals)
     edges = clip.edges()
 
     def say(msg: str) -> None:
@@ -268,11 +357,20 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
         """Halt, then build the stop report. Halting FIRST: the arm
         stopping is never delayed by bookkeeping.
 
-        `halt=False` for a refusal raised BEFORE the edge was commanded.
-        The arm is already stationary and holding the goal it settled
-        on, so re-goaling would be writes with nothing to stop — and it
-        would blur the property #699 established for `jog`: a refused
-        move sends the servos nothing at all."""
+        `halt=False` for a refusal raised BEFORE the edge was commanded:
+        nothing was sent, so there is nothing to stop, and re-goaling
+        would blur the property #699 established for `jog` — a refused
+        move sends the servos nothing at all.
+
+        The arm is normally stationary at that point, because every clip
+        edge settles with `require_still`. The one exception is edge 1
+        after an APPROACH, which settles on arrival alone
+        (`require_still=False`, matching `teach replay`) and so may
+        still be creeping the last few ticks toward pose 0. It is
+        converging on a pose the up-front gate cleared, so this is a
+        precision-of-reporting matter and not a motion hazard — but the
+        stop report says "holding HERE", and there it may be holding a
+        tick or two from HERE."""
         if halt:
             try:
                 halt_all(bus, ids)
@@ -288,6 +386,45 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
     def invariant() -> None:
         if strain is not None:
             strain.check(bus)
+
+    def holds_of(pose) -> list:
+        """The pose's guarded holds, built from its OWN commanded ticks.
+
+        Not from a separate guard table: the tick checked and the tick
+        commanded are the same field, so they cannot drift apart.
+
+        TWO-SIDED (`opening=0`). A clip may hold ANY joint, and the
+        one-sided "opening further is fine" relaxation is only sound
+        where a fold direction is real and unambiguous — see `Hold`. A
+        held joint that has drifted in EITHER direction is not where the
+        move needs it, and that is the honest check to make when the
+        clip has not said otherwise."""
+        return holds_for(cals, {j: pose.ticks[j] for j in pose.holds}, {})
+
+    def hold_why(pose) -> str:
+        # Not "clear of their fold" — the check is two-sided now, and a
+        # message that names only one direction would read as a bug the
+        # first time a joint trips it by moving the other way.
+        return (f"'{pose.name}' is only safe while joint(s) "
+                f"{list(pose.holds)} stay where it puts them")
+
+    def guarded_invariant(pose):
+        """Strain plus this edge's holds, re-read every sample.
+
+        A commanded hold is not a held joint (plan #649): the entry
+        check proves the joints were open when the move began, and this
+        proves they stayed open while it played — a joint that sags or
+        is knocked back mid-edge stops the arm instead of riding the
+        plan into whatever the clearance was protecting."""
+        held = holds_of(pose)
+        if not held:
+            return invariant
+
+        def check() -> None:
+            # Strain first: it is the one that means "stop right now".
+            invariant()
+            check_holds(bus, held, MOTION_PHASE, hold_why(pose))
+        return check
 
     sink = trace.sample if trace is not None else None
 
@@ -347,6 +484,29 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
                            "`jog` clear of it",
                            halt=False)
 
+        # THE ENTRY GUARD (#649). The edge is unreachable until the
+        # ENCODERS confirm the joints it depends on are actually open —
+        # not that they were commanded open, which is a different claim
+        # and the one that has been wrong on this bench.
+        if b.holds:
+            held = holds_of(b)
+            try:
+                check_holds(bus, held, ENTRY_PHASE, hold_why(b))
+            except BenchError as exc:
+                # Carry the guard's OWN hint through — it names the
+                # likely causes (obstruction, slipped horn, a servo
+                # that never reached its goal) and would otherwise be
+                # dropped, because str(BenchError) is the message only.
+                raise stop(n, a.name, b.name, str(exc),
+                           f"nothing was commanded, so the arm is where "
+                           f"the last edge left it. "
+                           f"{(exc.hint or '').rstrip('. ')}. Then `jog` "
+                           f"joint(s) {list(b.holds)} back to where this "
+                           f"move needs them and re-run.",
+                           halt=False) from exc
+            say("  guard: " + ", ".join(h.describe() for h in held)
+                + " — verified from the encoders")
+
         if on_edge is not None:
             on_edge(n, len(edges), dict(here))
 
@@ -359,7 +519,7 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
             trace.phase(f"{a.name}->{b.name}", edge=n)
         try:
             wait_settle(bus, dict(b.ticks), profile.speed, b.name,
-                        poll_key=poll_key, invariant=invariant,
+                        poll_key=poll_key, invariant=guarded_invariant(b),
                         sample_sink=sink)
         except EStop as exc:
             raise stop(n, a.name, b.name, "operator e-stop") from exc
@@ -372,7 +532,7 @@ def run_clip(bus, cals: dict[int, JointCal], clip, *,
         out.edges.append(EdgeResult(
             index=n, frm=a.name, to=b.name,
             seconds=time.monotonic() - edge_started,
-            drift_ticks=drift, regated_poses=regated))
+            drift_ticks=drift, regated_poses=regated, held=b.holds))
 
     out.seconds = time.monotonic() - started
     return out
@@ -469,7 +629,14 @@ def _load(args) -> tuple[dict[int, JointCal], 'Clip']:  # noqa: F821
                          "run `calibrate capture` first — a clip is authored "
                          "in degrees, which only a calibration can convert")
     cals = load_calibration(cal_path)
-    return cals, load_clip(cals, Path(args.clip))
+    clip = load_clip(cals, Path(args.clip))
+    # Here rather than only in `run_clip`, so `runner show` — the
+    # command whose whole job is judging a file without touching the
+    # arm — refuses what `run` would refuse. A file clip is already
+    # fully resolved by carry-forward, which is this check's
+    # precondition.
+    check_hold_structure(clip, cals)
+    return cals, clip
 
 
 def cmd_show(args) -> int:
@@ -611,6 +778,13 @@ def cmd_run(args) -> int:
             print(f"\nSTOPPED: {exc}", file=sys.stderr)
             print("the arm is holding HERE:", file=sys.stderr)
             print(exc.where(), file=sys.stderr)
+            # str(BenchError) is the MESSAGE only; the hint is a separate
+            # attribute that run_tool prints for uncaught errors. Caught
+            # here, it would be silently dropped — and the hint is the
+            # recovery instruction, which is the part the operator
+            # standing at a stopped arm actually needs.
+            if exc.hint:
+                print(f"hint:  {exc.hint}", file=sys.stderr)
             print(strain.summary(), file=sys.stderr)
             _held_torque_cut(args.unattended)
             return 3
@@ -775,10 +949,23 @@ def _selftest() -> int:
         was commanded — the plant disagreeing with the plan. `trip_at`
         makes the Nth health read report an overload."""
 
-        def __init__(self, start, stuck=None, trip_at=None):
+        def __init__(self, start, stuck=None, trip_at=None, sag_after=None):
             self.pos = dict(start)
             self.stuck = dict(stuck or {})
             self.trip_at = trip_at
+            # {joint: (nth_read_of_that_joint, ticks_off)} — the joint
+            # reports true until its nth read, then reports `ticks_off`
+            # away. A hold can fail at two distinct moments and only a
+            # read-indexed trigger can tell them apart on a bus where
+            # motion is instantaneous: sagging just BEFORE the guarded
+            # edge is the entry check's job, sagging once it is already
+            # playing is the in-motion invariant's. The test derives the
+            # index from a clean probe run rather than guessing it.
+            self.sag_after = dict(sag_after or {})
+            self.reads: dict[int, int] = {}
+            # (joint, commands issued so far) per read — lets a test say
+            # "the reads taken before joint N was ever commanded".
+            self.read_log: list[tuple[int, int]] = []
             self.moves: list[tuple[int, int, int, int]] = []
             self.health_reads = 0
 
@@ -786,7 +973,14 @@ def _selftest() -> int:
             return 1
 
         def read_position(self, i):
-            return self.stuck.get(i, self.pos[i])
+            self.reads[i] = self.reads.get(i, 0) + 1
+            self.read_log.append((i, len(self.moves)))
+            if i in self.stuck:
+                return self.stuck[i]
+            nth, off = self.sag_after.get(i, (None, 0))
+            if nth is not None and self.reads[i] >= nth:
+                return self.pos[i] + off
+            return self.pos[i]
 
         def move_to(self, i, tick, speed=400, acceleration=30):
             self.moves.append((i, tick, speed, acceleration))
@@ -927,6 +1121,148 @@ def _selftest() -> int:
         check("...and says so plainly", "e-stop" in exc.why, exc.why)
 
     # ---------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # GUARDED HOLDS (#649 at clip scale). This is the safety property
+    # `exercise` used to enforce with its own code, and the port to the
+    # general executor is only honest if the guard is provably still
+    # armed — including the failure mode nobody can see, where a hold
+    # is carried in the clip and quietly never checked.
+    print("\na clip's guarded holds are enforced from the ENCODERS")
+    from .calibrate import fold_direction
+    from .guards import HOLD_SAG_TOL_TICKS
+
+    # Joint 3 held open while joint 1 sweeps. `open3` is 3 opened well
+    # clear of its fold; a sag is a move back TOWARD the fold.
+    open3 = rest[3] + fold_direction(cals[3]) * 400
+    sag = -fold_direction(cals[3]) * (HOLD_SAG_TOL_TICKS + 40)
+    held_clip = Clip("held", [
+        Pose("home", dict(rest)),
+        Pose("open", {**rest, 3: open3}),
+        Pose("sweep", {**rest, 3: open3, 1: rest[1] + 60}, holds=(3,)),
+        Pose("back", {**rest, 3: open3}, holds=(3,)),
+    ], profile)
+
+    bus = FakeBus(rest)
+    out = run_quiet(bus, cals, held_clip, gate=gate, strain=StrainWatch(ids),
+                    quiet=True)
+    check("a clip with holds runs when the held joint is where it says",
+          len(out.edges) == 3, out.summary())
+    # Note this only proves the holds landed on the RIGHT EDGES — an
+    # off-by-one would show here. It does NOT prove the guards fire;
+    # `EdgeResult.held` is copied from the pose, so this passes even
+    # with both checks deleted. The two sag cases below are what prove
+    # the firing, and the label used to claim otherwise.
+    check("...and they landed on the right edges (an off-by-one would "
+          "show here)",
+          [e.held for e in out.edges] == [(), (3,), (3,)],
+          f"{[e.held for e in out.edges]}")
+
+    # WHEN the hold fails decides WHICH check should catch it, and on a
+    # bus where motion is instantaneous the two moments are only one
+    # read apart. Derive that read index from the clean run above rather
+    # than guessing it: `entry_read` is joint 3's last read taken before
+    # joint 1 was ever commanded, which is precisely the entry check.
+    j1_first = next(n for n, (i, _, _, _) in enumerate(bus.moves, start=1)
+                    if i == 1 and bus.moves[n - 1][1] != rest[1])
+    entry_read = sum(1 for i, done in bus.read_log
+                     if i == 3 and done < j1_first)
+
+    # THE ENTRY GUARD: joint 3 has let go by the time the sweep is about
+    # to be committed. Nothing has been commanded yet, so the arm is
+    # still exactly where the previous edge left it.
+    bus = FakeBus(rest, sag_after={3: (entry_read, sag)})
+    try:
+        run_quiet(bus, cals, held_clip, gate=gate, strain=StrainWatch(ids),
+                  quiet=True)
+        check("a sagged hold refuses the edge it guards", False)
+    except ClipStopped as exc:
+        check("a sagged hold refuses the edge it guards", True, str(exc))
+        check("...on the guarded edge, not earlier or later", exc.edge == 2,
+              f"edge {exc.edge}")
+        check("...naming the entry guard, so it is clear the ENCODERS "
+              "objected and not the twin",
+              ENTRY_PHASE in str(exc), str(exc)[:80])
+        # The #699 property: a refused move sends the servos nothing.
+        # Joint 1 is the one the guarded edge would have moved.
+        check("...and the swept joint was NEVER commanded",
+              all(i != 1 or t == rest[1] for i, t, _, _ in bus.moves),
+              f"{len([m for m in bus.moves if m[0] == 1 and m[1] != rest[1]])}"
+              f" j1 sweep command(s)")
+
+    # THE IN-MOTION GUARD: joint 3 is open when the edge is committed and
+    # lets go once it is already playing. The entry check passes; only
+    # the invariant re-read catches this one.
+    bus = FakeBus(rest, sag_after={3: (entry_read + 1, sag)})
+    try:
+        run_quiet(bus, cals, held_clip, gate=gate, strain=StrainWatch(ids),
+                  quiet=True)
+        check("a hold that sags MID-EDGE stops the clip", False)
+    except ClipStopped as exc:
+        check("a hold that sags MID-EDGE stops the clip", True, str(exc))
+        check("...caught by the in-motion invariant, not the entry check",
+              MOTION_PHASE in str(exc), str(exc)[:80])
+        check("...and the swept joint WAS commanded, unlike the entry "
+              "refusal — this is a stop, not a refusal",
+              any(i == 1 and t != rest[1] for i, t, _, _ in bus.moves))
+
+    # TWO-SIDED. A clip may hold ANY joint, and `fold_direction` is a
+    # heuristic — it answers from whether rest sits above or below the
+    # range midpoint, a margin under 100 ticks on two of this arm's
+    # joints, and meaningless on a continuous roll. So a held joint that
+    # moves the "safe" way must fail too: on a gripper holding a part,
+    # "opened further" IS the failure.
+    bus = FakeBus(rest, sag_after={3: (entry_read, -sag)})
+    try:
+        run_quiet(bus, cals, held_clip, gate=gate, strain=StrainWatch(ids),
+                  quiet=True)
+        check("a hold that moves the OTHER way is refused too — the "
+              "guard is two-sided, not a one-sided sag check", False)
+    except ClipStopped as exc:
+        check("a hold that moves the OTHER way is refused too — the "
+              "guard is two-sided, not a one-sided sag check", True,
+              str(exc)[:80])
+
+    print("\n...and a hold that cannot mean anything is refused UP FRONT")
+    moving_hold = Clip("contradiction", [
+        Pose("home", dict(rest)),
+        Pose("open", {**rest, 3: open3}, holds=(3,)),
+    ], profile)
+    bus = FakeBus(rest)
+    try:
+        run_quiet(bus, cals, moving_hold, gate=gate, quiet=True)
+        check("holding a joint the edge MOVES is refused", False)
+    except BenchError as exc:
+        check("holding a joint the edge MOVES is refused", True, str(exc))
+        check("...before anything was commanded", not bus.moves,
+              f"{len(bus.moves)} commands")
+
+    first_hold = Clip("pose0", [
+        Pose("home", dict(rest), holds=(3,)),
+        Pose("pan", {**rest, 1: rest[1] + 60}),
+    ], profile)
+    bus = FakeBus(rest)
+    try:
+        run_quiet(bus, cals, first_hold, gate=gate, quiet=True)
+        check("a hold on pose 0 is refused (the approach cannot satisfy it)",
+              False)
+    except BenchError as exc:
+        check("a hold on pose 0 is refused (the approach cannot satisfy it)",
+              True, str(exc))
+
+    # An uncalibrated held joint would otherwise surface as a bare
+    # KeyError from `fold_direction(cals[j])` mid-run — the outcome
+    # `check_hold_structure` exists to prevent, so it has to be one of
+    # its refusals rather than a gap between them.
+    uncal = Clip("uncal", [
+        Pose("home", {**rest, 99: 0}),
+        Pose("pan", {**rest, 99: 0, 1: rest[1] + 60}, holds=(99,)),
+    ], profile)
+    try:
+        check_hold_structure(uncal, cals)
+        check("holding an UNCALIBRATED joint is refused", False)
+    except BenchError as exc:
+        check("holding an UNCALIBRATED joint is refused", True, str(exc))
+
     print("\nthe end of a clip is not assumed safe to de-energize")
     from .exercise import PREFLIGHT_REST_TOL_TICKS
     check("at rest, torque-off is a no-op and needs no warning",
@@ -997,6 +1333,54 @@ def _selftest() -> int:
         refuses("a `pose` reference with no poses.json is refused",
                 {**ok_doc, "poses": [{"name": "a", "joints": first},
                                      {"name": "b", "pose": "nowhere"}]})
+
+        # ---- `holds` in a clip FILE. Every refusal in the parser gets
+        # a case: a guard nobody has round-tripped through JSON is a
+        # guard nobody has tested.
+        open3_h = human(3, rest[3] + fold_direction(cals[3]) * 400)
+        held_doc = {**ok_doc, "poses": [
+            {"name": "a", "joints": first},
+            {"name": "open", "joints": {"3": open3_h}},
+            {"name": "sweep", "joints": {"1": first["1"] + 5, "3": open3_h},
+             "holds": [3]},
+            {"name": "more", "joints": {"1": first["1"] + 8},
+             "holds": [3]}]}
+        hc = load_clip(cals, write(held_doc, "held.json"))
+        check("a clip file can author a hold", hc.poses[2].holds == (3,),
+              f"{[p.holds for p in hc.poses]}")
+        check("...and a later pose INHERITS both the tick and the hold",
+              hc.poses[3].holds == (3,)
+              and hc.poses[3].ticks[3] == hc.poses[2].ticks[3])
+        check("...and the loaded clip passes the structure check",
+              check_hold_structure(hc.resolved(rest), cals) is None)
+
+        refuses("`holds` that is not a list is refused",
+                {**held_doc, "poses": [{"name": "a", "joints": first},
+                                       {"name": "b", "joints": {"1": 1.0},
+                                        "holds": 3}]})
+        refuses("a non-numeric joint id in `holds` is refused",
+                {**held_doc, "poses": [{"name": "a", "joints": first},
+                                       {"name": "b", "joints": {"1": 1.0},
+                                        "holds": ["elbow"]}]})
+        refuses("holding an uncalibrated joint is refused",
+                {**held_doc, "poses": [{"name": "a", "joints": first},
+                                       {"name": "b", "joints": {"1": 1.0},
+                                        "holds": [9]}]})
+        # THE CARRY-FORWARD TRAP. `sweepB` is character-for-character
+        # identical to `sweepA`, but by then the elbow has refolded, so
+        # the inherited tick guards the FOLDED position — the exact
+        # configuration the hold exists to prove is not present.
+        refuses("a hold on an inherited tick, after the joint refolded, "
+                "is refused rather than guarding the fold",
+                {**held_doc, "poses": [
+                    {"name": "a", "joints": first},
+                    {"name": "open", "joints": {"3": open3_h}},
+                    {"name": "sweepA", "joints": {"1": first["1"] + 5,
+                                                  "3": open3_h},
+                     "holds": [3]},
+                    {"name": "refold", "joints": {"3": human(3, rest[3])}},
+                    {"name": "sweepB", "joints": {"1": first["1"] + 8},
+                     "holds": [3]}]})
 
         # The example the CLI prints must itself be loadable — an
         # example that does not parse is worse than none. Both forms:

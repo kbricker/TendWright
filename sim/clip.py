@@ -158,13 +158,60 @@ DEFAULT_PROFILE = MotionProfile()
 
 @dataclass(frozen=True)
 class Pose:
-    """A named whole-arm pose, in calibrated ticks."""
+    """A named whole-arm pose, in calibrated ticks.
+
+    `holds` names joints that must PHYSICALLY be where this pose puts
+    them — read back from the encoders before the edge ending here is
+    commanded, and re-read every sample while it plays. It is plan
+    #649's guarded hold ("a commanded hold is not a held joint") carried
+    at clip scale, and it is what lets a routine whose safety depends on
+    another joint staying open be expressed as data rather than as
+    bespoke Python.
+
+    ON THE TARGET POSE RATHER THAN THE EDGE, for two reasons:
+
+    * There is no Edge object here — `edges()` derives pairs from the
+      pose list. Holds indexed per-edge would be a second list to keep
+      in step with the first, and an edit that inserted a pose would
+      silently shift every hold onto the wrong move.
+    * The tick a hold is checked against is `ticks[j]` — the SAME field
+      the servo is commanded from. There is no separate "guard value"
+      that could drift from the commanded value, which is the class of
+      bug this whole module exists to remove.
+
+    A hold naming a joint the pose does not pin is refused at
+    construction: there would be no position to check it against, and
+    inventing one (the previous pose? the arm's current position?) is
+    exactly the guess a guard must never make.
+
+    Note what that check does and does not reach. It fires on poses
+    built in CODE, where a missing joint really is missing. A pose
+    loaded from a clip file is complete by carry-forward before it gets
+    here, so it always passes — which is why `load_clip` carries the
+    separate rule that a hold must be INTRODUCED by a pose that states
+    the position it asserts. Inherited ticks are the danger there, not
+    absent ones.
+    """
 
     name: str
     ticks: dict[int, int]
+    holds: tuple[int, ...] = ()
 
-    def merged(self, **override: int) -> 'Pose':
-        return Pose(self.name, {**self.ticks, **override})
+    def __post_init__(self) -> None:
+        missing = [j for j in self.holds if j not in self.ticks]
+        if missing:
+            raise BenchError(
+                f"pose '{self.name}' holds joint(s) {missing}, which it "
+                f"does not position",
+                "a held joint needs a commanded tick to be checked "
+                "against; pin it in this pose or drop the hold")
+
+    # `merged(**override)` used to live here and was removed 2026-07-30:
+    # it had no callers, and it could not have had any — `**kwargs`
+    # requires string keywords while every joint id is an int, so
+    # `merged(**{3: 100})` raises "keywords must be strings". Use
+    # `Pose(p.name, {**p.ticks, 3: 100}, p.holds)`, or `Clip.resolved`,
+    # which is what actually carries joints forward.
 
 
 @dataclass
@@ -205,7 +252,7 @@ class Clip:
         carry = dict(start)
         for p in self.poses:
             carry = {**carry, **p.ticks}
-            out.append(Pose(p.name, dict(carry)))
+            out.append(Pose(p.name, dict(carry), p.holds))
         return Clip(self.name, out, self.profile)
 
 
@@ -339,6 +386,39 @@ def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
 CLIP_FORMAT_VERSION = 1
 
 
+def _holds_from_doc(where: str, label: str, raw, calibrated: set) -> tuple:
+    """Parse a pose entry's `holds` list — joint ids, nothing else.
+
+    Deliberately NOT accepting an angle here. A hold is checked against
+    the pose's own commanded tick; letting a file state a second number
+    would create exactly the gap between "what was commanded" and "what
+    is guarded" that the hold exists to close.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise BenchError(f"{where}: pose '{label}' has a non-list `holds`",
+                         "holds is a list of servo ids, e.g. [3, 4]")
+    out: list[int] = []
+    for item in raw:
+        try:
+            j = int(item)
+        except (TypeError, ValueError):
+            raise BenchError(
+                f"{where}: pose '{label}' holds {item!r}, which is not a "
+                f"joint id", "holds is a list of servo ids, e.g. [3, 4]"
+            ) from None
+        if j not in calibrated:
+            raise BenchError(
+                f"{where}: pose '{label}' holds joint {j}, which is not in "
+                f"calibration.json",
+                f"capture it (`calibrate capture --ids {j}`), or drop it "
+                f"from `holds`")
+        if j not in out:
+            out.append(j)
+    return tuple(sorted(out))
+
+
 def load_clip(cals: dict, path: Path | str,
               library: dict[str, Pose] | None = None) -> Clip:
     """A clip authored as JSON — the file form of what `Clip` holds.
@@ -348,6 +428,11 @@ def load_clip(cals: dict, path: Path | str,
          "poses": [{"name": "home",  "joints": {"1": 0, "2": -20, ...}},
                    {"name": "above", "joints": {"2": -45}},
                    {"name": "down",  "pose": "grip_height"}]}
+
+    A pose may also carry `"holds": [3, 4]` — joints whose commanded
+    position in THIS pose is a safety precondition, read back from the
+    encoders before the edge into it is commanded and re-read while it
+    plays. See `Pose.holds`.
 
     Two authoring conveniences, both chosen to remove a way to be wrong
     rather than to save typing:
@@ -449,7 +534,36 @@ def load_clip(cals: dict, path: Path | str,
             raise BenchError(
                 f"{path.name}: pose '{label}' names joint(s) {extra}, "
                 f"which are not calibrated")
-        poses.append(Pose(label, ticks))
+        holds = _holds_from_doc(path.name, label, entry.get("holds"), want)
+        # A hold must be INTRODUCED by a pose that states the position
+        # it is asserting, and may then be inherited by poses that keep
+        # holding it. Without this rule carry-forward silently supplies
+        # a value the author never looked at:
+        #
+        #     open   {"3": 90}            elbow open
+        #     sweepA {"2": 40, holds:[3]} guards j3 at 90  — correct
+        #     refold {"3": 0}             elbow folded again
+        #     sweepB {"2": 40, holds:[3]} guards j3 at 0   — USELESS
+        #
+        # sweepB looks identical to sweepA and certifies the folded
+        # configuration. The author wrote the same characters twice and
+        # got a guard protecting nothing. Requiring the first pose of a
+        # hold to name the joint makes that line impossible to write by
+        # accident: sweepB must say what it is guarding, and saying it
+        # is what reveals the value is wrong.
+        inherited = poses[-1].holds if poses else ()
+        silent = sorted(j for j in holds
+                        if j not in named and j not in inherited)
+        if silent:
+            raise BenchError(
+                f"{path.name}: pose '{label}' holds joint(s) {silent} "
+                f"without positioning them, and the pose before it does "
+                f"not hold them either",
+                "the pose that first holds a joint must say where — "
+                "otherwise the guarded value is whatever an earlier pose "
+                "happened to leave there. Add it to `joints`, or hold it "
+                "from the pose that opens it")
+        poses.append(Pose(label, ticks, holds))
 
     return Clip(str(doc.get("name") or path.stem), poses, profile)
 
@@ -524,6 +638,26 @@ def _selftest() -> None:
          sparse.poses[1].ticks != r.poses[1].ticks)
     want("resolving an already-complete clip changes nothing",
          Clip("c", [a, b]).resolved({1: 0, 2: 0}).poses[1].ticks == b.ticks)
+
+    # Guarded holds. The property that matters is that a hold survives
+    # every transformation a clip goes through on its way to the arm —
+    # a hold silently dropped by `resolved` would disarm the guard while
+    # the routine still looked correct.
+    guarded = Pose("sweep", {1: 100, 2: 200, 3: 300}, holds=(2, 3))
+    want("a pose carries its holds", guarded.holds == (2, 3))
+    gclip = Clip("g", [Pose("open", {1: 0, 2: 200, 3: 300}), guarded])
+    want("...and RESOLVING preserves them (the transformation every "
+         "clip goes through before it is run)",
+         [p.holds for p in gclip.resolved({1: 0, 2: 0, 3: 0}).poses]
+         == [(), (2, 3)])
+    want("...while resolving still fills the ticks it always did",
+         gclip.resolved({1: 0, 2: 0, 3: 0}).poses[1].ticks
+         == {1: 100, 2: 200, 3: 300})
+    try:
+        Pose("bad", {1: 100}, holds=(2,))
+        want("holding a joint the pose does not position is refused", False)
+    except BenchError:
+        want("holding a joint the pose does not position is refused", True)
 
     empty = Clip("empty", [])
     want("an empty clip samples to nothing", sample_clip(empty) == [])

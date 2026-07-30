@@ -100,6 +100,26 @@ class PoseGate:
     def active(self) -> bool:
         return self._twin is not None
 
+    @property
+    def profile(self):
+        """The motion profile every verdict from this gate was computed
+        with. Public because a caller that gates through this object AND
+        simulates anything itself must use the same numbers — speed and
+        acceleration decide the PATH, not just its duration, so two
+        profiles are two different questions being asked of one twin."""
+        return self._profile
+
+    @property
+    def twin(self):
+        """The loaded twin, or None when the gate is inactive.
+
+        Exposed so a caller that ALSO wants a full pre-flight report —
+        `exercise` prints `check_clip`'s summary, whose clamp warnings
+        are loudest exactly when the gate passes — can reuse this model
+        instead of loading a second one. Two Twins would be two copies
+        of the same geometry with no way to notice if they diverged."""
+        return self._twin
+
     def banner(self) -> str:
         """What to print at startup, so the operator knows which it is."""
         if self.active:
