@@ -175,6 +175,19 @@ FREE_RATIO_LIVE = 0.05      # <= this: the memory is genuinely allocated
 MANY_CHUNKS = 50_000
 SMALL_CHUNK_BYTES = 512     # mean below this = tiny holes, not usable space
 
+# Below this share of anonymous memory, glibc's arenas do not account for
+# enough of the process for the ratio above to mean anything, and
+# read_verdict refuses instead of pronouncing.
+#
+# CALIBRATED, not guessed. The first draft used 0.90 and fired immediately
+# on a freshly started, perfectly healthy camserve: arenas 9.4 MB + mmap
+# 62.4 MB against 79.8 MB anonymous is 89.9%, so the very first real
+# reading was a false alarm. The missing ~10% is thread stacks and
+# CPython's own pool arenas, which are always there and are not a finding.
+# 0.75 still catches the case this exists for — a leak living entirely
+# outside the arenas, where coverage collapses rather than dips.
+MIN_COVERAGE = 0.75
+
 _LIBC: ctypes.CDLL | None = None
 _LIBC_TRIED = False
 # camserve is a ThreadingHTTPServer, so two requests can land in here at
@@ -414,7 +427,7 @@ def read_verdict(summary: dict, anon: int = 0) -> str:
 
     parts = []
     accounted = system + summary.get("mmap_bytes", 0)
-    if anon > 0 and accounted < 0.9 * anon:
+    if anon > 0 and accounted < MIN_COVERAGE * anon:
         return (f"glibc accounts for only {100.0 * accounted / anon:.0f}% of "
                 f"{anon / 1048576:.0f} MB anonymous — the growth is somewhere "
                 f"malloc_info cannot see (direct mmap, thread stacks, "
@@ -821,6 +834,15 @@ def selftest() -> int:
     check("...and with good coverage it does pronounce",
           "cannot see" not in verdict(1_200_000, 1_000, mmap=100_000,
                                       anon=1_300_000))
+    # The exact reading from a freshly started, HEALTHY camserve on cell1,
+    # which the first cut of this gate flagged at 89.9%. A gate that cries
+    # wolf on a clean process buries the signal it exists to raise, so the
+    # numbers that caused the false alarm are pinned here rather than the
+    # threshold being quietly nudged.
+    check("a healthy idle camserve does NOT trip the coverage gate — its "
+          "missing ~10% is thread stacks and CPython pool arenas, not a leak",
+          "cannot see" not in verdict(9_400_000, 700_000, chunks=206,
+                                      mmap=62_400_000, anon=79_800_000))
     check("top-chunk slack is disclosed rather than silently dropped",
           "slack" in verdict(1_000_000, 10_000, top=500_000))
 
