@@ -85,12 +85,22 @@ there"*). It had drifted 5 commits behind and is now current at
 mirror fix**, so anything gating on the twin over there was using the
 mirrored model.
 
-- [ ] Restart `camserve` — **needs Kyle's say-so** (standing rule: no
-      service restarts on cell1 without asking). The running process is
-      >22 h old and predates `472291a`, so `/status` there still has no
-      `health` field. It is now also running old code against new files
-      on disk, which is fine for anything imported at startup and a
-      genuine hazard for anything imported lazily inside a request.
+- [x] Restart `camserve` — **done 2026-07-31 15:55Z on Kyle's explicit
+      say-so** (standing rule: no service restarts on cell1 without
+      asking). Old pid 3419 had 22 h 41 m on it and predated `472291a`.
+      Stopped by exact PID, never `pkill -f`. Relaunched with
+      `PYTHONUNBUFFERED=1`, which fixes the 713.5 annoyance where the
+      startup banner never reached the redirected log.
+
+      713.12 verified live, the whole point of the ticket:
+
+      | state | reads |
+      |---|---|
+      | fresh restart, nobody has looked | `open=False health=unknown` |
+      | one snapshot grabbed | `open=True health=ok` + `last_ok_at` |
+      | 12 s later, session lingered out | **`open=False health=ok`** |
+
+      That last row is the one that used to read as a broken camera.
 
 ## D. Small things noticed while working
 
