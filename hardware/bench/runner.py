@@ -765,9 +765,17 @@ def cmd_run(args) -> int:
                 dest = dest / (f"{clip.name}-{stamp}"
                                f"-sp{clip.profile.speed}"
                                f"-ac{clip.profile.acceleration}.csv")
+            # BOTH the name and the file. The name is what the clip
+            # calls itself; the file is where it was read from, and they
+            # are not the same string — `runner example` writes a clip
+            # named 'pan-wiggle' that operators save as `pan.json`, and
+            # a clip may sit in a subdirectory. `sim.trace` can resolve
+            # a name to `<name>.json` as a fallback for older traces,
+            # but only the path is actually reliable.
             trace = Trace(dest, meta={"speed": clip.profile.speed,
                                       "accel": clip.profile.acceleration,
                                       "clip": clip.name,
+                                      "clip_file": str(args.clip),
                                       "cal": str(args.cal)})
             print(f"tracing the arm's actual path to {dest}")
 
@@ -838,7 +846,12 @@ def cmd_run(args) -> int:
                 written = trace.close()
                 if written is not None:
                     print(f"trace: {len(trace)} samples -> {written}")
-                    print(f"  compare: uv run python -m sim.trace {written}")
+                    # --clip spelled out: the trace is named after the
+                    # CLIP, the file may be called something else, and a
+                    # command that only works when those coincide is a
+                    # command that fails on the example clip.
+                    print(f"  compare: uv run python -m sim.trace "
+                          f"{written} --clip {args.clip}")
                 elif trace.error:
                     print(f"trace: {trace.error}", file=sys.stderr)
 
@@ -906,6 +919,17 @@ def run() -> int:
     if args.command == "example":
         cal_path = Path(args.cal)
         cals = load_joint_calibration(cal_path) if cal_path.exists() else None
+        # `runner example > pan.json` is a CLIP FILE being written through
+        # the shell, so the bytes that land are encoded by stdout's codec
+        # — the console codepage, cp1252 on the desk. `load_clip` reads
+        # utf-8, so the em-dash in the template went out as 0x97 and the
+        # file this command exists to produce would not load. The docs
+        # walk the operator straight through it
+        # (`runner example > pan.json && runner show --clip pan.json`).
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):        # not a real stream
+            pass
         print(example_clip_doc(cals), end="")
         return 0
     return cmd_show(args) if args.command == "show" else cmd_run(args)
@@ -1329,7 +1353,7 @@ def _selftest() -> int:
 
         def write(body, name="c.json"):
             p = d / name
-            p.write_text(json.dumps(body))
+            p.write_text(json.dumps(body), encoding="utf-8")
             return p
 
         # A first pose built from the REST ticks, so it is certainly in
@@ -1431,7 +1455,7 @@ def _selftest() -> int:
 
         def lib(body, name="p.json"):
             p = d / name
-            p.write_text(json.dumps({"poses": body}))
+            p.write_text(json.dumps({"poses": body}), encoding="utf-8")
             return load_poses(cals, p)
 
         got = lib({"REST": {"base": "rest"}})
@@ -1508,7 +1532,7 @@ def _selftest() -> int:
                             ("the anchored example",
                              example_clip_doc(cals))):
             ex = d / f"{label.replace(' ', '_')}.json"
-            ex.write_text(text)
+            ex.write_text(text, encoding="utf-8")
             try:
                 loaded = load_clip(cals, ex)
                 check(f"{label} is a loadable clip", True, loaded.name)

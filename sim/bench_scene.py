@@ -536,13 +536,13 @@ def load_bench(path: Path = BENCH_JSON) -> Scene:
     """Load + strictly validate a BENCH: the physical place, with no
     reference to what is standing on it. Reusable across projects."""
     try:
-        doc = json.loads(path.read_text())
+        doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise BenchError(
             f"no bench scene at {path}",
             "the cell geometry has not been measured yet; the twin runs "
             "on its infinite ground plane without it") from exc
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path}: {exc}",
                          "fix or delete the file") from exc
     if not isinstance(doc, dict) or doc.get("version") != 1:
@@ -1483,8 +1483,8 @@ def _mtime(path: Path) -> float:
 def load_view(path: Path = CELL_JSON) -> dict | None:
     """The saved free-camera pose, if the scene file carries one."""
     try:
-        doc = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     v = doc.get("view")
     if not isinstance(v, dict):
@@ -1502,14 +1502,14 @@ def load_view(path: Path = CELL_JSON) -> dict | None:
 
 def store_view(path: Path, view_pose: dict) -> None:
     """Write the camera pose back, leaving every measurement untouched."""
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     doc["view"] = view_pose
     doc["_view_note"] = ("Saved free-camera pose from the last --view "
                          "session (MuJoCo units, metres). Restored on the "
                          "next --view and used by --render. Delete this "
                          "key to go back to the derived angles.")
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(doc, indent=2) + "\n")
+    tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 
@@ -2047,13 +2047,13 @@ def animate_exercise(cell: 'Cell', span: int = 70,
 def load_cell(path: Path = CELL_JSON) -> Cell:
     """Load the project's cell config, and the bench it points at."""
     try:
-        doc = json.loads(path.read_text())
+        doc = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise BenchError(
             f"no cell config at {path}",
             f"it names the bench to use and where the arm and cameras "
             f"sit on it") from exc
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path}: {exc}",
                          "fix or delete the file") from exc
     bench_path = Path(doc.get("bench") or BENCH_JSON)

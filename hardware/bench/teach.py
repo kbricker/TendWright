@@ -76,7 +76,7 @@ def record(args: argparse.Namespace) -> int:
             "ids": ids,
             "hz": args.hz,
             "frames": frames,
-        }, indent=None))
+        }, indent=None), encoding="utf-8")
         print(f"saved {len(frames)} frames ({len(frames) / args.hz:.1f}s) "
               f"for servos {ids} -> {out}")
         return 0
@@ -88,8 +88,8 @@ def load_recording(path: Path) -> tuple[list[int], float, list[list[int]]]:
     bad = BenchError(f"{path} is not a teach recording",
                      "expected JSON {version, ids, hz, frames} from teach record")
     try:
-        doc = json.loads(path.read_text())
-    except json.JSONDecodeError as exc:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"{path} is not valid JSON: {exc}") from exc
     if not isinstance(doc, dict):
         raise bad

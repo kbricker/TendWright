@@ -94,8 +94,8 @@ def load_registry(path: str | Path = REGISTRY_DEFAULT) -> list[CameraSpec]:
             "run `python -m hardware.bench.cameras discover` and paste the "
             "entries into cameras.json")
     try:
-        doc = json.loads(p.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {p}: {exc}",
                          "fix the JSON, or re-generate it from discover") from exc
     if not isinstance(doc, dict) or doc.get("version") != FORMAT_VERSION:

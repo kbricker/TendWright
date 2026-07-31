@@ -143,8 +143,8 @@ def load_joint_calibration(path: Path) -> dict[int, JointCal]:
         "the tool at a different file",
     )
     try:
-        doc = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(
             f"could not read {path}: {exc}",
             "fix or delete the file, or point the tool at a different file",
@@ -196,7 +196,7 @@ def write_calibration(path: Path, cals: dict[int, JointCal]) -> None:
         joints.append(entry)
     doc = {"version": FORMAT_VERSION, "joints": joints}
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(doc, indent=2) + "\n")
+    tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 

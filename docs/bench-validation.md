@@ -73,6 +73,9 @@ cd ~/TendWright
 uv run python -m hardware.units selftest
 uv run python -m hardware.bench.guards selftest
 uv run python -m sim.clip
+uv run python -m sim.edges selftest
+uv run python -m sim.trace selftest
+uv run python -m hardware.bench.posemachine selftest
 uv run python -m sim.twin selftest
 uv run python -m sim.twin validate     # must predict BOTH bench collisions
 uv run python -m sim.twin frames
@@ -292,11 +295,19 @@ run changes — the recorder only watches, and it is written on **every**
 exit path, so an e-stopped or obstructed run still leaves its trace.
 That is when it is most worth having.
 
-Then, anywhere (desk is fine):
+Then, on either machine (desk is fine) — but **from the repo root**: the
+repo is run in place, so `python -m sim.trace` needs it on `sys.path`.
+The trace file itself can live anywhere.
 
 ```bash
 uv run python -m sim.trace run1.csv
+uv run python -m sim.trace runs/tour.csv --clip crane-tour.json  # a clip run
 ```
+
+The second form is for traces from `runner`, which played a named clip
+rather than the exercise routine. The trace names that clip in its own
+header and the comparison finds it; `--clip` is for when the file is
+somewhere the header's path no longer reaches.
 
 It lays the recorded run over the sim's own prediction, phase by phase,
 and prints per phase: real duration, predicted duration, settle

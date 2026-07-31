@@ -288,10 +288,10 @@ def selftest() -> int:
               "INACTIVE" in g.banner() and "NOT checked" in g.banner())
         # A calibration that exists but omits a joint the caller asked for.
         if have_cal:
-            doc = json.loads(cal_path.read_text())
+            doc = json.loads(cal_path.read_text(encoding="utf-8"))
             doc["joints"] = [j for j in doc["joints"] if j["id"] != 4]
             p = Path(td) / "partial.json"
-            p.write_text(json.dumps(doc))
+            p.write_text(json.dumps(doc), encoding="utf-8")
             g2 = PoseGate([1, 2, 3, 4, 5, 6], p)
             check("a partly-calibrated arm leaves the gate inactive",
                   not g2.active, g2.reason)

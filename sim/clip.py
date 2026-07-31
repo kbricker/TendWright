@@ -505,11 +505,18 @@ def load_poses(cals: dict, path: Path = POSES_JSON) -> dict[str, Pose]:
     `library_pose` for the two body shapes."""
     if not path.exists():
         return {}
+    # utf-8 EXPLICITLY, and a decode failure is a refusal. The bench Pi's
+    # locale is utf-8 and the desk's is cp1252, so reading with the
+    # platform default meant this file decoded differently on the two
+    # machines it is edited from — poses.json carries em-dashes, and they
+    # came back as mojibake on one of them. UnicodeDecodeError is a
+    # ValueError, not a JSONDecodeError, so it needs naming here or it
+    # escapes as a bare traceback.
     try:
-        doc = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path.name}: {exc}",
-                         "poses.json must be valid JSON") from exc
+                         "poses.json must be valid UTF-8 JSON") from exc
     entries = doc.get("poses")
     if entries is not None and not isinstance(entries, dict):
         raise BenchError(f"{path.name}: `poses` must be an object",
@@ -599,11 +606,13 @@ def load_clip(cals: dict, path: Path | str,
     if not path.exists():
         raise BenchError(f"no such clip: {path}",
                          "clips are JSON; see `runner example` for the shape")
+    # See `load_poses` on why utf-8 is named and why UnicodeDecodeError
+    # has to be caught explicitly.
     try:
-        doc = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BenchError(f"could not read {path.name}: {exc}",
-                         "a clip file must be valid JSON") from exc
+                         "a clip file must be valid UTF-8 JSON") from exc
     if not isinstance(doc, dict):
         raise BenchError(f"{path.name} is not a clip",
                          "expected a JSON object with a `poses` list")
