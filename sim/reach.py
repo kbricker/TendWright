@@ -240,10 +240,24 @@ class Sample:
 def profile(twin: Twin, rig: Rig, slew_deg: float,
             band: tuple[float, float] = GRASP_BAND_MM,
             step: float = DEFAULT_STEP_DEG,
-            gate: bool = True) -> list[Sample]:
-    """Samples at one slew, j4 pinned by the crane relation so the
-    gripper hangs plumb — the only orientation that can pick a part off
-    a flat table."""
+            gate: bool = True, plumb: bool = True,
+            tilt_step: float = 5.0) -> list[Sample]:
+    """Samples at one slew.
+
+    `plumb` pins j4 by the crane relation so the gripper hangs straight
+    down. That is the SAFE grasp — jaws closing horizontally on a part
+    standing on the table — and it was the module's original hidden
+    assumption. It is also expensive: it costs about 20% of the arm's
+    reach, because getting the jaws down AND vertical at full stretch
+    needs the wrist folded back over the work.
+
+    With `plumb=False` j4 sweeps its whole travel, so the jaws may
+    arrive tilted. The part is then gripped at an angle, which is a real
+    grasp for a box-shaped blank and not one for something that must be
+    picked square. Which of the two bounds applies is a decision about
+    the gripper and the part, so both are reported rather than one being
+    chosen quietly.
+    """
     if not step > 0:
         raise BenchError(
             f"--step must be a positive number of degrees, got {step:g}",
@@ -269,38 +283,47 @@ def profile(twin: Twin, rig: Rig, slew_deg: float,
     lo3, hi3 = span(3)
     hand = _hand_geoms(twin.model)
     out: list[Sample] = []
+    lo4, hi4 = span(4)
     for a in np.arange(lo2, hi2 + step, step):
         for b in np.arange(lo3, hi3 + step, step):
-            c = 180.0 - a - b                     # gripper plumb
-            t2, t3, t4 = tick(2, a), tick(3, b), tick(4, c)
-            if not (cals[2].min <= t2 <= cals[2].max
-                    and cals[3].min <= t3 <= cals[3].max
-                    and cals[4].min <= t4 <= cals[4].max):
-                continue
-            pose = {1: t1, 2: t2, 3: t3, 4: t4}
-            q = twin._rest_qpos.copy()
-            for i, t in pose.items():
-                q[twin._adr[i]] = twin.qpos_of(i, t)[0]
-            rig.data.qpos[:] = q
-            mujoco.mj_forward(rig.model, rig.data)
-            # World z=0 IS the table (the arm is bolted to the bench), so
-            # a hand geom's world z is already its height above the
-            # surface. Adding the rig origin here would double-count m1.
-            jaw = _lowest_point_mm(rig.data, rig.model, hand)
-            if not band[0] <= jaw <= band[1]:
-                continue
-            # TOOL_BODY, not "gripper": that name resolves to the WRIST
-            # body in this model. See the module docstring.
-            tool = (rig.data.body(TOOL_BODY).xpos - rig._origin) * 1000.0
-            blocked = ()
-            if gate:
-                found, _clamps, _excused = twin.contacts_at(pose)
-                blocked = tuple(found)
-            out.append(Sample(
-                r_mm=math.hypot(tool[0], tool[1]), jaw_mm=jaw,
-                az_rig_deg=math.degrees(math.atan2(tool[1], tool[0])),
-                blocked=blocked, ticks=dict(pose)))
+            wrists = ([180.0 - a - b] if plumb
+                      else list(np.arange(lo4, hi4 + tilt_step, tilt_step)))
+            for c in wrists:
+                _sample_one(twin, rig, hand, band, gate, tick, cals,
+                            t1, a, b, c, out)
     return out
+
+
+def _sample_one(twin, rig, hand, band, gate, tick, cals, t1, a, b, c, out):
+    """One (j2, j3, j4) triple, appended to `out` if it lands in band."""
+    t2, t3, t4 = tick(2, a), tick(3, b), tick(4, c)
+    if not (cals[2].min <= t2 <= cals[2].max
+            and cals[3].min <= t3 <= cals[3].max
+            and cals[4].min <= t4 <= cals[4].max):
+        return
+    pose = {1: t1, 2: t2, 3: t3, 4: t4}
+    q = twin._rest_qpos.copy()
+    for i, t in pose.items():
+        q[twin._adr[i]] = twin.qpos_of(i, t)[0]
+    rig.data.qpos[:] = q
+    mujoco.mj_forward(rig.model, rig.data)
+    # World z=0 IS the table (the arm is bolted to the bench), so a hand
+    # geom's world z is already its height above the surface. Adding the
+    # rig origin here would double-count m1.
+    jaw = _lowest_point_mm(rig.data, rig.model, hand)
+    if not band[0] <= jaw <= band[1]:
+        return
+    # TOOL_BODY, not "gripper": that name resolves to the WRIST body in
+    # this model. See the module docstring.
+    tool = (rig.data.body(TOOL_BODY).xpos - rig._origin) * 1000.0
+    blocked = ()
+    if gate:
+        found, _clamps, _excused = twin.contacts_at(pose)
+        blocked = tuple(found)
+    out.append(Sample(
+        r_mm=math.hypot(tool[0], tool[1]), jaw_mm=jaw,
+        az_rig_deg=math.degrees(math.atan2(tool[1], tool[0])),
+        blocked=blocked, ticks=dict(pose)))
 
 
 def repose(twin: Twin, rig: Rig, ticks: dict) -> None:
@@ -570,6 +593,24 @@ def cmd_show(twin: Twin, rig: Rig, cell, step: float) -> int:
         for k, v in sorted(ann.inner_blockers.items(),
                            key=lambda kv: -kv[1])[:3]:
             print(f"                  {v:5d} poses blocked by {k}")
+
+    # What the plumb assumption COSTS, measured rather than assumed. It
+    # was a hidden constraint in the first version and Kyle spotted the
+    # outer bound as too small by eye before any number said so.
+    tilted = [s for s in profile(twin, rig, (ann.slew_min_deg
+                                             + ann.slew_max_deg) / 2.0,
+                                 step=step, plumb=False)
+              if not s.blocked]
+    if tilted:
+        t_out = max(s.r_mm for s in tilted)
+        print(f"\nIF THE GRIPPER MAY TILT (j4 free rather than pinned plumb)")
+        print(f"  radius        {min(s.r_mm for s in tilted):.0f} .. "
+              f"{t_out:.0f} mm — {t_out - ann.r_out_mm:+.0f} mm on the outer "
+              f"edge")
+        print(f"  the plumb constraint is what costs the difference: the "
+              f"jaws reach\n                further when they are allowed "
+              f"to arrive at an angle. Whether that\n                counts "
+              f"as a grasp is a decision about the part, not about the arm.")
 
     print("\nON THE BENCH")
     print(f"  m1 axis at    x {place.m1_x:.3f}, y {place.m1_y:.3f} "
