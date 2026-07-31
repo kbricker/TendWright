@@ -85,8 +85,23 @@ port-forward.**
 - `low` — printed edge stand on the table's short end, lens 75 mm up, 7°
   down, looking along the table. The only view that resolves HEIGHT.
 
-Cameras open only while watched, so `/status` showing `fps 0.0` and
-`profile: null` with no viewer is normal, not a fault. Tag detection is
+Cameras open only while watched, so `/status` showing `open: false`,
+`fps 0.0` and `profile: null` with no viewer is normal, not a fault.
+
+**Read `health`, not `open` or `error`** (#713.12). `open` answers "is
+anyone watching", which for an on-demand camera is not a health
+question; `error` answers "did the last attempt fail", which becomes
+history the moment a later one succeeds. Reading the two together is
+what convinced me a working camera was down while Kyle had it on
+screen. `health` is:
+
+| value | meaning |
+|---|---|
+| `ok` | the last attempt produced a **frame**. `last_ok_at` says when — an on-demand camera's "ok" can be hours old. |
+| `failed` | the last attempt did not. `last_error` / `last_error_at` say why and when; they are kept even after a recovery, so an intermittent is still diagnosable. |
+| `unknown` | **no frame has ever been seen from this camera.** Usually that just means nobody has opened it since camserve started — expected for every camera right after a restart — but it ALSO covers a camera that opens and then delivers nothing, which is the likeliest real fault on a shared USB uplink. So `unknown` is not a diagnosis either way: it means nobody has asked the question. A preflight gating on `health == "ok"` must **grab a frame first**; the grab is what turns `unknown` into a real answer. |
+
+Tag detection is
 opt-in per request (`?tags=1`) as of #713.6 — **a soak driven by a plain
 viewer runs zero detections and proves nothing about the detector.**
 

@@ -56,6 +56,24 @@ STILLS-FIRST: any camera with still_interval_s set has its full-res
 frames written to disk on that interval whether or not anyone is
 watching, with rotating retention. That runs without the viewer.
 
+IS THIS CAMERA USABLE? Read `/status`'s `health` — "ok" (a frame
+actually arrived), "failed" (the last attempt did not), or "unknown"
+(NO FRAME HAS EVER BEEN SEEN). "unknown" is usually just an on-demand
+camera nobody has opened yet, but it also covers one that opens and
+then delivers nothing — so it is not "fine" and not "broken", it is
+"nobody asked". A preflight must GRAB A FRAME; that is what turns
+"unknown" into an answer.
+`last_ok_at` ages the verdict; `last_error`/`last_error_at` survive a
+recovery so an intermittent stays diagnosable.
+
+Do NOT infer health from `open` + `error`, which is what #713.12 was:
+`open` means "a session is attached right now" and `error` means "the
+last attempt failed", and neither is entitled to the verdict the two of
+them imply together. `open` also changed meaning on 2026-07-31 — it was
+true from the moment a session was acquired, i.e. before the device was
+opened and before the open could fail, so a camera that had just failed
+to open reported itself open.
+
 A camera that is unplugged or busy shows its error on its own tile and
 never affects the others. This tool never touches the servo bus (and
 never imports the servo SDK).
@@ -81,6 +99,15 @@ from urllib.parse import parse_qs, urlparse
 from hardware.errors import BenchError
 
 from .cameras import TILE_CAP, load_registry
+
+
+def _iso(when: float | None) -> str | None:
+    """An epoch stamp as UTC ISO, matching `captured_utc`. None stays
+    None: "never happened" and "happened at the epoch" are different
+    answers and 0.0 would render as 1970."""
+    if when is None:
+        return None
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(when))
 from .cammanager import CameraManager
 from .campreview import run_tool
 
@@ -180,7 +207,21 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             rows = []
             for name in mgr.order:
                 cam = mgr.get(name)
-                state = cam.error or ("live" if cam.profile else "idle")
+                # `live` when someone is watching, and otherwise the
+                # same word `/status` reports. Note `live` SHORT-CIRCUITS
+                # health rather than replacing it: a starved camera reads
+                # `[live]` here and `health: unknown` there, which is not
+                # a contradiction — one says a session is attached, the
+                # other says no frame has arrived through it. "idle" is
+                # not a fault — a
+                # camera nobody is watching has nothing wrong with it —
+                # and a past failure is history, shown as such rather
+                # than as the camera's current state. Printing the raw
+                # error here is what made a working camera read as
+                # broken in the one view Kyle actually had open.
+                state = ("live" if cam.streaming
+                         else "unplugged" if not cam.spec.present
+                         else cam.health)      # ok | failed | unknown
                 rows.append(
                     f"<li><a href='/cam/{name}/'>{html.escape(name)}</a>"
                     f" — {html.escape(cam.spec.location or 'unplaced')}"
@@ -209,13 +250,35 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             return self._flag("tags")
 
         def _trouble(self, cam) -> str:
-            """Why this camera has no picture, in words — a broken-image
-            icon tells the operator nothing."""
-            if cam.error:
-                return html.escape(cam.error)
+            """Why this camera CANNOT be shown, in words — a broken-image
+            icon tells the operator nothing.
+
+            ONLY reasons that make an attempt pointless. A past failure
+            is not one of them: cameras open on demand, so requesting
+            the stream IS the retry, and a failed attempt clears the
+            moment a new session starts. Returning the old error here
+            replaced the `<img>` with a message, so the page that would
+            have retried the camera never asked for a frame — and the
+            error it was displaying could then only be cleared by
+            someone hitting a different endpoint.
+
+            That is 713.12's operator-facing half, and it is the surface
+            Kyle was actually looking at when he said *"I see the low cam
+            in camserv"*: a camera he could see working, which this page
+            would have told him was broken and then refused to retry."""
             if not cam.spec.present:
                 return (f"not plugged in — nothing at {html.escape(cam.spec.path)}"
                         f" (run: python -m hardware.bench.cameras check)")
+            return ""
+
+        def _last_trouble(self, cam) -> str:
+            """The previous failure, as a NOTE beside a live picture
+            rather than in place of one. Worth showing — an intermittent
+            is the thing you most want to know about — but never worth
+            withholding the video for."""
+            if cam.error:
+                return (f"last attempt failed: {html.escape(cam.error)} "
+                        f"&mdash; reloading retries it")
             return ""
 
         def _solo_page(self, name: str) -> None:
@@ -226,8 +289,10 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             q = "&".join([p for p, on in (("tags=1", tags), ("focus=1", focus))
                           if on])
             src = f"/cam/{name}/stream" + (f"?{q}" if q else "")
+            note = self._last_trouble(cam)
             view = (f"<div class='err'>{trouble}</div>" if trouble else
-                    f"<img src='{src}' style='max-width:100vw'>")
+                    (f"<div class='err'>{note}</div>" if note else "")
+                    + f"<img src='{src}' style='max-width:100vw'>")
             # The toggle is not a nicety. Detection is off unless asked
             # for, so without a visible control an operator opening this
             # page sees no overlays and concludes tag detection is
@@ -263,8 +328,17 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
             for name in mgr.order[:TILE_CAP]:
                 cam = mgr.get(name)
                 trouble = self._trouble(cam)
+                # The tile still RETRIES a failed camera — the whole
+                # point of not keying `_trouble` on `cam.error` — but it
+                # must still say what went wrong last time, or a camera
+                # that cannot open renders as a bare broken-image icon
+                # with no words. `_trouble`'s own docstring says an icon
+                # tells the operator nothing; the solo page got the note
+                # and this one was left behind.
+                note = self._last_trouble(cam)
                 inner = (f"<div class='err'>{trouble}</div>" if trouble else
-                         f"<img src='/cam/{name}/tile'>")
+                         (f"<div class='err'>{note}</div>" if note else "")
+                         + f"<img src='/cam/{name}/tile'>")
                 cells.append(
                     f"<div class='cell'><a href='/cam/{name}/'>{inner}</a>"
                     f"<span class='cap'>{html.escape(name)}"
@@ -282,7 +356,25 @@ def make_handler(mgr: CameraManager, stills_dir: Path):
                     "location": cam.spec.location,
                     "path": cam.spec.path,
                     "present": cam.spec.present,
-                    "open": cam.profile is not None,
+                    # THE FIELD TO GATE ON is `health`, not `open` and not
+                    # `error`. `open` answers "is anyone watching", which
+                    # for an on-demand camera is not a health question at
+                    # all; `error` answers "did the last attempt fail",
+                    # which is history the moment a later one succeeds.
+                    # Reading the two together is what convinced me a
+                    # working camera was down (713.12).
+                    "health": cam.health,
+                    "open": cam.streaming,
+                    "last_error": cam.last_error,
+                    # ISO, like `captured_utc` — every other timestamp
+                    # this server puts in front of a human is, and a bare
+                    # epoch float is a number the operator has to convert
+                    # by hand at the exact moment they are debugging.
+                    "last_error_at": _iso(cam.last_error_at),
+                    # How STALE the health verdict is. An on-demand
+                    # camera's "ok" can be hours old, and a preflight
+                    # that cannot age it cannot use it.
+                    "last_ok_at": _iso(cam.last_ok_at),
                     "profile": str(cam.profile) if cam.profile else None,
                     # What the device actually gave us, and how that differs
                     # from what was asked for. A camera silently running a
@@ -717,8 +809,17 @@ def _selftest() -> None:
         print(f"  [{'ok ' if ok else 'FAIL'}] {label}")
 
     class FakeCap:
+        # A path containing "flaky" fails its FIRST open and works from
+        # then on — the intermittent that recovers, which is the only
+        # way to test that a failure NOTE clears instead of sitting over
+        # a working picture forever.
+        flaked: set = set()
+
         def __init__(self, path):
             self.path, self.fail = str(path), "dead" in str(path)
+            if "flaky" in self.path and self.path not in FakeCap.flaked:
+                FakeCap.flaked.add(self.path)
+                self.fail = True
             self.props: dict = {}
 
         def isOpened(self):
@@ -816,6 +917,102 @@ def _selftest() -> None:
              any(f["ok"] for f in partial["frames"]))
         want("...and says WHICH camera failed and why",
              any(f["error"] for f in partial["frames"] if not f["ok"]))
+        want("...naming the ROOT CAUSE, not the timeout waiting for it",
+             any("did not open" in (f["error"] or "")
+                 for f in partial["frames"] if not f["ok"]))
+
+        # THE FIELD THAT DISTINGUISHES the two meanings of `open`, and
+        # the only state that can: a camera that FAILED to open. The old
+        # `profile is not None` was set at acquire, before the device is
+        # touched, so it reported this camera OPEN. Every other state
+        # (never-opened, idle, streaming) reads the same under both, so
+        # nothing else in this suite could tell them apart.
+        with urllib.request.urlopen(b2 + "/status", timeout=20) as r:
+            dead_row = next(c for c in json.loads(r.read())["cameras"]
+                            if c["name"] == "d")
+        want("a camera that FAILED to open reports open=false",
+             dead_row["open"] is False)
+        want("...and health 'failed', with the reason kept as history",
+             dead_row["health"] == "failed"
+             and "did not open" in (dead_row["last_error"] or ""))
+        # Checked on a camera that HAS failed: asserting the stamp is
+        # null on a never-opened one passes whether the field is wired
+        # up or hardcoded to null.
+        want("...and WHEN it failed, as a readable timestamp",
+             isinstance(dead_row["last_error_at"], str)
+             and dead_row["last_error_at"].endswith("Z"))
+        # PRESENT BUT FAILING is the state that matters, and it needs a
+        # path that EXISTS: `spec.present` is a filesystem check, so the
+        # `/dev/fake/dead` camera above is legitimately "not plugged in"
+        # and blackholing its tile is correct. A real file whose name
+        # contains "dead" is present to the registry and refuses to open
+        # to the fake capture — a camera that is physically there and
+        # will not start, which is exactly 713.12's camera.
+        ghost_path = Path(tmp) / "dead-but-present"
+        ghost_path.write_text("", encoding="utf-8")
+        ghost = CameraSpec("g", "-", str(ghost_path), big, small, tags=False)
+        mgr3 = CameraManager([ghost], tags=False)
+        srv3 = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mgr3, tmp))
+        threading.Thread(target=srv3.serve_forever, daemon=True).start()
+        b4 = f"http://127.0.0.1:{srv3.server_address[1]}"
+        try:
+            urllib.request.urlopen(b4 + "/cam/g/snapshot", timeout=20)
+        except urllib.error.HTTPError:
+            pass                      # expected: it cannot open
+        # The tile grid must still RETRY it — the `<img>` is what issues
+        # the request, and replacing it with the error meant the page
+        # that would have recovered the camera never asked. But it must
+        # also still say what went wrong, or it is a bare broken-image
+        # icon. The solo page got this note; the grid was left behind.
+        with urllib.request.urlopen(b4 + "/all", timeout=20) as r:
+            all_page = r.read().decode()
+        want("the tile grid RETRIES a present camera that failed, rather "
+             "than replacing it with the error that would never clear",
+             "/cam/g/tile" in all_page)
+        want("...while still saying what went wrong last time",
+             "did not open" in all_page)
+        with urllib.request.urlopen(b4 + "/cam/g/", timeout=20) as r:
+            solo_page = r.read().decode()
+        want("...and the solo page does the same", "/cam/g/stream" in solo_page
+             and "did not open" in solo_page)
+
+        # THE PICKER — the view Kyle actually had open, and the one line
+        # in this change with no coverage at all until now. Reverting it
+        # to `cam.error or (...)` passed the whole suite while printing
+        # a raw fault where a state word belongs.
+        with urllib.request.urlopen(b4 + "/", timeout=20) as r:
+            picker = r.read().decode()
+        want("the picker prints a STATE WORD, not a raw error string",
+             "[failed]" in picker and "did not open" not in picker)
+
+        # THE NOTE MUST CLEAR. `_last_trouble` reads `error` ("true
+        # right now"), NOT `last_error` (kept forever) — key it on the
+        # latter and every page shows "last attempt failed … reloading
+        # retries it" beside a working live picture for the rest of the
+        # server's life, which is 713.12's shape all over again. The
+        # camera below opens on its SECOND attempt.
+        heal_path = Path(tmp) / "flaky-heals"
+        heal_path.write_text("", encoding="utf-8")
+        healer = CameraSpec("h", "-", str(heal_path), big, small, tags=False)
+        mgr4 = CameraManager([healer], tags=False)
+        srv4 = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mgr4, tmp))
+        threading.Thread(target=srv4.serve_forever, daemon=True).start()
+        b5 = f"http://127.0.0.1:{srv4.server_address[1]}"
+        try:
+            urllib.request.urlopen(b5 + "/cam/h/snapshot", timeout=20)
+        except urllib.error.HTTPError:
+            pass                                  # first attempt fails
+        with urllib.request.urlopen(b5 + "/cam/h/", timeout=20) as r:
+            want("a failed camera's page carries the note",
+                 "last attempt failed" in r.read().decode())
+        with urllib.request.urlopen(b5 + "/cam/h/snapshot", timeout=20) as r:
+            r.read()                              # second attempt works
+        with urllib.request.urlopen(b5 + "/cam/h/", timeout=20) as r:
+            want("...and it is GONE once the camera comes good, rather "
+                 "than sitting over a working picture forever",
+                 "last attempt failed" not in r.read().decode())
+        srv4.shutdown()
+        srv3.shutdown()
         try:
             urllib.request.urlopen(b2 + "/cam/d/capture", timeout=20)
             want("a capture where NOTHING worked is an error status, so a "
@@ -920,9 +1117,35 @@ def _selftest() -> None:
         # asserting, and neither is allowed to pass by default.
         have_tags = cam_status()["may_detect"]
 
+        # 713.12's SURFACE, asserted over real HTTP. `health` is the
+        # field the docs tell operators and future perception loops to
+        # gate on, and it had no coverage at all: hardcoding it to "ok",
+        # or reverting `open` to the old `profile is not None`, both
+        # passed the whole suite.
+        want("a camera nobody has opened reports health 'unknown', not a "
+             "fault — the honest answer for an on-demand camera",
+             cam_status()["health"] == "unknown")
+        want("...and reports itself closed, because nobody is watching",
+             cam_status()["open"] is False)
+        # `null`, not the epoch. `_iso` says so emphatically — "never
+        # happened" and "happened in 1970" are different answers — and
+        # nothing checked it.
+        want("...with null timestamps rather than 1970",
+             cam_status()["last_ok_at"] is None
+             and cam_status()["last_error_at"] is None)
+        want("...and an idle camera reports no frame rate",
+             cam_status()["fps"] == 0.0)
+
         t_plain = hold_stream("", 2.0)
         want("a plain stream opens the camera...",
              settles(lambda: cam_status()["open"]))
+        want("...and health becomes 'ok' once frames actually flow",
+             settles(lambda: cam_status()["health"] == "ok"))
+        want("...with a timestamp, so a stale 'ok' can be aged",
+             isinstance(cam_status()["last_ok_at"], str)
+             and cam_status()["last_ok_at"].endswith("Z"))
+        want("...and a frame rate, so the JSON shows what the camera is "
+             "actually doing", settles(lambda: cam_status()["fps"] > 0))
         want("...and does NOT run detection, which is the whole point of "
              "713.6 — the brains belong to the consumer, not the camera",
              cam_status()["detecting"] is False)
