@@ -825,11 +825,17 @@ def _add_reach_zone(spec, scene: Scene, tiles) -> None:
 
     m = scene.to_m
     # Two rings, two colours. GREEN is the guaranteed vertical-approach
-    # zone (gripper plumb); AMBER is the extra the arm reaches when the
+    # zone (gripper plumb); BLUE is the extra the arm reaches when the
     # wrist may arrive tilted. Drawing only the green one understated
     # the arm by 210 mm on the outer edge and read as a bug twice.
+    #
+    # Blue rather than amber (Kyle 2026-07-31: "that yellow looks
+    # terrible"): the arm is yellow and the tabletop is tan, so an amber
+    # overlay sat on top of both and read as a lighting artefact instead
+    # of an annotation. Blue is the one hue nothing else in this scene
+    # uses.
     colour = {"plumb": [0.20, 0.85, 0.35, 0.34],
-              "tilt": [0.95, 0.70, 0.15, 0.22]}
+              "tilt": [0.15, 0.45, 0.95, 0.30]}
     for i, t in enumerate(tiles):
         cx, cy, yaw, half_r, half_t = t[:5]
         kind = t[5] if len(t) > 5 else "plumb"
