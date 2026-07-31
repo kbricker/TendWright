@@ -279,6 +279,12 @@ class JointMap:
     model_joint: str
     anchor: str
     bench_verified: bool
+    # Degrees the model's own zero sits away from the arm's PHYSICAL rest
+    # orientation, for `anchor="rest"` joints only. Normally 0: pinning
+    # rest to the model's zero is the whole point of that anchor. j5
+    # needs it because a spline horn can be fitted a quarter-turn out
+    # and the model has no way to know — see JOINT_MAPS.
+    mount_offset_deg: float = 0.0
 
 
 # The SO-101 model uses LeRobot's joint names, which match
@@ -319,7 +325,23 @@ JOINT_MAPS: dict[int, JointMap] = {
     2: JointMap("shoulder_lift", "frame", True),
     3: JointMap("elbow_flex", "frame", True),
     4: JointMap("wrist_flex", "frame", True),
-    5: JointMap("wrist_roll", "rest", True),
+    # j5's -90: the SO-101's gripper is fitted a QUARTER TURN from the
+    # model's zero, so pinning rest straight onto that zero put the jaws
+    # front-to-back in the sim while the arm's sit side by side. Caught
+    # by Kyle looking at the viewer against a camera frame of the real
+    # arm at rest, 2026-07-31, and settled by rendering j5 across the
+    # model's full travel: only +/-90 separates the jaws, and -90 puts
+    # the gripper's screw-hole plate LEFT of the jaw pair exactly as the
+    # photograph does. +90 mirrors it.
+    #
+    # The offset had to be introduced because the comment above says
+    # this relationship was "bench-verified on the previous model — kept
+    # deliberately rather than re-guessed, so the model swap does not
+    # quietly move a joint". Keeping it WAS the quiet move: the SO-100
+    # and SO-101 grippers are different parts and the relationship did
+    # not survive the swap. Same shape as the direction revert #714.6
+    # closed, one field over.
+    5: JointMap("wrist_roll", "rest", True, mount_offset_deg=-90.0),
     6: JointMap("gripper", "min", True),   # physical closed = model closed
 }
 
@@ -783,7 +805,8 @@ class Twin:
                 # model's zero. The DIRECTION is a separate question and
                 # it IS answerable — see `_rest_direction`.
                 s = self._rest_direction(i)
-                lin[i] = (-s * math.radians(cal.frame.deg(cal.rest)),
+                lin[i] = (-s * math.radians(cal.frame.deg(cal.rest))
+                          + math.radians(jm.mount_offset_deg),
                           s * math.radians(1.0))
             else:                                   # "frame" — measure it
                 probe = math.radians(10.0)
@@ -1292,8 +1315,21 @@ def cmd_selftest(twin: Twin) -> int:
     # scatter outright. The UPPER bound is unchanged and still measured:
     # at 1.6 the gripper reaches the TABLE, which is never waived and
     # would fail the test for the wrong reason.
-    deep = {i: rest[i] + round(1.5 * d)
-            for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
+    # NO LONGER A SCALED SLUMP, and the reason is a measurement. Scaling
+    # every slump joint used to fold the arm into itself before anything
+    # reached the table; with j5's mount offset corrected (the gripper
+    # was modelled a quarter-turn out) the gripper's footprint rotated
+    # and the order INVERTED — the table is hit at x2.0 and the
+    # structural pair only at x2.5, so no multiplier isolates the waiver
+    # any more. A table contact is never waived and would fail this test
+    # for the wrong reason.
+    #
+    # Tucking the WRIST instead keeps the gripper high while driving it
+    # into the shoulder. j4 +100 ticks from rest: 2.280 mm of
+    # shoulder <-> gripper, zero table contacts. Chosen by scanning j2
+    # and j4 around rest for poses with a structural contact and no
+    # table contact — there are three, and this is the deepest.
+    deep = {**rest, 4: rest[4] + 100}
     lift = {**rest, 2: rest[2] + round(25 / span_deg(1))}
     fails: list[str] = []
 
@@ -1348,10 +1384,11 @@ def cmd_selftest(twin: Twin) -> int:
     # can move j5 by up to 4.7 deg and 3.2 deg of that clears the
     # contact, so if this ever goes red, re-read OBSERVED_SLUMP_DELTA
     # before suspecting the geometry.
-    traj("the observed slump needs the settle waiver on TODAY's capture "
-         "— 0.503 mm of shoulder <-> gripper, a structurally nesting "
-         "pair (a re-capture may legitimately clear it)",
-         [slump, rest], False, False)
+    traj("the observed slump is CLEAN on today's capture — it stopped "
+         "needing the waiver when j5's mount offset was corrected, "
+         "because a gripper modelled a quarter-turn out was jamming "
+         "into the shoulder that never touches it on the arm",
+         [slump, rest], True, True)
     traj("a synthetic deeper fold IS accepted during the settle",
          [deep, rest], True, True)
     traj("...and is REFUSED without the settle waiver — so the waiver is "

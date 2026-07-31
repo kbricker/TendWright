@@ -60,9 +60,10 @@
     {
       "id": 5,
       "name": "wrist_roll",
+      "_max_widened_2026_07_31": "max was 2570, a captured span of 105.6 deg. Every OTHER joint's capture matches the vendored model's own limit to within a few degrees; j5 was the sole outlier, because wrist_roll is a CONTINUOUS joint and `calibrate capture` cannot sweep one properly (plan 712.5). The model allows -157.2..+162.8 deg of qpos and the arm's rest sits at qpos -90, so there is a large unused span on this side. Widened to 3200 (frame -103 deg). The working gripper orientation - jaws front-to-back, what the plumb poses want - is frame -90 = tick 3086 = qpos 0.0, dead centre of the model's range and nowhere near a stop. NOT re-measured on the arm: the source is the model, which #670 verified against the printed parts to 0.09%. If j5 stalls short of 3086, this is the number to suspect first.",
       "min": 1369,
       "rest": 2062,
-      "max": 2570,
+      "max": 3200,
       "sign": -1,
       "frame": {
         "unit": "deg",

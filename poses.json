@@ -25,11 +25,11 @@
     },
 
     "TUCK": {
-      "joints": {"1": 0, "2": 0, "3": 88.4, "4": 91.6, "5": 0, "6": 20},
+      "joints": {"1": 0, "2": 0, "3": 88.4, "4": 91.6, "5": -90, "6": 20},
       "_note": "Kyle's 'crane pose', 2026-07-31: *\"the arm is 'plumb' as possible and the end of 6 is a few mm off the table so the 1 can still swing\"*. Upper arm VERTICAL (j2 = 0), gripper plumb (j4 = 180 - j2 - j3), and the GRIP POINT 14.9 mm above the table at radius 157 mm. Zero contacts.\n\nNamed TUCK, not CRANE, because CRANE_<slew><radius><hoist> is already a family meaning something else — plumb gripper with j2/j3 free, giving the radius/hoist grid. Two different things called crane would collide. Rename freely; the collision is the only thing this name is avoiding.\n\nThe 14.9 mm is measured at the GRIP POINT (the model's `gripperframe` site, at the closed jaw tip), NOT at the moving jaw's body origin the CRANE_ family's notes were written against. Those two differ by about 77 mm, so do not compare this pose's clearance against theirs without converting."
     },
     "EXTENDED": {
-      "joints": {"1": 0, "2": 90, "3": 0, "4": 0, "5": 0, "6": 20},
+      "joints": {"1": 0, "2": 90, "3": 0, "4": 0, "5": -90, "6": 20},
       "_note": "'Fully extended', named by Kyle 2026-07-31: j2/j3/j4 in line, upper arm level. The longest reach this arm has — grip point at radius 440.6 mm, 46.3 mm above the table. Zero contacts.\n\nIt is also the arm's WORST-CASE HOLDING POSE: 0.864 N.m at j2, because it is the longest moment arm the arm can make. That is computed from the vendored model's masses (0.632 kg total), and the STS3215's own torque rating is not recorded anywhere in this repo — so whether the arm holds this comfortably is measured at the bench, not asserted here. Watch j2 for sag the first time it runs.\n\nDeliberately not called 'prone': that word collides with pronation, which is about j5."
     },
     "CRANE_211": {
