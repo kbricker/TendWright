@@ -911,6 +911,29 @@ def _selftest() -> int:
     # --- the clip a trace names is the clip it is compared against.
     want("a clip name resolves to its file",
          find_clip_file("crane-tour") == REPO_ROOT / "crane-tour.json")
+
+    # EVERY clip file in the repo must agree with its own name, because
+    # `find_clip_file` is the only route left for a trace older than
+    # `clip_file` and it can do nothing but guess `<name>.json`. This is
+    # a property of the DATA, not the code, so it is checked here rather
+    # than assumed: `home.json` declared itself 'pan-wiggle' until
+    # 2026-07-30, which made every trace of it unresolvable and would
+    # have made a same-named neighbour resolvable INSTEAD. Renamed to
+    # pan-wiggle.json; this keeps the next one from landing.
+    disagree = []
+    for f in sorted(REPO_ROOT.glob("*.json")):
+        try:
+            doc = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        # A clip has a LIST of poses; poses.json has an object.
+        if not isinstance(doc, dict) or not isinstance(doc.get("poses"), list):
+            continue
+        if str(doc.get("name") or f.stem) != f.stem:
+            disagree.append(f"{f.name} calls itself {doc.get('name')!r}")
+    want("...and every clip file in the repo is named after the clip "
+         "inside it" + (f" ({'; '.join(disagree)})" if disagree else ""),
+         not disagree)
     tour = build_reference(rows, cals, 70, {"clip": "crane-tour",
                                             "speed": 250, "accel": 12})
     want("...and a trace naming it builds THAT clip as the reference",

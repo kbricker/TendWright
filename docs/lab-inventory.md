@@ -69,8 +69,10 @@ Feetech STS3215 bus servos, 6 joints, over a CH340-family USB adapter.
 - **These servos have no brakes.** Cutting power to an arm that is not
   folded makes it fall. `kasa` enforces this — see below.
 - Calibration lives in `calibration.json` (per-joint min/rest/max/sign);
-  `home.json` is the pan-wiggle clip whose `rest` pose is this arm's
-  captured rest.
+  `pan-wiggle.json` is the saved `runner example` output — the clip
+  whose `rest` pose IS this arm's captured rest. Its filename matches
+  the name inside it on purpose: tools that only have the clip's name
+  (a trace header, say) resolve it back to `<name>.json`.
 
 ## Cameras
 

@@ -766,12 +766,18 @@ def cmd_run(args) -> int:
                                f"-sp{clip.profile.speed}"
                                f"-ac{clip.profile.acceleration}.csv")
             # BOTH the name and the file. The name is what the clip
-            # calls itself; the file is where it was read from, and they
-            # are not the same string — `runner example` writes a clip
-            # named 'pan-wiggle' that operators save as `pan.json`, and
-            # a clip may sit in a subdirectory. `sim.trace` can resolve
-            # a name to `<name>.json` as a fallback for older traces,
-            # but only the path is actually reliable.
+            # calls itself; the file is where it was read from, and
+            # nothing makes them the same string — a clip may sit in a
+            # subdirectory, or be a tuned working copy that kept the
+            # original name. `sim.trace` can resolve a name back to
+            # `<name>.json` as a fallback for traces older than this
+            # field, but only the path is actually reliable.
+            #
+            # The repo used to demonstrate the gap: `home.json` declared
+            # itself 'pan-wiggle', so a trace of it resolved to a file
+            # that was not there. Renamed to `pan-wiggle.json` on
+            # 2026-07-30, which fixes that instance and none of the
+            # general case.
             trace = Trace(dest, meta={"speed": clip.profile.speed,
                                       "accel": clip.profile.acceleration,
                                       "clip": clip.name,
@@ -919,13 +925,13 @@ def run() -> int:
     if args.command == "example":
         cal_path = Path(args.cal)
         cals = load_joint_calibration(cal_path) if cal_path.exists() else None
-        # `runner example > pan.json` is a CLIP FILE being written through
-        # the shell, so the bytes that land are encoded by stdout's codec
-        # — the console codepage, cp1252 on the desk. `load_clip` reads
-        # utf-8, so the em-dash in the template went out as 0x97 and the
-        # file this command exists to produce would not load. The docs
-        # walk the operator straight through it
-        # (`runner example > pan.json && runner show --clip pan.json`).
+        # `runner example > pan-wiggle.json` is a CLIP FILE written
+        # through the shell, so the bytes that land are encoded by
+        # stdout's codec — the console codepage, cp1252 on the desk.
+        # `load_clip` reads utf-8, so the em-dash in the generic template
+        # went out as 0x97 and the file this command exists to produce
+        # would not load. The docs walk the operator straight through it
+        # (`runner example > … && runner show --clip …`).
         try:
             sys.stdout.reconfigure(encoding="utf-8")
         except (AttributeError, OSError):        # not a real stream
