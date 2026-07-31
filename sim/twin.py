@@ -28,9 +28,16 @@ What the swap did and did not change is worth knowing:
     elbow 90 deg, m4 90 deg), independently re-derived, so the shipped
     safety constants are confirmed rather than adjusted;
   - both real bench collisions are still predicted;
-  - the arm's observed torque-off slump NO LONGER penetrates the model,
-    where the SO-100 read it as 0.14 mm past touching while the real arm
-    sat in that pose untouched — the new geometry matches reality better;
+  - the arm's observed torque-off slump reads 0.503 mm into the model
+    (the SO-100 read 0.14 mm), on a structurally-nesting pair, while the
+    real arm sits in that pose untouched. This line used to claim the
+    slump NO LONGER penetrated and that the new geometry therefore
+    matched reality better — true only while j5's direction was reverted
+    behind the model swap. Correcting it (see `_rest_direction`) rolls
+    the jaw to the other side of a half-millimetre fold. 0.503 mm needs
+    3.2 deg of j5 slump error to explain, and the slump's own measured
+    scatter on j5 is 4.7 deg, so this is inside the noise rather than
+    evidence about the geometry either way;
   - the joint LIMITS did not improve. Both packages describe them as
     approximate and both are narrower than the calibrated physical range
     on j2 and j6, so `qpos_of` still clamps and still reports it.
@@ -96,9 +103,15 @@ from hardware.units import DegFrame, RAD_PER_TICK, fmt_ticks, span_deg
 
 MODEL_XML = Path(__file__).parent / "assets/so101/so101_new_calib.xml"
 # Safety margin: geom pairs within this distance are surfaced as
-# near-misses, because the mapping carries real uncertainty (two
-# provisional directions, print tolerances, a hand-posed rest anchor)
-# and a 5 mm miss in the model is not a pass on a real arm.
+# near-misses, because the mapping carries real uncertainty (print
+# tolerances, a hand-posed rest anchor) and a 5 mm miss in the model is
+# not a pass on a real arm.
+#
+# This used to say "two provisional directions". Every direction is now
+# derived from the model and both rest-anchored ones are corroborated
+# by a bench check (`_rest_direction`) — but between #670 and 2026-07-30
+# BOTH were silently reverted, and the margin was carrying a defect it
+# was never sized for the whole time.
 #
 # Exception, else the gate cries wolf: in the arm's FOLDED REST pose
 # several links legitimately nest within a few mm of each other. Those
@@ -134,13 +147,21 @@ CLAMP_REPORT_DEG = 0.05  # ~half a tick: below this, clamping is rounding
 # SO-100 model the observed slump read 0.14 mm PAST touching, while the
 # real arm sat there untouched.
 #
-# ON THE SO-101 GEOMETRY THAT PARTICULAR CONFLICT IS GONE (plan #670):
-# the observed slump now only reaches PROXIMITY, which structural pairs
-# never fail on, so it is accepted with or without the waiver — pinned
-# both ways in `selftest`. That is evidence the new geometry matches the
-# real arm better, and it is also why the waiver's paired refusal now
-# runs on a clearly-labelled SYNTHETIC deeper fold: a safety waiver that
-# no test can exercise is a claim, not a property.
+# THE CONFLICT IS NOT GONE. This block claimed, from #670 until
+# 2026-07-30, that "on the SO-101 geometry the observed slump only
+# reaches PROXIMITY ... accepted with or without the waiver — pinned
+# both ways in selftest", offered as evidence the new model matched the
+# real arm better. Every part of that was an artefact of j5's direction
+# having been reverted by the same model swap (`_rest_direction`): with
+# j5 correct the slump penetrates by 0.503 mm, the selftest pins it
+# needing the waiver, and there is no both-ways pin to go looking for.
+#
+# It is 3.2 deg of j5 away from clean and the slump's own scatter on j5
+# is 4.7 deg, so it argues nothing about the geometry — which is exactly
+# why the waiver's paired refusal still runs on a clearly-labelled
+# SYNTHETIC deeper fold rather than on the measured one: a safety waiver
+# whose only exercise is a pose sitting inside its own measurement noise
+# is a claim, not a property.
 #
 # The waiver is KEPT because the hazard it covers has not gone away —
 # the slump still does not reproduce itself, and a re-capture, a changed
@@ -236,8 +257,24 @@ class JointMap:
         limit. Its frame is a percentage, not an angle, so it maps in
         ticks.
 
-    bench_verified False = provisional; `sim.twin check` prints how to
-    confirm or flip it."""
+    `bench_verified` means SOMEBODY HAS LOOKED AT THE ARM and confirmed
+    the model turns the same way. It does NOT mean the direction was
+    hand-entered — since 2026-07-30 every joint's direction is derived
+    (the pitch chain from a segment probe, pan and roll from
+    `_rest_direction`). It is the difference between "the model says so"
+    and "we watched it".
+
+    IT IS NOT A GUARANTEE THAT TODAY'S CODE STILL HONOURS THE LOOK.
+    Plan 714.6 is exactly that gap: j1 and j5 were both watched on
+    2026-07-25 and both were reverted the next day by a model swap that
+    replaced their stored directions with a constant. The flag stayed
+    True and was still true — somebody HAD looked — while the mapping it
+    described had changed underneath. Deriving the direction is what
+    closes it, because a derivation cannot be reverted by deleting a
+    field.
+
+    `sim.twin check` lists any joint nobody has watched. All six are
+    watched today, so it prints nothing."""
 
     model_joint: str
     anchor: str
@@ -255,13 +292,29 @@ class JointMap:
 # anchors reproduce that model's hand-posed rest keyframe to within
 # 0.03 deg — under a tick — which is what licensed retiring the keyframe.
 #
-# j1 and j5 stay bench-verified rather than derived: pan and roll have no
-# collinear reference, so the model cannot be asked where their zero is.
-# Their relationship to the model was confirmed at the bench 2026-07-25
-# (Kyle jogged each and reported the sense) and is carried across
-# unchanged. The gripper's open direction IS geometric and was verified
-# by measuring jaw separation across the model's range on both models.
+# j1 and j5 pin their ZERO to the physical rest tick, because pan and
+# roll have nothing to be collinear with and the model cannot be asked
+# where their zero is. Their DIRECTION is a different question and is
+# derived — see `_rest_direction`, including how a hardcoded +1 reverted
+# both of these behind the model swap.
+#
+# KEEP THE JULY-25 BENCH ANSWERS. They are the physical facts and they
+# outlive any model: Kyle jogged both joints on 2026-07-25 (99aa56e),
+# j1 came back as shipped and j5 flipped, verified two ways — omega .
+# pointing-direction analytically, and jaw displacement empirically. The
+# commit also settled the ambiguity that makes roll hard to talk about:
+# handedness inverts when you walk around a roll axis, Kyle stood BEHIND
+# the arm, and the ratified convention is head-on FROM THE FRONT. That
+# sentence is the only written resolution of it; #670 re-guessed it once
+# already and this comment exists so nobody has to a third time.
+#
+# The gripper's open direction IS geometric and was verified by
+# measuring jaw separation across the model's range on both models.
 JOINT_MAPS: dict[int, JointMap] = {
+    # bench_verified = a human has watched this joint move and agreed.
+    # Both rest-anchored joints have: j1 on 2026-07-25 and again on
+    # 07-30, j5 on 07-25. `_rest_direction` now reproduces both of those
+    # answers from the model rather than storing them.
     1: JointMap("shoulder_pan", "rest", True),
     2: JointMap("shoulder_lift", "frame", True),
     3: JointMap("elbow_flex", "frame", True),
@@ -495,6 +548,215 @@ class Twin:
         return math.degrees(math.atan2(float(np.cross(parent, v) @ axis),
                                        float(parent @ v)))
 
+    def _rest_direction(self, i: int) -> int:
+        """+1 or -1: does POSITIVE model rotation match the ratified
+        frame's positive sense, for a joint anchored at rest?
+
+        THIS EXISTS BECAUSE A MODEL SWAP SILENTLY REVERTED TWO
+        BENCH-VERIFIED SIGNS, and the mechanism is worth more than the
+        bug. `JointMap` used to carry a per-joint `direction` field.
+        #648 shipped j1 and j5 at -1; Kyle jogged both at the bench on
+        2026-07-25 (99aa56e) and the answers were recorded — j1
+        confirmed, j5 flipped, with the roll's viewpoint ambiguity
+        explicitly adjudicated: *"handedness inverts when you walk around
+        a roll axis and Kyle stood behind the arm while the capture
+        convention is head-on from the front."*
+
+        #670 (daf25b4) then swapped the model SO-100 -> SO-101, deleted
+        `direction`, and hardcoded the slope to +1. That number happened
+        to equal j1's effective sign, so j1 looked untouched — but the
+        SO-100's pan axis is +Z and the SO-101's is -Z, so the same
+        constant now meant the opposite rotation. j5 was simply reverted
+        to its pre-bench value. A constant replacing a per-joint field
+        reverts every verified sign without changing a number.
+
+        NO TEST COULD SEE IT, and the two joints hid for different
+        reasons — worth separating, because only one of them is a
+        permanent property:
+
+          j1 is PROVABLY invariant for collision. `base` carries no
+            collidable geometry (every base geom is visual, contype 0),
+            every collidable body descends from `shoulder`, and the only
+            world geom is a horizontal infinite plane — so rotating the
+            whole arm about the vertical maps the contact set onto
+            itself exactly. Measured: 936/936 mirrored poses identical
+            to 1e-6 mm. This stops being true the day a base mesh, a
+            fixture (714.4) or a wall enters the model.
+          j5 is NOT invariant. It only looked so because every pose in
+            the shipped library has j5 = 0, where the mapping is the
+            same either way. Over the fold region with j5 within +/-25
+            deg, 1136 verdicts flip — in BOTH directions, including
+            poses the reverted sign called CONTACT that the correct one
+            calls CLEAN. The first pose with a rolled jaw would have
+            made the gate's answer sign-dependent.
+
+        Found 2026-07-30, five days later, by Kyle looking at the arm:
+        parked at j1 tick 1578 (+45.0 deg) it swung to its LEFT while the
+        twin put the tool at y -117.7 in the rig frame, its RIGHT.
+
+        WHAT THIS FUNCTION RESTORES, it restores to the bench's own
+        answers. Run the rule below against the retired SO-100 — its own
+        joints (`Rotation`, `Wrist_Roll`) and its own gripper bodies
+        (`Fixed_Jaw`, `Moving_Jaw`) — and it returns +1 for j1 and -1 for
+        j5, which is exactly what Kyle measured on 2026-07-25. Its pan
+        axis is +Z where the SO-101's is -Z, so the two models need
+        OPPOSITE constants to mean the same physical rotation, and the
+        rule gets both right without being told. That is the strongest
+        evidence available that this is the right rule rather than one
+        that happens to fix today's symptom, and it is reproducible:
+
+            SO-100   pan . +Z = +1.000    roll . ref = -0.9995
+            SO-101   pan . +Z = -1.000    roll . ref = -0.9846
+
+        USE THE RIGHT BODY NAME. An earlier draft of this paragraph said
+        `Fixed_Gripper`, which the SO-100 does not have — it is
+        `Fixed_Jaw` — and quoted -0.982. That number is the typo's own
+        fingerprint: a name matching nothing silently leaves seven geoms
+        instead of thirteen, and -0.982 is Moving_Jaw ALONE. A recipe
+        that fails by narrowing its input rather than by raising is
+        exactly the shape of thing this function exists to catch.
+
+        It is also why the reference is the gripper's collidable geometry
+        and not the `gripperframe` site — the SO-100 has no sites, so a
+        site-based rule could not be run against the negative control at
+        all, and this paragraph would be an assertion instead of an
+        experiment.
+
+        WHY THIS IS DERIVABLE WHEN THE ZERO IS NOT. The module's standing
+        argument for leaving pan and roll undeduced is that they "have
+        nothing to be collinear with", and that is true — of their ZERO.
+        A direction needs no collinearity. It needs only the axis the
+        frame's own words name, and both frames name one outright:
+
+          j1 "+ = CCW from above"        -> about the model's up, +Z
+          j5 "+ = CCW viewed head-on"    -> about the gripper's own
+                                            pointing direction, which is
+                                            what "head-on" looks along
+
+        so the sign is the dot product of the model's joint axis with
+        that reference. One measurement, no transcribed constant, and it
+        follows a model swap the way every other anchor here does.
+
+        `cmd_frames` cannot catch this: it verifies exactly the joints in
+        PITCH_SEGMENTS, and j1/j5 are not in it. That gap is the whole
+        reason the bug lived — the same check DID catch j4 reading
+        backwards, as its docstring says.
+        """
+        # MEASURED AT qpos 0, AND THAT IS LOAD-BEARING — do not move it
+        # to `_rest_qpos` because the joint is rest-anchored, tempting as
+        # that reads. The j5 reference is the gripper's collidable
+        # geometry, and `TOOL_BODY` is j6's child, so opening the jaws
+        # swings it: measured dot vs j6 travel,
+        #     0% -0.9909   25% -0.9635   50% -0.9192
+        #                  75% -0.8702  100% -0.8551
+        # The SIGN never comes near flipping, so the derivation is safe
+        # anywhere — but the 0.9 guard below trips past ~70% open, and a
+        # BenchError here means PoseGate catches it, goes inactive, and
+        # `check_sequence` returns CLEAN. An open jaw must not fail the
+        # gate open. Across j1-j5 the reference is invariant to float
+        # noise (3e-15 over 300 random in-range poses) — exactly, as
+        # it must be, since the axis and the geoms are fixed in one
+        # body chain and only j6 moves the centroid.
+        self.data.qpos[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+        axis = np.array(self.data.xaxis[self._jid[i]], dtype=float)
+        if i == 1:
+            ref = np.array([0.0, 0.0, 1.0])          # "from above"
+        else:
+            # "head-on" looks back along the direction THE GRIPPER
+            # POINTS, so the reference must be a property of the gripper
+            # itself. Take it from where the gripper's own COLLIDABLE
+            # GEOMETRY sits relative to the roll axis: the jaws are out
+            # in front by construction, on any arm worth the name.
+            #
+            # Two rejected alternatives, both instructive:
+            #   m4 -> m5 is the WRIST LINK, not the gripper. It agrees
+            #     here to 16.5 deg and would keep agreeing right up until
+            #     somebody remounted the gripper doubled back — the link
+            #     is unchanged by that, the pointing direction reverses,
+            #     and the guard below would see 0.96 and be delighted.
+            #   the `gripperframe` site is the right POINT but the wrong
+            #     DEPENDENCY. It is an export artefact that nothing else
+            #     in this repo reads, the SO-100 has no sites at all (so
+            #     the corroboration below could not be run), and a
+            #     vendored refresh that dropped it would raise in
+            #     __init__ -> PoseGate catches BenchError -> `active`
+            #     goes False -> `check_sequence` returns CLEAN. A missing
+            #     cosmetic site must not fail the gate open.
+            pts = [self.data.geom_xpos[g] for g in range(self.model.ngeom)
+                   if self.model.geom_contype[g] != 0
+                   and self._body_of_geom(g) in (WRIST_BODY, TOOL_BODY)]
+            if not pts:
+                raise BenchError(
+                    f"no collidable gripper geometry on bodies "
+                    f"{WRIST_BODY}/{TOOL_BODY} to take a pointing "
+                    f"direction from",
+                    "the vendored model changed — see Twin._rest_direction")
+            # Indexed by `i`, not a literal 5 — they are the same joint
+            # today and `proj` below already uses `i`, so a third
+            # rest-anchored joint would silently measure `ref` from the
+            # wrong anchor.
+            ref = (np.mean(np.array(pts, dtype=float), axis=0)
+                   - np.array(self.data.xanchor[self._jid[i]], dtype=float))
+        if i != 1:
+            # SAME SIDE, not just aligned. The mean decides the sign, and
+            # `abs(d)` cannot see it land on the wrong side of the
+            # anchor: the SO-101's three gripper geoms sit 33.8 mm in
+            # FRONT of it (projections -23.4, -28.2, -48.1 mm along the
+            # roll axis, negative because that axis points back down the
+            # arm — which is why `d` is negative and the sign is -1). So
+            # ONE collidable geom added ~100 mm BEHIND m5 — a
+            # wrist-camera bracket, a slip-ring housing, a cable shroud
+            # reaching back over the forearm — drags the mean past the
+            # anchor, flips the derived sign, and leaves |d| at 0.9846
+            # with the alignment guard reporting itself delighted. That
+            # is the round-1 bug with a new mechanism, so it gets its own
+            # check.
+            #
+            # TOLERANCED, and not by taste. `min * max <= 0` refuses any
+            # model with a geom sitting EXACTLY on the anchor plane —
+            # which straddles nothing, contributes nothing to the sign,
+            # and is an ordinary way to model an inline roll servo. This
+            # module already carries `FRAME_TOL_DEG ... slop for mesh
+            # origins` because onshape-to-robot recentres them between
+            # exports. A refusal here raises in __init__, PoseGate
+            # catches it, `active` goes False, and `check_sequence`
+            # returns CLEAN — the exact fail-open this guard exists to
+            # prevent, reintroduced by the guard. 1 mm costs nothing
+            # against geoms at 23-48 mm and cannot be reached by float
+            # noise around a nominal zero.
+            STRADDLE_TOL_M = 0.001
+            anchor = np.array(self.data.xanchor[self._jid[i]], dtype=float)
+            proj = [float(axis @ (np.array(q, dtype=float) - anchor))
+                    for q in pts]
+            if min(proj) < -STRADDLE_TOL_M and max(proj) > STRADDLE_TOL_M:
+                raise BenchError(
+                    f"joint {i}'s gripper geometry straddles its own roll "
+                    f"axis ({min(proj) * 1000:+.1f} to {max(proj) * 1000:+.1f} "
+                    f"mm), so no centroid can say which way it points",
+                    "something on the gripper body reaches back behind the "
+                    "wrist — see Twin._rest_direction")
+        n = float(np.linalg.norm(ref))
+        if n < 1e-9:
+            raise BenchError(
+                f"cannot measure joint {i}'s frame reference direction",
+                "the model's geometry moved — see Twin._rest_direction")
+        d = float(axis @ (ref / n))
+        # 0.9, not 0.5. The message says these should be PARALLEL, and
+        # 0.5 is 60 degrees off parallel — a threshold that admits almost
+        # anything while sounding strict. At the measurement pose both
+        # joints read 1.000 and 0.9846, so 0.9 costs nothing here — but
+        # see the note above: the j5 reference degrades to 0.855 with the
+        # jaws fully open, so this margin belongs to qpos 0 and not to
+        # the joint in general.
+        if abs(d) < 0.9:
+            raise BenchError(
+                f"joint {i}'s model axis is only {d:.2f} aligned with the "
+                f"axis its ratified frame names — they should be parallel",
+                "either JOINT_MAPS points at the wrong model joint or the "
+                "frame's label no longer describes it")
+        return 1 if d > 0 else -1
+
     def _derive_anchors(self) -> dict[int, tuple[float, float]]:
         """Locate every joint's zero ON THE MODEL: qpos = a + b * x.
 
@@ -517,9 +779,12 @@ class Twin:
                 # percentage frame: map in ticks, physical closed -> model closed
                 lin[i] = (lo - RAD_PER_TICK * cal.min, RAD_PER_TICK)
             elif jm.anchor == "rest":
-                # no geometric zero to find; pin physical rest to model zero
-                lin[i] = (-math.radians(cal.frame.deg(cal.rest)),
-                          math.radians(1.0))
+                # No geometric ZERO to find, so pin physical rest to the
+                # model's zero. The DIRECTION is a separate question and
+                # it IS answerable — see `_rest_direction`.
+                s = self._rest_direction(i)
+                lin[i] = (-s * math.radians(cal.frame.deg(cal.rest)),
+                          s * math.radians(1.0))
             else:                                   # "frame" — measure it
                 probe = math.radians(10.0)
                 samples = []
@@ -741,14 +1006,25 @@ def _print_provisional() -> None:
                   if not jm.bench_verified]
     if not unverified:
         return
-    print(f"\nPROVISIONAL mapping on joint(s) {unverified} — verify at "
-          f"the bench before trusting the gate:")
+    print(f"\nDERIVED BUT NEVER WATCHED — joint(s) {unverified}. The "
+          f"direction is measured off the model, not declared, but no "
+          f"human has confirmed the model agrees with the arm:")
     for i in unverified:
         jm = JOINT_MAPS[i]
         print(f"  j{i} ({jm.model_joint}): jog it in its calibrated "
-              f"POSITIVE direction and check the model agrees; if it "
-              f"moves the opposite way, flip direction to "
-              f"{-jm.direction:+d} in JOINT_MAPS[{i}] (sim/twin.py)")
+              f"POSITIVE direction and LOOK at it, then compare against "
+              f"`sim.rig where`. This is not a formality — j1 and j5 "
+              f"were both watched on 2026-07-25 and both were reverted "
+              f"the next day by a model swap, and every collision "
+              f"verdict stayed green for five days regardless. Only a "
+              f"person looking at the arm found it (plan 714.6).")
+    # This loop used to print `jm.direction`. The field was real once —
+    # #648 shipped it and #670 deleted it — so the reference outlived
+    # its target and became an AttributeError. It could not fire,
+    # because it runs only for UNVERIFIED joints and the two the swap
+    # had just broken were both marked verified: the recovery
+    # instructions for a reverted joint were themselves broken, and the
+    # reverted joints were the ones claiming not to need them.
 
 
 def cmd_check(twin: Twin) -> int:
@@ -996,18 +1272,26 @@ def cmd_selftest(twin: Twin) -> int:
     slump = {i: rest[i] + d
              for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
     # SYNTHETIC — 1.5x the measured slump deviation. Not a pose the arm
-    # has ever been in, and it is not presented as one: it exists only to
-    # drive a structural pair into real penetration so the settle waiver
-    # has something to waive. On the SO-101 geometry the MEASURED slump
-    # only reaches proximity (which structural pairs never fail on), so
-    # without this the waiver would be untested code claiming to be a
-    # safety property.
+    # has ever been in, and it is not presented as one: it exists to
+    # drive a structural pair UNAMBIGUOUSLY into penetration so the
+    # settle waiver has something to waive that is not inside its own
+    # measurement noise.
     #
-    # 1.5 is bounded on BOTH sides by measurement, not chosen for taste:
-    # below ~1.2 nothing penetrates and the test is vacuous, and at 1.6
-    # the gripper reaches the TABLE, which is never waived and would
-    # make the test fail for the wrong reason. The usable window is
-    # narrow, which is itself worth knowing.
+    # THE LOWER BOUND MOVED, 2026-07-30. This used to read "below ~1.2
+    # nothing penetrates and the test is vacuous", which was true while
+    # j5's direction was reverted behind the model swap. With j5 correct
+    # (`_rest_direction`) the measured slump itself penetrates: x1.0 =
+    # 0.503 mm, x1.1 = 0.980, x1.2 = 1.348, x1.5 = 2.643. So there is no
+    # vacuous floor any more and 1.5 is no longer pinned from below by
+    # geometry.
+    #
+    # It is kept at 1.5 for a different and better reason: 0.503 mm is
+    # 3.2 deg of j5 away from clean and the slump's own scatter on j5 is
+    # 4.7 deg, so a waiver exercised only at x1.0 would be exercised by a
+    # pose that might not penetrate on the next capture. 1.5 clears that
+    # scatter outright. The UPPER bound is unchanged and still measured:
+    # at 1.6 the gripper reaches the TABLE, which is never waived and
+    # would fail the test for the wrong reason.
     deep = {i: rest[i] + round(1.5 * d)
             for i, d in OBSERVED_SLUMP_DELTA.items() if i in rest}
     lift = {**rest, 2: rest[2] + round(25 / span_deg(1))}
@@ -1034,11 +1318,40 @@ def cmd_selftest(twin: Twin) -> int:
 
     traj("settle from the OBSERVED slump onto rest is accepted",
          [slump, rest], True, True)
-    traj("...and the observed slump no longer needs the waiver at all — "
-         "it is accepted without it, because on this geometry it only "
-         "comes into proximity, never penetration (it DID penetrate on "
-         "the SO-100 model, at a pose the real arm sat in untouched)",
-         [slump, rest], True, False)
+    # THE SLUMP NEEDS THE WAIVER AGAIN, and the reason is worth keeping.
+    # This assertion used to read "no longer needs the waiver at all",
+    # offered as evidence the SO-101 geometry fits the real arm better
+    # than the SO-100's. It was true only while j5's direction was
+    # hardcoded backwards: correcting it (2026-07-30) rolls the jaw to
+    # the other side of a fold where the clearance is half a millimetre,
+    # and the pose goes from 0.000 mm to 0.503 mm of shoulder <-> gripper
+    # penetration. j1's sign, measured the same day, changes this by
+    # exactly nothing — pan rotates the arm without altering its shape.
+    #
+    # The real arm sits in that slump untouched, so the model is 0.5 mm
+    # pessimistic there. That is inside the uncertainty this module
+    # already declares, and on a pair that nests structurally by design.
+    #
+    # IT IS NOT A TEST OF j5'S SIGN, though an earlier version of this
+    # comment offered it as one ("if a bench check shows the two parts
+    # clear at the slump, j5 is wrong"). Getting from 0.503 mm to clean
+    # takes 3.2 deg of j5, and the slump's own re-capture scatter on j5
+    # is 4.7 deg — documented at the top of this module. A criterion
+    # that cannot separate a sign error from less noise than the input
+    # already carries is worse than no criterion, because acting on it
+    # would flip a bench-corroborated sign on half a millimetre. The
+    # sign's evidence is the bench check and the SO-100 cross-check in
+    # `_rest_direction`, not this pose.
+    # PINS TODAY'S CAPTURE, not a property of the arm. `traj` asserts
+    # only that the waiver is load-bearing here; the 0.503 mm is in the
+    # label so a drift is legible rather than mysterious. A re-capture
+    # can move j5 by up to 4.7 deg and 3.2 deg of that clears the
+    # contact, so if this ever goes red, re-read OBSERVED_SLUMP_DELTA
+    # before suspecting the geometry.
+    traj("the observed slump needs the settle waiver on TODAY's capture "
+         "— 0.503 mm of shoulder <-> gripper, a structurally nesting "
+         "pair (a re-capture may legitimately clear it)",
+         [slump, rest], False, False)
     traj("a synthetic deeper fold IS accepted during the settle",
          [deep, rest], True, True)
     traj("...and is REFUSED without the settle waiver — so the waiver is "
@@ -1049,6 +1362,109 @@ def cmd_selftest(twin: Twin) -> int:
          [slump, lift], False, True)
     pose("the run-1 bench collision is still predicted", lift, False)
     pose("rest is clean", rest, True)
+
+    # --- WHICH WAY POSITIVE RUNS, for the two joints cmd_frames cannot
+    # reach. PITCH_SEGMENTS covers j2/j3/j4, so pan and roll had no
+    # direction check of any kind, and both were reverted by #670's
+    # model swap for five days (see `_rest_direction`). Nothing failed:
+    # j1's sign cannot change a collision verdict at all, and j5's could
+    # not either while every library pose had j5 = 0. A magnitude-only
+    # assertion would have passed the whole time. These pin the SIGN.
+    print("\npositive commands turn the way the ratified frames say")
+    from sim.rig import Rig
+    _rig = Rig(twin)
+
+    def _tool(deg: dict):
+        p = {i: twin.cals[i].frame.tick(deg.get(i, 0.0))
+             for i in sorted(twin.cals) if i != 6}
+        p[6] = twin.cals[6].rest
+        q = twin._rest_qpos.copy()
+        for i, t in p.items():
+            q[twin._adr[i]] = twin.qpos_of(i, t)[0]
+        return np.array(_rig.tool_point(q))
+
+    # j1: "+ = CCW from above". The rig frame is m1-centred with +X the
+    # reach and +Z up, and it is right-handed, so +Y is the arm's LEFT
+    # (facing +X with +Z up, as in East-North-Up). CCW from above must
+    # therefore carry the tool toward +Y.
+    out = {2: 15.0, 3: 84.0, 4: 81.0}
+    left, right = _tool({**out, 1: 45.0}), _tool({**out, 1: -45.0})
+    want(f"j1 +45 puts the tool to the arm's LEFT (+Y), not its right "
+         f"(y {left[1]:+.1f} vs {right[1]:+.1f} mm at -45)",
+         left[1] > 0 > right[1], True)
+    # WRAPPED. An unwrapped atan2 difference is fine at +/-45 but reads
+    # -270 the day the probe angles straddle the branch cut.
+    swept = (math.degrees(math.atan2(left[1], left[0])
+                          - math.atan2(right[1], right[0]))
+             + 180.0) % 360.0 - 180.0
+    want(f"...and -45 -> +45 sweeps +90 deg CCW about +Z, not -90 "
+         f"({swept:+.1f} deg)", abs(swept - 90.0) < 1.0, True)
+    # NOT asserting `frame.tick(45.0) == 1578`. That was here and it
+    # touches no model at all — it is round(2090 - 45/0.0879), frame
+    # arithmetic that cannot fail for any geometry and WILL fail the day
+    # j1's zero_tick is re-ratified. A comment wearing an assertion's
+    # clothes. The bench fact it was trying to record lives in
+    # `_rest_direction`'s docstring, where prose belongs.
+
+    # j5: "+ = CCW viewed head-on", i.e. about the axis the gripper
+    # points along — which is what "head-on" looks back down.
+    #
+    # MEASURED ON THE JAW'S ORIENTATION, not on the tool POSITION. The
+    # first version of this crossed the two tool offsets about their own
+    # midpoint; those are antiparallel by construction, so the cross
+    # product was ~0 and the assertion `turn > 0` passed on a number
+    # indistinguishable from zero. It also took the pointing axis at
+    # qpos 0 while testing at a bent pose, where the axis has swung 90
+    # deg away. Two bugs, one vacuous pass.
+    tb = mujoco.mj_name2id(twin.model, mujoco.mjtObj.mjOBJ_BODY, TOOL_BODY)
+
+    def _jaw_axis(deg: dict):
+        p = {i: twin.cals[i].frame.tick(deg.get(i, 0.0))
+             for i in sorted(twin.cals) if i != 6}
+        p[6] = twin.cals[6].rest
+        twin.data.qpos[:] = twin._rest_qpos
+        for i, t in p.items():
+            twin.data.qpos[twin._adr[i]] = twin.qpos_of(i, t)[0]
+        mujoco.mj_forward(twin.model, twin.data)
+        return twin.data.xmat[tb].reshape(3, 3)[:, 2].copy()
+
+    # THE SAME REFERENCE THE DERIVATION USES, for two reasons. It kept
+    # `gripperframe` until 2026-07-30 — eighty lines after
+    # `_rest_direction` rejects that site by name — and unguarded:
+    # `mj_name2id` returns -1 for a missing name and `site_xpos[-1]`
+    # wraps silently to the LAST site, which on this model is
+    # `baseframe` at the arm's origin. A vendored refresh dropping
+    # `gripperframe` while keeping `baseframe` would have pointed this
+    # backwards down the arm, read turn ~= -59.9, and FAILED reporting a
+    # mirror that does not exist — on the one assertion whose job is to
+    # catch a real one.
+    _jaw_axis({**out, 5: 0.0})
+    _pts = [twin.data.geom_xpos[g] for g in range(twin.model.ngeom)
+            if twin.model.geom_contype[g] != 0
+            and twin._body_of_geom(g) in (WRIST_BODY, TOOL_BODY)]
+    point = (np.mean(np.array(_pts, dtype=float), axis=0)
+             - np.array(twin.data.xanchor[twin._jid[5]], dtype=float))
+    point /= float(np.linalg.norm(point))
+    u, v = _jaw_axis({**out, 5: -30.0}), _jaw_axis({**out, 5: 30.0})
+    turn = math.degrees(math.atan2(float(np.cross(u, v) @ point),
+                                   float(u @ v)))
+    # 1.0 deg, not 3.0. The original tolerance was absorbing a wrong
+    # reference axis — m4 -> m5, the wrist link, tilted 16.5 deg off the
+    # gripper's actual pointing direction — and reading 58.9. Taking the
+    # axis from the gripper's own collidable geometry, the same
+    # reference the derivation uses, reads 59.5: what is left is tick
+    # quantisation plus the few degrees between the jaw centroid and the
+    # roll axis, which is a real property of the gripper rather than an
+    # error in the measurement.
+    want(f"j5 -30 -> +30 turns +60 deg CCW about the gripper's pointing "
+         f"axis, not -60 ({turn:+.1f} deg)", abs(turn - 60.0) < 1.0, True)
+    # NOT asserting `JOINT_MAPS[5].bench_verified`. That is a bool
+    # literal 900 lines up — it touches no geometry, cannot fail for any
+    # model, and would go red when somebody honestly clears the flag for
+    # a new arm, claiming a SIGN was wrong when a FLAG changed. It is
+    # the same shape as the `frame.tick(45.0) == 1578` assertion deleted
+    # twenty lines above. The bench provenance is prose, in
+    # `_rest_direction`; what is asserted here is the geometry.
 
     # --- a reported depth is a SEVERITY, not a sampling phase ---
     # Both readers rank pairs with max(..., key=depth_mm) to name the

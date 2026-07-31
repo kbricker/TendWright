@@ -65,11 +65,11 @@
 
     "CRANE_122": {
       "joints": {"1": 45, "2": 15, "3": 81.9, "4": 83.1, "5": 0, "6": 20},
-      "_note": "CRANE_222 slewed +45. Identical shape, radius and jaw height — only rotated about the base. WHICH PHYSICAL SIDE +45 SWINGS TO IS NOT CONFIRMED against the bench yet: the calibration frame says + = CCW from above, sim/rig.py puts +45 toward -Y. Named by SIGN until somebody watches it move."
+      "_note": "CRANE_222 slewed +45. Identical shape, radius and jaw height — only rotated about the base. **+45 IS THE ARM'S LEFT**, confirmed 2026-07-30: the arm was parked at this pose and Kyle looked at it. The disagreement this note used to flag was real and the twin was the wrong one — sim/rig.py put +45 toward -Y, the arm's right, because the twin's j1 mapping had been mirrored since the model swap on 2026-07-26 (plan 714.6, now fixed). The calibration frame's label was right all along: + = CCW from above = the arm's left."
     },
     "CRANE_322": {
       "joints": {"1": -45, "2": 15, "3": 81.9, "4": 83.1, "5": 0, "6": 20},
-      "_note": "CRANE_222 slewed -45. The mirror of CRANE_122."
+      "_note": "CRANE_222 slewed -45, the arm's RIGHT. The mirror of CRANE_122."
     }
   }
 }

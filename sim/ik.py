@@ -41,6 +41,18 @@ Unregularised solving is also simply worse: on an unreachable target it
 settles 722 mm away where this module settles 288 mm, i.e. it fails to
 even stretch toward the point.
 
+WHICH WAY IS +Y. Targets are in the RIG frame (`sim/rig.py`): +X is the
+direction the arm reaches, +Z is up, and it is right-handed, so **+Y is
+the arm's LEFT**. This module is where a lateral coordinate first
+acquires meaning — the collision gate never needed one — and it is
+therefore the first thing a mirrored joint breaks. It was mirrored:
+until 2026-07-30 the twin's j1 mapping put positive pan to the arm's
+right, so a solve for a target on the left returned a pose that reaches
+right, with a residual of ~0 and a confident SUCCESS. The residual is
+computed in the same frame as the target, so it cannot catch a mirror —
+no reachability check can. Plan 714.6; `sim.twin selftest` pins the sign
+now.
+
 WHAT THIS DOES NOT DO. It answers "can the arm reach there", not "can it
 get there safely" — the path is not checked here. `hardware.bench.
 posegate` answers that, and the two are complementary: IK finds a pose,

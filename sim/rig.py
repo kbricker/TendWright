@@ -11,6 +11,26 @@ so joint heights read directly as height above the base. Poses and
 joint positions are always reported in this frame, never in MuJoCo's
 world frame (whose origin sits at the arm's mounting plane).
 
+HANDEDNESS, spelled out because it was implicit and something was
+wrong for five days underneath it. The frame is MuJoCo's, translated
+only — never rotated — so it is right-handed. With +X the direction
+the arm reaches and +Z up, that makes:
+
+    +Y = the arm's LEFT     -Y = the arm's RIGHT
+
+(facing +X with +Z up, exactly as in East-North-Up). Say it out loud
+before reading a y off this module: from the model swap on 2026-07-26
+until 07-30 the twin's j1 mapping was mirrored, so every y reported
+here had the right magnitude and the wrong side, and nothing caught
+it. The collision gate could not: `base` carries no collidable
+geometry, every collidable body hangs off `shoulder`, and the only
+world geom is a horizontal infinite plane, so rotating the whole arm
+about the vertical maps the contact set exactly onto itself. THAT
+STOPS BEING TRUE the day a fixture (714.4), a wall or a base mesh
+enters the model — at which point the gate starts catching pan errors
+and this paragraph needs revisiting. Plan 714.6; `sim.twin selftest`
+pins the sign now.
+
     uv run python -m sim.rig spec              # link geometry + axes
     uv run python -m sim.rig where             # joints at the rest pose
     uv run python -m sim.rig where --deg 0,-90,0,0,0,0

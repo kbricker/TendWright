@@ -36,24 +36,80 @@ Confirm each joint reads the way you'd describe it out loud:
 | m1 shoulder_pan | 0 = mid-travel, + = CCW from above | +7.2° |
 | m2 shoulder_lift | −90 = folded at rest, + = arm rises | −90.0° |
 | m3 elbow_flex | 0 = fully folded, + = opens | +0.0° |
-| m4 wrist_flex | 0 = mid-travel, + = gripper tips up | +75.8° |
+| m4 wrist_flex | 0 = in line with the forearm, + tips the gripper DOWN | +69.8° |
 | m5 wrist_roll | 0 = rest, + = CCW head-on | +0.0° |
 | m6 gripper | % open | 10% open |
 
 Wrong? Say so, or edit that joint's `frame` in `calibration.json`.
 
+> **m4's row was rewritten 2026-07-30**, and the timeline is the point.
+> All four events span seventeen and a half hours:
+>
+> | when | what | m4 rest reads |
+> |---|---|---|
+> | `e06ab72` 07-24 21:41 | frame ratified 2090/+1 | **+75.8** |
+> | `e09aa34` 07-25 09:39 | *this row written, "+75.8°"* | **+75.8** — correct |
+> | `99aa56e` 07-25 14:23 | `positive` → −1 | **−75.8** — row now wrong |
+> | `146adbf` 07-25 15:24 | re-ratified 2158/+1 | **+69.8** — wrong again |
+>
+> So the row was CORRECT when written and was invalidated four hours
+> later by a commit that changed a frame, then again an hour after that,
+> with nobody re-reading it either time. An earlier version of this note
+> said it was "already stale before 99aa56e touched it", which inverts
+> the causality and turns a specific failure into "docs rot on their
+> own". It is the same mechanism as the j1/j5 story below — a commit
+> that never mentions the thing it breaks — and that is worth more than
+> the correction itself. The `+75.8°` is kept on purpose: it is the
+> reading that exposed the inverted frame in the first place.
+
 ## 3. Verify the twin's two provisional joints (unblocks the pose library)
 
 The twin's m2/m3/m4 geometry is confirmed — it predicted both real
 collisions. **m1 (pan) and m5 (roll) are unverified guesses.**
+*(As written on 07-25. Both were verified that day — and both were
+reverted the next. See the outcome below; the original wording is kept
+because what happened to it is the point.)*
 
-- [ ] `uv run python -m hardware.bench.jog --id 1` — jog positive, watch
+- [x] `uv run python -m hardware.bench.jog --id 1` — jog positive, watch
       the arm. Does it swing counterclockwise seen from above?
-- [ ] `uv run python -m hardware.bench.jog --id 5` — jog positive. Does
+- [x] `uv run python -m hardware.bench.jog --id 5` — jog positive. Does
       the gripper roll counterclockwise seen head-on?
 
 Either answer "no" → tell me, it's a one-constant flip. Until both are
 confirmed, the twin's pan/roll predictions carry an asterisk.
+
+*"A one-constant flip" is exactly how they were reverted — see below.*
+
+> **OUTCOME — and it is not the one this checklist expected.**
+>
+> **Both boxes were ticked, on 2026-07-25 (99aa56e).** Kyle jogged both
+> joints; m1 came back correct as shipped, m5 flipped −1 → +1, verified
+> two ways and with the roll's viewpoint ambiguity written down. This
+> section did its job.
+>
+> **Then #670's model swap undid both, on 07-26.** It replaced
+> `JointMap`'s per-joint `direction` field with a hardcoded `+1`. That
+> constant equalled m1's effective sign, so m1 looked untouched — but
+> the SO-100's pan axis is +Z and the SO-101's is −Z, so the same number
+> now meant the opposite rotation. m5 was simply reverted to its
+> pre-bench value. **A bench answer can be undone by a commit that never
+> mentions it and changes no number you would think to check.**
+>
+> Found five days later, on 07-30, the only way it could be: the arm was
+> parked at j1 +45 (tick 1578) and Kyle looked at it — *"thats the arms
+> left"* — while the twin put the tool at y −117.7, its right. Nothing
+> failed in between and nothing could. m1's sign cannot change a
+> collision verdict at all; m5's could not either while every pose in
+> the library had j5 = 0.
+>
+> Fixed in `Twin._rest_direction`, which DERIVES both directions from
+> the model instead of storing them — and which, fed the retired SO-100's
+> axes, returns exactly the two answers Kyle measured on 07-25. Plan
+> 714.6 carries the detail.
+>
+> The lesson is not "verify the joints". They were verified. It is that
+> **a verified fact stored as a constant has no defence against a
+> refactor**, and the thing it was protecting never complains.
 
 ## 4. Exercise the arm — the real test (closes #643)
 
