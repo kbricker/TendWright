@@ -176,6 +176,44 @@ def _lowest_point_mm(data, model, geoms: list[int]) -> float:
     return lowest * 1000.0
 
 
+GRIP_SITE = "gripperframe"
+
+
+def _grip_mm(data, model, origin) -> tuple[float, float, float]:
+    """Where the closed jaws meet the work — (radius, height, azimuth).
+
+    Kyle 2026-07-31: *"most of the time the grip point will be on the
+    very tip of the jaw."* The gripper runs 85 mm past its own joint,
+    and this module used to report the moving jaw's BODY ORIGIN, which
+    sits at the base of that 85 mm and understated every reach figure by
+    about 77 mm.
+
+    The point is taken from the model's OWN `gripperframe` site, which
+    the vendored file already places within 6.8 mm of the closed jaw
+    tip. FIRST ATTEMPT WAS WRONG AND THE FAILURE IS WORTH KEEPING: it
+    took the hand's furthest point from the j1 axis, which IS the tip
+    when the arm is extended and is a side corner of the gripper housing
+    when the gripper hangs plumb — so the whole sweep returned nothing
+    and the tool refused. "Furthest from the axis" is a property of the
+    pose; "the tip" is a property of the gripper, and only a frame fixed
+    to the gripper tracks it through a rotation.
+
+    Real jaw fittings will move this point, and that is a ticket of its
+    own (Kyle: "need 3d models etc etc"). Until then the site is the
+    honest answer and it is DERIVED, not a constant typed in here.
+    """
+    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, GRIP_SITE)
+    if sid < 0:
+        raise BenchError(
+            f"the model has no `{GRIP_SITE}` site, so the grip point "
+            f"cannot be located",
+            "the vendored model changed; find the frame that replaced "
+            "it rather than falling back to a body origin")
+    w = (data.site_xpos[sid] - origin) * 1000.0
+    return (math.hypot(w[0], w[1]), float(w[2]),
+            math.degrees(math.atan2(w[1], w[0])))
+
+
 @dataclass(frozen=True)
 class Annulus:
     """The arm-only graspable ring, in the rig frame. j1-symmetric."""
@@ -310,20 +348,15 @@ def _sample_one(twin, rig, hand, band, gate, tick, cals, t1, a, b, c, out):
     # World z=0 IS the table (the arm is bolted to the bench), so a hand
     # geom's world z is already its height above the surface. Adding the
     # rig origin here would double-count m1.
-    jaw = _lowest_point_mm(rig.data, rig.model, hand)
-    if not band[0] <= jaw <= band[1]:
+    r, tip_z, az = _grip_mm(rig.data, rig.model, rig._origin)
+    if not band[0] <= tip_z <= band[1]:
         return
-    # TOOL_BODY, not "gripper": that name resolves to the WRIST body in
-    # this model. See the module docstring.
-    tool = (rig.data.body(TOOL_BODY).xpos - rig._origin) * 1000.0
     blocked = ()
     if gate:
         found, _clamps, _excused = twin.contacts_at(pose)
         blocked = tuple(found)
-    out.append(Sample(
-        r_mm=math.hypot(tool[0], tool[1]), jaw_mm=jaw,
-        az_rig_deg=math.degrees(math.atan2(tool[1], tool[0])),
-        blocked=blocked, ticks=dict(pose)))
+    out.append(Sample(r_mm=r, jaw_mm=tip_z, az_rig_deg=az,
+                      blocked=blocked, ticks=dict(pose)))
 
 
 def repose(twin: Twin, rig: Rig, ticks: dict) -> None:
@@ -583,16 +616,43 @@ def cmd_show(twin: Twin, rig: Rig, cell, step: float) -> int:
           f"{ann.step_deg:g} deg steps")
     lo_off = ann.az_offset_at(ann.r_in_mm)
     hi_off = ann.az_offset_at(ann.r_out_mm)
-    print(f"  tool azimuth  the jaw sits off the j1 axis, so it leads the "
-          f"slew by\n                {lo_off:+.2f} deg at the inner edge and "
-          f"{hi_off:+.2f} deg at the outer —\n                it CHANGES "
-          f"SIGN, so no single offset works; interpolated by radius")
-    if ann.inner_blockers:
-        print(f"  inner bound   set by SELF-COLLISION, not kinematics: "
-              f"kinematics alone reaches {ann.r_in_kinematic_mm:.0f} mm")
+    # Reported from the measurement rather than narrated: when the grip
+    # point moved from the jaw's body origin to the gripperframe site,
+    # this offset stopped varying with radius, and the prose that said
+    # it "CHANGES SIGN" would have gone on claiming so.
+    spread = ann.az_offset_spread_deg
+    print(f"  grip azimuth  the grip point sits off the j1 axis, so it "
+          f"leads the slew by\n                {lo_off:+.2f} deg at the "
+          f"inner edge and {hi_off:+.2f} deg at the outer"
+          + (f" — it varies by\n                {spread:.2f} deg across the "
+             f"ring, so it is interpolated by radius"
+             if spread > 0.05 else
+             f" — constant to\n                {spread:.3f} deg, because "
+             f"the point is rigid to the gripper"))
+    # WHICH constraint binds is measured, not assumed. It moved once
+    # already: against the jaw's body origin the gate raised the inner
+    # bound from 79 to 110 mm and self-collision was the limit, but
+    # against the grip point the arm runs out of geometry before it can
+    # fold into itself, and the two bounds coincide. Printing a fixed
+    # story here would have gone on naming the wrong cause.
+    if ann.r_in_mm > ann.r_in_kinematic_mm + 1.0:
+        print(f"  inner bound   set by SELF-COLLISION: the arm folds into "
+              f"itself before it\n                runs out of geometry — "
+              f"kinematics alone would reach "
+              f"{ann.r_in_kinematic_mm:.0f} mm")
         for k, v in sorted(ann.inner_blockers.items(),
                            key=lambda kv: -kv[1])[:3]:
             print(f"                  {v:5d} poses blocked by {k}")
+    else:
+        print(f"  inner bound   set by GEOMETRY, not self-collision: with "
+              f"the grip point held\n                in the band the arm "
+              f"cannot fold tight enough to hit itself first")
+        if ann.inner_blockers:
+            print(f"                (self-collision still removes poses "
+                  f"elsewhere in the ring:\n                 "
+                  + ", ".join(f"{v}x {k}" for k, v in sorted(
+                      ann.inner_blockers.items(), key=lambda kv: -kv[1])[:2])
+                  + ")")
 
     # What the plumb assumption COSTS, measured rather than assumed. It
     # was a hidden constraint in the first version and Kyle spotted the
@@ -706,15 +766,24 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
           f"tool azimuth spans {min(az):+.1f}..{max(az):+.1f} deg")
 
     ann = annulus(twin, rig, step=step)
-    check("the inner bound is raised by the gate, not by kinematics",
-          ann.r_in_mm > ann.r_in_kinematic_mm + 1.0,
+    # Deliberately does NOT assert which constraint wins. It changed the
+    # day the grip point moved from the jaw's body origin to the tip, and
+    # an assertion naming a particular winner just goes stale and gets
+    # edited to match. What must hold is that the gate never LOOSENS a
+    # bound, and that whichever cause is reported is the one the data
+    # supports.
+    gate_binds = ann.r_in_mm > ann.r_in_kinematic_mm + 1.0
+    check("the gate never loosens the inner bound",
+          ann.r_in_mm >= ann.r_in_kinematic_mm - 0.001,
           f"gated {ann.r_in_mm:.0f} mm vs ungated "
-          f"{ann.r_in_kinematic_mm:.0f} mm")
-    check("...and the poses it removed were blocked by the ARM, not the "
-          "table",
-          bool(ann.inner_blockers)
-          and not any("table" in k for k in ann.inner_blockers),
-          ", ".join(sorted(ann.inner_blockers)[:2]))
+          f"{ann.r_in_kinematic_mm:.0f} mm — "
+          + ("self-collision binds" if gate_binds else "geometry binds"))
+    check("...and if self-collision is what binds, a real arm pair is "
+          "named for it",
+          (not gate_binds) or (bool(ann.inner_blockers)
+                               and not any("table" in k
+                                           for k in ann.inner_blockers)),
+          ", ".join(sorted(ann.inner_blockers)[:2]) or "no blockers")
     check("the ring is an annulus, not a disc",
           ann.r_in_mm > 1.0 and ann.band_mm > 1.0,
           f"{ann.r_in_mm:.0f}..{ann.r_out_mm:.0f} mm")

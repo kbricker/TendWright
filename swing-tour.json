@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "swing-tour",
+  "_comment": "Kyle 2026-07-31: 'the arm moves to crane pose then swings like -30 -> 30 -> 0 then goes fully extended and does the same -30 -> 30 -> 0 then returns to rest pose'. A look-at-it sequence: it picks nothing up and touches nothing. What it demonstrates is that the two named postures are real, that j1 swings freely at both, and that the transitions between them gate clean.",
+  "_route": "REST -> STAGE -> TUCK -> swing -> STAGE -> EXTENDED -> swing -> STAGE -> REST. STAGE is in there twice and is NOT optional: all 22 direct REST<->CRANE edges are refused, outbound on shoulder-vs-gripper and inbound on the jaw ploughing the table. See STAGE's note in poses.json.",
+  "_slew": "The swing is j1 only. Everything else is carry-forward, so a swing entry names ONE joint and the posture underneath it cannot drift between the -30 and the +30.",
+  "profile": {"speed": 200, "acceleration": 10},
+  "poses": [
+    {"name": "rest",         "pose": "REST"},
+    {"name": "stage",        "pose": "STAGE"},
+
+    {"name": "tuck",         "pose": "TUCK"},
+    {"name": "tuck_left",    "joints": {"1": -30}},
+    {"name": "tuck_right",   "joints": {"1": 30}},
+    {"name": "tuck_centre",  "joints": {"1": 0}},
+
+    {"name": "stage_mid",    "pose": "STAGE"},
+
+    {"name": "extended",     "pose": "EXTENDED"},
+    {"name": "ext_left",     "joints": {"1": -30}},
+    {"name": "ext_right",    "joints": {"1": 30}},
+    {"name": "ext_centre",   "joints": {"1": 0}},
+
+    {"name": "stage_home",   "pose": "STAGE"},
+    {"name": "home",         "pose": "REST"}
+  ]
+}

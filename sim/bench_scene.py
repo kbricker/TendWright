@@ -2005,6 +2005,69 @@ def _selftest_arm_pose_matches_twin(cell: 'Cell') -> None:
           f"across the exercise routine)")
 
 
+def animate_clip(cell: 'Cell', clip_path: Path, hz: float = 60.0,
+                 reach_zone: tuple = ()) -> int:
+    """Play a clip FILE in the viewer, at the pace the arm would run it.
+
+    Same sampler the collision gate uses (`sim.clip.sample_clip`), so
+    what is on screen is the motion that was gated rather than a
+    lockstep interpolation between waypoints — the servos each run their
+    own ramp and a short-travel joint arrives first.
+
+    Nothing on the bench moves. This is the model.
+    """
+    import time
+
+    import mujoco
+    import mujoco.viewer
+
+    from sim.clip import clip_duration, load_clip, sample_clip
+    from sim.twin import JOINT_MAPS, Twin
+
+    twin = Twin()
+    clip = load_clip(twin.cals, clip_path)
+    model = build_model(cell.bench, cell.shadows, cell.cameras,
+                        cell.arm_pose, reach_zone)
+    data = rest_data(model)
+
+    adr: dict[int, int] = {}
+    for i, jm in JOINT_MAPS.items():
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT,
+                                f"arm_{jm.model_joint}")
+        if jid >= 0:
+            adr[i] = model.jnt_qposadr[jid]
+
+    frames = sample_clip(clip, hz)
+    seconds = clip_duration(clip)
+    print(f"clip '{clip.name}': {len(clip.poses)} poses, "
+          f"{len(clip.edges())} edges -> {len(frames)} frames")
+    print(f"  profile: speed {clip.profile.speed} ticks/s, acceleration "
+          f"{clip.profile.acceleration} (x100 ticks/s^2) — the same "
+          f"numbers the servos get")
+    print(f"  runs {seconds:.1f} s on the bench, played here in real time")
+    print("  nothing moves on the bench — this is the model only")
+    print("  close the window to stop; it loops")
+
+    saved = load_view()
+    with mujoco.viewer.launch_passive(model, data) as v:
+        v.opt.geomgroup[:] = 1
+        if saved:
+            for k, val in saved.items():
+                if hasattr(v.cam, k):
+                    setattr(v.cam, k, val)
+        start = time.time()
+        while v.is_running():
+            t = (time.time() - start) % max(seconds, 0.001)
+            f = frames[min(int(t / seconds * len(frames)), len(frames) - 1)]
+            for i, tick in f.items():
+                if i in adr:
+                    data.qpos[adr[i]] = twin.qpos_of(i, tick)[0]
+            mujoco.mj_forward(model, data)
+            v.sync()
+            time.sleep(1.0 / hz)
+    return 0
+
+
 def animate_exercise(cell: 'Cell', span: int = 70,
                      speed: int | None = None, hz: float = 60.0) -> int:
     """Play the exercise CLIP through the arm in the viewer (plan #660).
@@ -2180,6 +2243,23 @@ def main() -> int:
         return 0
     if "--exercise" in sys.argv:
         return animate_exercise(cell)
+    if "--clip" in sys.argv:
+        i = sys.argv.index("--clip")
+        if len(sys.argv) <= i + 1:
+            print("error: --clip needs a clip file", file=sys.stderr)
+            print("hint:  e.g. --clip swing-tour.json", file=sys.stderr)
+            return 2
+        zone = ()
+        if "--reach" in sys.argv:
+            from .reach import zone_tiles
+            zone = zone_tiles(cell)
+        try:
+            return animate_clip(cell, Path(sys.argv[i + 1]), reach_zone=zone)
+        except BenchError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            if exc.hint:
+                print(f"hint:  {exc.hint}", file=sys.stderr)
+            return 2
     if "--view" in sys.argv:
         zone = ()
         if "--reach" in sys.argv:
