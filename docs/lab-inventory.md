@@ -43,10 +43,14 @@ cell1 is off.
 
 - **`192.168.86.44` is the bench light.** It is the only light switch on the
   LAN. If a vision test needs a lit scene, turn it on — do not ask.
-- The KP303 was labelled before anything was wired to it (Kyle 2026-07-29:
-  *"nothing is plugged into the new one, I just labeled them"*). Its outlet
-  names are intent until the arm and light are physically connected. **Check
-  before trusting `Arm` to mean the arm is powered.**
+- **`[0] Arm` is wired and PROVEN, 2026-07-31.** The outlet was labelled
+  before anything was plugged into it (Kyle 2026-07-29: *"nothing is
+  plugged into the new one, I just labeled them"*), so the name was intent
+  rather than fact until it was tested: outlet on → `scan` on cell1 → six
+  servos answering at 11.9–12.0 V. Verified, not assumed.
+- **Discovery is a UDP broadcast, so one silent `list` is not a missing
+  device.** The KP303 failed to answer a `list` on 2026-07-31 and answered
+  fully seconds later. Re-run before concluding anything is unplugged.
 - Never firmware-update any of them: newer firmware moves to KLAP, which
   needs account credentials and kills local control. Kyle has accepted the
   auto-update risk as low and reactive — do not re-raise it.
@@ -68,6 +72,18 @@ Feetech STS3215 bus servos, 6 joints, over a CH340-family USB adapter.
   `uv run python -m hardware.bench.scan` (read-only).
 - **These servos have no brakes.** Cutting power to an arm that is not
   folded makes it fall. `kasa` enforces this — see below.
+- **POWER POLICY (Kyle, 2026-07-31): the arm is powered up when we are
+  doing things and powered down when we are not. Default state is OFF.**
+  Not "on whenever cell1 is on" — energised per TASK. Powering it up is a
+  deliberate first step of arm work; powering it down is part of
+  finishing. The interlock used to be "is it plugged in"; it is now "has
+  someone deliberately energised it", which is checkable from anywhere.
+- **Arm ON from anywhere, arm OFF from cell1.** `on` is gated by
+  `--confirm Arm`, which needs only the operator, so it works from the
+  desk. `off` is gated by MEASUREMENT — it opens the servo bus and reads
+  every calibrated joint against rest — and the desk has no servo bus, so
+  it correctly refuses there (exit 2). Run `off` over ssh on cell1.
+- Powering the arm on does **not** move it: torque is off at power-up.
 - Calibration lives in `calibration.json` (per-joint min/rest/max/sign);
   `pan-wiggle.json` is the saved `runner example` output — the clip
   whose `rest` pose IS this arm's captured rest. Its filename matches
@@ -117,8 +133,8 @@ it a systemd unit is the first item on #744.
 | Restart camserve | ask Kyle first | standing rule |
 | Shut cell1 down | **yes** — `sudo -n /usr/sbin/shutdown -h now` | scoped NOPASSWD, see below |
 | Switch a normal outlet / the bench light | **yes** | none |
-| Switch a guarded outlet ON (`Arm`, `psu`, `12v`, …) | yes | `--confirm <alias>` |
-| Switch a guarded outlet OFF | yes | arm must read within `REST_TOL_TICKS` of rest, verified from the encoders; `--force` overrides |
+| Switch a guarded outlet ON (`Arm`, `psu`, `12v`, …) | yes | `--confirm <alias>`. Works from the desk |
+| Switch a guarded outlet OFF | yes | arm must read within `REST_TOL_TICKS` of rest, verified from the encoders; **must be run on cell1** (the desk has no bus and is refused); `--force` overrides |
 | `apt` / anything else root | **no** | hand Kyle the command |
 | Move the arm unattended | **no** | the e-stop is a keypress that does not exist with nobody at the bench (#712.11) |
 
