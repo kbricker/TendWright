@@ -11,19 +11,31 @@ joint's travel, the twin carries the meshes, `bench.json` has the
 table's real extents and `cell.json` says where the arm stands on it.
 Nobody had multiplied them together.
 
-WHAT "REACH" MEANS HERE, because the word has three answers and only one
-of them is useful for siting a fixture. A datasheet number is the tool
-point at full stretch in any orientation — the arm is not holding
-anything there and the jaws are not pointing at the table. What this
-module reports instead is the ring where the JAWS can be put down on the
-table, gripper plumb, in a graspable band, with the pose collision-free.
+WHAT "REACH" MEANS HERE, because the word has several answers and the
+one that matters depends on two choices this module makes explicitly.
+A datasheet number is a tool point at full stretch in any orientation —
+the arm is not holding anything there and the jaws are not pointing at
+the table. What this reports instead is the ring where the GRIP POINT
+can be put down over the table, in a graspable band, gate-clear:
+
+  WHICH POINT   the model's `gripperframe` site, at the closed jaw tip.
+  WHICH WRIST   gripper plumb by default; `--step` aside, `show` also
+                reports the bound with j4 free, because the plumb
+                requirement costs real reach and that trade belongs to
+                whoever knows the part.
+
 Run `show` for the numbers; they are deliberately not repeated here,
 because a constant transcribed into prose is this project's most-logged
 defect and a docstring cannot be made to fail a test.
 
-The inner limit is worth expecting: it is not kinematic. The arm cannot
-fold tight enough to reach near its own base without `shoulder` and the
-jaw colliding, so the inner bound is set by the arm's own body.
+WHICH CONSTRAINT SETS THE INNER LIMIT IS NOT FIXED, and `show` reports
+whichever the data supports rather than telling a story. Against the
+jaw's body origin it was SELF-COLLISION — the arm folding into itself
+before running out of geometry. Against the grip point it is GEOMETRY:
+holding the tip in the band drags the arm too low to fold that tight.
+An earlier draft of this paragraph asserted the first answer, and two
+selftests failed the day the reference point moved. That is the check
+working; the prose is what went stale.
 
 THE SYMMETRY THAT MAKES IT CHEAP, and its exact limit. After the slew,
 the arm is a rigid subchain rotating about a vertical axis, so the
@@ -41,19 +53,35 @@ days. The moment the table becomes BOUNDED that stops being true. So:
     the ANNULUS   is computed against the arm alone, and is j1-symmetric
     the TABLE CLIP is applied geometrically afterwards, and is not
 
-TWO TRAPS THIS MODULE FELL INTO ON ITS FIRST DRAFT, both caught by
-review, both recorded because they are cheap to repeat:
+FOUR WAYS THIS MODULE HAS MEASURED THE WRONG POINT, kept because every
+one of them produced a confident wrong number and they are all cheap to
+repeat. The pattern underneath: a point was inherited from whichever
+object was nearest to hand instead of being chosen and named.
 
   * `gripper` is a JOINT NAME and a BODY NAME in this model, and the
     body it names is the WRIST, not the jaw. `twin.py` says so in a
     comment that exists because the same mistake once put the measured
-    reach direction 2.9 deg out. Use `TOOL_BODY`.
+    reach direction 2.9 deg out.
   * `geom_rbound` is a BOUNDING-SPHERE radius, so `z - rbound` is a
     lower bound on a geom's lowest point and not the point itself — on
     these jaw meshes it under-reads by about 6.6 mm, which silently
     shifted the whole grasp band upward. The oriented bounding box is
     used instead, and `selftest` measures what is left against the real
     mesh vertices rather than asserting it is zero.
+  * `TOOL_BODY` is the moving jaw's BODY ORIGIN, which sits at the base
+    of an 85 mm gripper. Kyle spotted it by eye — "the gripper has a
+    length!" — before any number said so. The grip point is the model's
+    `gripperframe` site, at the closed tip.
+  * "the furthest point of the hand from the j1 axis" IS that tip when
+    the arm is extended, and is a corner of the gripper housing when the
+    gripper hangs plumb. That draft returned an empty sweep and the tool
+    refused. Furthest-from-the-axis is a property of the POSE; the tip
+    is a property of the GRIPPER, and only a frame fixed to the gripper
+    tracks it through a rotation.
+
+Real jaw fittings will move the grip point again, and that is a ticket
+of its own (Kyle 2026-07-31: "need 3d models etc etc"). When it lands,
+the site is the anchor it should hang off.
 
     uv run python -m sim.reach show          # the zone, both frames
     uv run python -m sim.reach at 24.0 70.0  # can a fixture live here?
@@ -63,7 +91,6 @@ review, both recorded because they are cheap to repeat:
 from __future__ import annotations
 
 import argparse
-import itertools
 import math
 import sys
 from dataclasses import dataclass
@@ -75,7 +102,7 @@ from hardware.errors import BenchError
 
 from .bench_scene import load_cell
 from .rig import Rig
-from .twin import TOOL_BODY, Twin
+from .twin import Twin
 
 # The band a jaw must sit in to count as able to grasp something resting
 # on the table. Not zero: a jaw ON the table is a table strike, and a
@@ -151,29 +178,6 @@ def _hand_geoms(model) -> list[int]:
             "the vendored model changed; grasp height cannot be judged "
             "without knowing which geoms are the hand")
     return out
-
-
-def _lowest_point_mm(data, model, geoms: list[int]) -> float:
-    """Lowest world z over some geoms, in mm, from their ORIENTED
-    bounding boxes.
-
-    Not `rbound`: that is the bounding-SPHERE radius, so `z - rbound`
-    under-reads a flat jaw by most of its length. `geom_aabb` is the
-    local axis-aligned box (centre + half-extents); rotating its eight
-    corners by the geom's frame gives a box that actually tracks the
-    orientation, which matters because the jaws rotate through the whole
-    sweep. Still an outer bound on a mesh — `selftest` measures the
-    residual against the real vertices instead of pretending it is zero.
-    """
-    lowest = math.inf
-    for g in geoms:
-        cx, cy, cz, hx, hy, hz = model.geom_aabb[g]
-        rot = data.geom_xmat[g].reshape(3, 3)
-        pos = data.geom_xpos[g]
-        for sx, sy, sz in itertools.product((-1, 1), repeat=3):
-            local = np.array([cx + sx * hx, cy + sy * hy, cz + sz * hz])
-            lowest = min(lowest, float(pos[2] + (rot @ local)[2]))
-    return lowest * 1000.0
 
 
 GRIP_SITE = "gripperframe"
@@ -578,23 +582,41 @@ def zone_tiles(cell, twin: Twin | None = None, rig: Rig | None = None,
     rig = rig or Rig(twin)
     ann = annulus(twin, rig, step=sweep_step)
     place = placement(cell, twin)
+
+    # BOTH rings, because drawing only the plumb one understates the arm
+    # badly enough that Kyle called it wrong by eye twice. The plumb ring
+    # is the guaranteed vertical-approach zone; the tilt ring is
+    # everywhere the jaws can reach the band at all, and the gap between
+    # them is what the plumb requirement costs.
+    tilted = [s for s in profile(twin, rig,
+                                 (ann.slew_min_deg + ann.slew_max_deg) / 2.0,
+                                 step=sweep_step, plumb=False)
+              if not s.blocked]
+    rings = [("plumb", ann.r_in_mm, ann.r_out_mm)]
+    if tilted:
+        t_in, t_out = min(s.r_mm for s in tilted), max(s.r_mm for s in tilted)
+        if t_out > ann.r_out_mm + 1.0:
+            rings.append(("tilt", ann.r_out_mm, t_out))
+        if t_in < ann.r_in_mm - 1.0:
+            rings.append(("tilt", t_in, ann.r_in_mm))
+
     tiles = []
     n = max(1, int(round(ann.arc_deg / step_deg)))
     width = ann.arc_deg / n
     for k in range(n):
         slew = ann.slew_min_deg + (k + 0.5) * width
         az = slew + ann.az_offset_at(ann.r_out_mm)
-        outer = min(ann.r_out_mm, table_limit_mm(place, az, ann.r_out_mm))
-        if outer <= ann.r_in_mm + 0.5:
-            continue                       # nothing usable along this ray
-        mid = (ann.r_in_mm + outer) / 2.0
-        cx, cy = bench_of(place, mid, az)
-        tiles.append((
-            cx, cy, az + place.rot_deg,
-            (outer - ann.r_in_mm) / 2.0,
-            # Half the chord this slice subtends at its mid radius, with
-            # a hair of overlap so consecutive tiles do not show seams.
-            mid * math.tan(math.radians(width / 2.0)) * 1.08))
+        for kind, lo, hi in rings:
+            outer = min(hi, table_limit_mm(place, az, hi))
+            if outer <= lo + 0.5:
+                continue                   # nothing usable along this ray
+            mid = (lo + outer) / 2.0
+            cx, cy = bench_of(place, mid, az)
+            tiles.append((
+                cx, cy, az + place.rot_deg, (outer - lo) / 2.0,
+                # Half the chord this slice subtends at its mid radius,
+                # plus a hair of overlap so tiles do not show seams.
+                mid * math.tan(math.radians(width / 2.0)) * 1.08, kind))
     return tuple(tiles)
 
 
@@ -791,39 +813,45 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
     # The jaw-height bound is an OUTER bound on a mesh. Measure what is
     # left of it against real transformed vertices rather than asserting
     # it away — and fail if the box has drifted far from the mesh.
+    # THE ASSUMPTION THAT NOW CARRIES THE ANSWER: `gripperframe` is at
+    # the closed jaw tip. Everything this module reports is that site's
+    # position, so if the site drifts from the jaw the whole zone is
+    # wrong and nothing else would notice.
+    #
+    # This replaced a check on the oriented-bounding-box jaw height. That
+    # check was valid, and it went stale the moment the band test started
+    # reading the site instead of the box: it was still green while
+    # testing a function the product no longer consults. A passing test
+    # on dead machinery is worse than no test, because it reads as
+    # coverage.
     hand = _hand_geoms(twin.model)
     non_mesh = [g for g in hand if twin.model.geom_dataid[g] < 0]
-    check("every hand geom is a mesh, so the box-vs-mesh check compares "
-          "like with like", not non_mesh,
+    check("every hand geom is a mesh, so the site can be compared against "
+          "real vertices", not non_mesh,
           f"{len(non_mesh)} primitive geom(s)" if non_mesh
           else f"{len(hand)} meshes")
-    worst, worst_at = 0.0, None
+    sid = mujoco.mj_name2id(twin.model, mujoco.mjtObj.mjOBJ_SITE, GRIP_SITE)
+    worst_gap, worst_at = 0.0, None
     for s in (lo1 / 2, 0.0, hi1 / 2):
-        # Every IN-BAND pose, re-posed explicitly. Reading rig.data after
-        # profile() returns reads its last sweep iteration, which is not
-        # in the band at all.
         for smp in profile(twin, rig, s, step=step):
             repose(twin, rig, smp.ticks)
-            box = _lowest_point_mm(rig.data, rig.model, hand)
-            true_low = math.inf
+            site = rig.data.site_xpos[sid]
+            near = math.inf
             for g in hand:
                 mid = twin.model.geom_dataid[g]
-                if mid < 0:
-                    continue
                 adr = twin.model.mesh_vertadr[mid]
                 n = twin.model.mesh_vertnum[mid]
                 v = twin.model.mesh_vert[adr:adr + n].reshape(-1, 3)
                 rot = rig.data.geom_xmat[g].reshape(3, 3)
-                zs = (v @ rot.T)[:, 2] + rig.data.geom_xpos[g][2]
-                true_low = min(true_low, float(zs.min()) * 1000.0)
-            if math.isfinite(true_low) and true_low - box > worst:
-                worst, worst_at = true_low - box, smp
-    check("the oriented box never claims the jaw is LOWER than the mesh "
-          "really is", worst >= 0.0, "one-sided by construction")
-    check("...and the gap it leaves is small enough not to move the band",
-          worst < 3.0,
-          f"worst {worst:.2f} mm"
-          + (f" at jaw {worst_at.jaw_mm:.1f} mm" if worst_at else ""))
+                w = (v @ rot.T) + rig.data.geom_xpos[g]
+                near = min(near, float(np.linalg.norm(w - site,
+                                                      axis=1).min()) * 1000.0)
+            if near > worst_gap:
+                worst_gap, worst_at = near, smp
+    check(f"the `{GRIP_SITE}` site stays ON the jaw through the whole "
+          f"sweep", worst_gap < 12.0,
+          f"furthest it ever sits from a jaw vertex: {worst_gap:.2f} mm"
+          + (f" (at r {worst_at.r_mm:.0f} mm)" if worst_at else ""))
 
     # Acceptance from the ARM, not from the inverse of can_grasp: take a
     # pose the sweep actually produced, convert ITS tool position to a

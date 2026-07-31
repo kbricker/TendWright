@@ -824,14 +824,22 @@ def _add_reach_zone(spec, scene: Scene, tiles) -> None:
     import mujoco
 
     m = scene.to_m
-    for i, (cx, cy, yaw, half_r, half_t) in enumerate(tiles):
+    # Two rings, two colours. GREEN is the guaranteed vertical-approach
+    # zone (gripper plumb); AMBER is the extra the arm reaches when the
+    # wrist may arrive tilted. Drawing only the green one understated
+    # the arm by 210 mm on the outer edge and read as a bug twice.
+    colour = {"plumb": [0.20, 0.85, 0.35, 0.34],
+              "tilt": [0.95, 0.70, 0.15, 0.22]}
+    for i, t in enumerate(tiles):
+        cx, cy, yaw, half_r, half_t = t[:5]
+        kind = t[5] if len(t) > 5 else "plumb"
         half = math.radians(yaw) / 2.0
         spec.worldbody.add_geom(
-            name=f"reach_{i:03d}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            name=f"reach_{i:04d}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[half_r / 1000.0, half_t / 1000.0, 0.0005],
-            pos=[cx * m, cy * m, 0.0015],
+            pos=[cx * m, cy * m, 0.0015 if kind == "plumb" else 0.0010],
             quat=[math.cos(half), 0.0, 0.0, math.sin(half)],
-            rgba=[0.20, 0.85, 0.35, 0.30],
+            rgba=colour.get(kind, colour["plumb"]),
             contype=0, conaffinity=0, group=GROUP_TABLE)
 
 
