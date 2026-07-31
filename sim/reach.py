@@ -29,13 +29,15 @@ because a constant transcribed into prose is this project's most-logged
 defect and a docstring cannot be made to fail a test.
 
 WHICH CONSTRAINT SETS THE INNER LIMIT IS NOT FIXED, and `show` reports
-whichever the data supports rather than telling a story. Against the
-jaw's body origin it was SELF-COLLISION — the arm folding into itself
-before running out of geometry. Against the grip point it is GEOMETRY:
-holding the tip in the band drags the arm too low to fold that tight.
-An earlier draft of this paragraph asserted the first answer, and two
-selftests failed the day the reference point moved. That is the check
-working; the prose is what went stale.
+whichever the data supports rather than telling a story. It has now
+moved TWICE — once when the reference point moved from the jaw's body
+origin to the tip, and again when the grasp band was corrected to mean
+height above the table rather than above the m1 anchor. Both times a
+draft of this paragraph named the current answer, and both times the
+answer changed underneath it. So it no longer names one: run `show`,
+which measures it. This text is printed by `--help`, so a constant
+transcribed here is a wrong number handed to an operator who asked the
+tool what it does.
 
 THE SYMMETRY THAT MAKES IT CHEAP, and its exact limit. After the slew,
 the arm is a rigid subchain rotating about a vertical axis, so the
@@ -58,16 +60,36 @@ one of them produced a confident wrong number and they are all cheap to
 repeat. The pattern underneath: a point was inherited from whichever
 object was nearest to hand instead of being chosen and named.
 
-  * `gripper` is a JOINT NAME and a BODY NAME in this model, and the
-    body it names is the WRIST, not the jaw. `twin.py` says so in a
-    comment that exists because the same mistake once put the measured
-    reach direction 2.9 deg out.
+  * `gripper` is a JOINT NAME and a BODY NAME in this model, and they
+    name different links. The chain is
+
+        lower_arm -> wrist -> gripper -> moving_jaw_so101_v1
+
+    so body `gripper` is the ROLL link (driven by j5, wrist_roll), body
+    `wrist` is its parent (driven by j4, wrist_flex), and the jaw is
+    named after its mesh. Resolving the joint name as a body name
+    silently returns the wrong link — it put the measured reach
+    direction 2.9 deg out before `twin.py` named the three explicitly.
+
+    Note what `twin.py`'s `WRIST_BODY = "gripper"` is: a variable name,
+    not a claim about anatomy. An earlier draft of THIS bullet read it
+    as one and stated that body `gripper` "is the WRIST, not the jaw",
+    which is wrong in a way that matters — at the selftest's folded
+    golden pose, body `gripper` is 51.87 mm into the shoulder and body
+    `wrist` is 8.22 mm, a factor of six riding on which link a reader
+    thinks the name means.
   * `geom_rbound` is a BOUNDING-SPHERE radius, so `z - rbound` is a
     lower bound on a geom's lowest point and not the point itself — on
-    these jaw meshes it under-reads by about 6.6 mm, which silently
-    shifted the whole grasp band upward. The oriented bounding box is
-    used instead, and `selftest` measures what is left against the real
-    mesh vertices rather than asserting it is zero.
+    these jaw meshes it under-read by about 6.6 mm, which silently
+    shifted the whole grasp band upward. An oriented bounding box
+    replaced it and has since been deleted too: the band is now judged
+    at a SINGLE POINT, the grip site, with no bounding volume at all.
+    Say that plainly, because it is a real limit and not a detail —
+    the gripper housing is wider and lower than the site, so it can be
+    touching the table while the grip point still reads 5 mm up. That
+    is why a table strike among the inner blockers is legitimate rather
+    than a bug. What `selftest` checks is that the site stays ON the
+    jaw; nothing here accounts for the jaw's extent.
   * `TOOL_BODY` is the moving jaw's BODY ORIGIN, which sits at the base
     of an 85 mm gripper. Kyle spotted it by eye — "the gripper has a
     length!" — before any number said so. The grip point is the model's
@@ -186,6 +208,20 @@ GRIP_SITE = "gripperframe"
 def _grip_mm(data, model, origin) -> tuple[float, float, float]:
     """Where the closed jaws meet the work — (radius, height, azimuth).
 
+    TWO FRAMES, AND MIXING THEM COST A DAY. Radius and azimuth are about
+    the m1 AXIS, so they are measured from `origin` — a point on that
+    axis. Height is above the TABLE, and world z=0 IS the table because
+    the arm is bolted to the bench. `origin` is m1's ANCHOR, which sits
+    ~62 mm up the column, so subtracting it from z does not convert
+    between two frames that share a zero — it silently reports every
+    grasp 62 mm lower than it is. The first version did exactly that,
+    and the band test then admitted poses with the jaw tip well below
+    the tabletop. It surfaced only because the twin insisted a fallen
+    arm was 100 mm THROUGH the table, which is not a thing a bolted arm
+    can be. One line of this function is in the rig frame and one is in
+    the world frame; that is the whole point and it is why the z term
+    does not touch `origin`.
+
     Kyle 2026-07-31: *"most of the time the grip point will be on the
     very tip of the jaw."* The gripper runs 85 mm past its own joint,
     and this module used to report the moving jaw's BODY ORIGIN, which
@@ -213,9 +249,10 @@ def _grip_mm(data, model, origin) -> tuple[float, float, float]:
             f"cannot be located",
             "the vendored model changed; find the frame that replaced "
             "it rather than falling back to a body origin")
-    w = (data.site_xpos[sid] - origin) * 1000.0
-    return (math.hypot(w[0], w[1]), float(w[2]),
-            math.degrees(math.atan2(w[1], w[0])))
+    p = data.site_xpos[sid]
+    dx, dy = (p[0] - origin[0]) * 1000.0, (p[1] - origin[1]) * 1000.0
+    return (math.hypot(dx, dy), float(p[2]) * 1000.0,
+            math.degrees(math.atan2(dy, dx)))
 
 
 @dataclass(frozen=True)
@@ -228,14 +265,18 @@ class Annulus:
     slew_min_deg: float           # j1's calibrated travel, frame degrees
     slew_max_deg: float
     # The jaw sits off the j1 axis, so its azimuth is NOT the slew. The
-    # offset is a smooth function of radius — measured, it runs from
-    # about +2 deg at the inner edge to about -4 deg at the outer, i.e.
-    # it CHANGES SIGN across the ring. A single mean was the first
-    # design and it was wrong in the dangerous direction: it made points
-    # past j1's travel read as reachable at BOTH ends of the arc, on
-    # opposite sides, so no constant could have fixed it. Carried as
-    # (radius, offset) samples and interpolated.
+    # offset is a smooth function of radius, and the SPREAD is what
+    # matters: a single mean was the first design and it made points
+    # past j1's travel read as reachable at both ends of the arc, which
+    # no constant could have fixed. Carried as (radius, offset) samples
+    # and interpolated. The actual numbers are not written down here —
+    # two successive drafts quoted values ("+2 to -4, it CHANGES SIGN")
+    # that the next reference-point change falsified, and `show` prints
+    # the measured pair every run.
     az_offset_by_r: tuple
+    # Body pairs that blocked poses REACHING FURTHER IN than `r_in_mm`,
+    # i.e. the ones whose removal set that bound — not a tally of
+    # everything the gate ever refused. See `annulus`.
     inner_blockers: dict
     poses: int
     step_deg: float
@@ -270,6 +311,12 @@ class Annulus:
 
 @dataclass(frozen=True)
 class Sample:
+    # TWO FRAMES IN ONE RECORD, deliberately, and it must be read that
+    # way: `r_mm` and `az_rig_deg` are about the m1 axis in the RIG
+    # frame, while `jaw_mm` is height above the TABLE (world z). They
+    # differ by the 62 mm the m1 anchor stands above the bench. Anything
+    # that reassembles a 3D point from this — `ik.solve` takes rig-frame
+    # mm and adds `rig._origin` — must not take `jaw_mm` for the rig z.
     r_mm: float
     jaw_mm: float
     az_rig_deg: float             # tool azimuth in the rig frame
@@ -323,7 +370,12 @@ def profile(twin: Twin, rig: Rig, slew_deg: float,
 
     lo2, hi2 = span(2)
     lo3, hi3 = span(3)
-    hand = _hand_geoms(twin.model)
+    # `_hand_geoms` is still called for its REFUSAL — it raises when the
+    # vendored model has no jaw geoms, and this is the cheapest place to
+    # find that out. Its result is no longer threaded into `_sample_one`:
+    # that was a leftover of the deleted bounding-box height test, and
+    # the parameter sat unread for two revisions.
+    _hand_geoms(twin.model)
     out: list[Sample] = []
     lo4, hi4 = span(4)
     for a in np.arange(lo2, hi2 + step, step):
@@ -331,12 +383,12 @@ def profile(twin: Twin, rig: Rig, slew_deg: float,
             wrists = ([180.0 - a - b] if plumb
                       else list(np.arange(lo4, hi4 + tilt_step, tilt_step)))
             for c in wrists:
-                _sample_one(twin, rig, hand, band, gate, tick, cals,
+                _sample_one(twin, rig, band, gate, tick, cals,
                             t1, a, b, c, out)
     return out
 
 
-def _sample_one(twin, rig, hand, band, gate, tick, cals, t1, a, b, c, out):
+def _sample_one(twin, rig, band, gate, tick, cals, t1, a, b, c, out):
     """One (j2, j3, j4) triple, appended to `out` if it lands in band."""
     t2, t3, t4 = tick(2, a), tick(3, b), tick(4, c)
     if not (cals[2].min <= t2 <= cals[2].max
@@ -349,9 +401,9 @@ def _sample_one(twin, rig, hand, band, gate, tick, cals, t1, a, b, c, out):
         q[twin._adr[i]] = twin.qpos_of(i, t)[0]
     rig.data.qpos[:] = q
     mujoco.mj_forward(rig.model, rig.data)
-    # World z=0 IS the table (the arm is bolted to the bench), so a hand
-    # geom's world z is already its height above the surface. Adding the
-    # rig origin here would double-count m1.
+    # `tip_z` is height above the TABLE and the band is in the same
+    # units — see `_grip_mm`, where that is the one term not measured
+    # from the rig origin, and where getting it wrong cost 62 mm.
     r, tip_z, az = _grip_mm(rig.data, rig.model, rig._origin)
     if not band[0] <= tip_z <= band[1]:
         return
@@ -397,8 +449,20 @@ def annulus(twin: Twin, rig: Rig, band: tuple[float, float] = GRASP_BAND_MM,
             "with the gripper plumb, which is a finding rather than a "
             "setting — check calibration.json's j2/j3/j4 travel")
     ungated = profile(twin, rig, mid, band, step, gate=False)
+    r_in = min(s.r_mm for s in clear)
+    # ONLY the poses that would have reached FURTHER IN than the bound —
+    # those are the ones whose removal actually set it, and the name says
+    # so. A whole-sweep tally answers a different question and gets read
+    # as this one: printed under "inner bound set by SELF-COLLISION" it
+    # listed a table strike out at the ring's far edge as the reason the
+    # arm cannot fold tight. That mislabelling survived because the sweep
+    # was running 62 mm too high to graze the table at all (see
+    # `_grip_mm`), so the tally happened to contain only arm-vs-arm pairs
+    # and the check reading it stayed green on an accident.
     blockers: dict = {}
     for s in gated:
+        if s.r_mm >= r_in:
+            continue
         for x in s.blocked:
             key = f"{x.body_a} <-> {x.body_b}"
             blockers[key] = blockers.get(key, 0) + 1
@@ -411,7 +475,7 @@ def annulus(twin: Twin, rig: Rig, band: tuple[float, float] = GRASP_BAND_MM,
         by_r.setdefault(round(s.r_mm, 3), []).append(s.az_rig_deg - mid)
     offsets = tuple(sorted((r, sum(v) / len(v)) for r, v in by_r.items()))
     return Annulus(
-        r_in_mm=min(s.r_mm for s in clear),
+        r_in_mm=r_in,
         r_out_mm=max(s.r_mm for s in clear),
         r_in_kinematic_mm=min((s.r_mm for s in ungated), default=math.nan),
         slew_min_deg=lo1, slew_max_deg=hi1,
@@ -638,10 +702,11 @@ def cmd_show(twin: Twin, rig: Rig, cell, step: float) -> int:
           f"{ann.step_deg:g} deg steps")
     lo_off = ann.az_offset_at(ann.r_in_mm)
     hi_off = ann.az_offset_at(ann.r_out_mm)
-    # Reported from the measurement rather than narrated: when the grip
-    # point moved from the jaw's body origin to the gripperframe site,
-    # this offset stopped varying with radius, and the prose that said
-    # it "CHANGES SIGN" would have gone on claiming so.
+    # Reported from the measurement rather than narrated, and BOTH
+    # branches are live: this offset has been constant across the ring
+    # under one choice of reference point and has varied by several
+    # degrees under another, so which sentence is true is a fact about
+    # today's model and not something to hard-code.
     spread = ann.az_offset_spread_deg
     print(f"  grip azimuth  the grip point sits off the j1 axis, so it "
           f"leads the slew by\n                {lo_off:+.2f} deg at the "
@@ -669,12 +734,11 @@ def cmd_show(twin: Twin, rig: Rig, cell, step: float) -> int:
         print(f"  inner bound   set by GEOMETRY, not self-collision: with "
               f"the grip point held\n                in the band the arm "
               f"cannot fold tight enough to hit itself first")
-        if ann.inner_blockers:
-            print(f"                (self-collision still removes poses "
-                  f"elsewhere in the ring:\n                 "
-                  + ", ".join(f"{v}x {k}" for k, v in sorted(
-                      ann.inner_blockers.items(), key=lambda kv: -kv[1])[:2])
-                  + ")")
+        # No blocker list here on purpose. `inner_blockers` only counts
+        # poses that would have reached INSIDE `r_in_mm`, and a non-empty
+        # tally therefore implies the gate raised that bound — which is
+        # the other branch. Printing it here was unreachable in all but a
+        # 1 mm window, and an unreachable print reads as coverage.
 
     # What the plumb assumption COSTS, measured rather than assumed. It
     # was a hidden constraint in the first version and Kyle spotted the
@@ -763,7 +827,80 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
             fails.append(name)
 
     step = 4.0
+    band_lo, band_hi = GRASP_BAND_MM
     cals = twin.cals
+    # BEFORE the golden poses, and this line is load-bearing. `_ticks`
+    # dereferences `cals[i].frame`, and the goldens were moved above the
+    # first `profile()` call so the gate's verdict would be
+    # unconditional — which also moved them above the only thing that
+    # had been validating the frames. A half-finished `calibrate
+    # capture` then met the suite with a bare AttributeError traceback
+    # instead of the BenchError that names the joint and how to fix it.
+    # That was this file's round-1 finding, reintroduced by the round-2
+    # fix that removed it. Idempotent; `profile()` calls it again.
+    _require_frames(twin)
+
+    # THE GATE ITSELF, probed with fixed poses rather than through the
+    # sweep, and FIRST so its verdict is unconditional — every later
+    # check either consumes the sweep or can be skipped by an early
+    # return, and the gate's health is what those all rest on.
+    #
+    # Why it needs its own probe: everything else here that mentions the
+    # gate compares `gated` against `ungated`, but those two `profile()`
+    # calls admit the IDENTICAL pose set (the flag only fills in
+    # `.blocked`), so "the gate never loosens the inner bound" is a
+    # subset theorem that cannot fail. Stub `contacts_at` to return
+    # nothing and the whole suite went green while shipping an inner
+    # radius of 56 mm instead of 85 — 29 mm optimistic, into the volume
+    # where the arm folds through itself.
+    #
+    # IN DEGREES, NOT TICKS, and an earlier draft asserted the reverse
+    # ("ticks, so a frame edit cannot move the poses out from under the
+    # assertion"). Backwards: `qpos_of` runs the tick through
+    # `cal.frame`, so a fixed TICK moves with a re-ratified frame while
+    # a fixed DEGREE cancels through it. Measured on a +170-tick shift
+    # of j2's zero: fixed ticks moved the pose 14.94 deg, fixed degrees
+    # moved it 0.00. Ticks would have turned an ordinary
+    # `calibrate capture` into a false red on the gate.
+    # GOLDEN_CLEAR is the EXTENDED pose, and that is worth knowing
+    # rather than a coincidence to trip over: on 2026-07-31 the arm
+    # STRAIN-FAULTED reaching it and fell flat, yet it is genuinely
+    # collision-clear and belongs here. The gate answers "does this
+    # pose intersect anything", not "can the arm hold it" — j2 needs
+    # 0.864 N.m there against 0.325 at TUCK. Nothing in this module
+    # models that, which is plan 716.6.
+    GOLDEN_FOLDED = {1: 7.2, 2: 29.4, 3: 144.1, 4: 74.2}
+    GOLDEN_CLEAR = {1: 0.0, 2: 90.0, 3: 0.0, 4: 0.0}
+
+    def _ticks(deg):
+        return {i: cals[i].frame.tick(v) for i, v in deg.items()}
+
+    hit, _c, _e = twin.contacts_at(_ticks(GOLDEN_FOLDED))
+    deepest = max((x.depth_mm for x in hit), default=0.0)
+    pairs = sorted({f"{x.body_a} <-> {x.body_b}" for x in hit})
+    # 40 mm because the real figure is ~52 and it degrades gracefully
+    # under frame drift; without a depth floor the probe can decay into
+    # a barely-grazing pose that still satisfies `bool(hit)` while
+    # testing almost nothing. The deep pair is shoulder <-> GRIPPER —
+    # an earlier draft called it the wrist, which is a different body in
+    # this model (`wrist` is the gripper's parent) and is only 8 mm in.
+    check("the gate REFUSES a pose with the gripper buried in the "
+          "shoulder", bool(hit) and deepest > 40.0
+          and any("table" not in p for p in pairs),
+          f"{deepest:.0f} mm deep: " + ", ".join(pairs[:2]) if hit
+          else "the gate reported it CLEAR")
+    clear_hit, _c, _e = twin.contacts_at(_ticks(GOLDEN_CLEAR))
+    check("...and PASSES the arm extended into free air, so it is not "
+          "simply refusing everything",
+          not clear_hit,
+          "no contacts" if not clear_hit else
+          f"{len(clear_hit)} spurious contacts")
+    # NOTHING BETWEEN HERE AND THE SWEEP may read `rig.data` without
+    # reposing first: `rig.data IS twin.data`, so the model is currently
+    # parked at GOLDEN_CLEAR. The sweep is safe because `_sample_one`
+    # and `repose` both overwrite the whole qpos vector — that safety is
+    # accidental, not designed, and `repose`'s docstring is the scar
+    # from the last time it was assumed.
     lo1, hi1 = twin.frame_x(1, cals[1].min), twin.frame_x(1, cals[1].max)
     lo1, hi1 = min(lo1, hi1), max(lo1, hi1)
     slews = [lo1 + 1, lo1 / 2, 0.0, hi1 / 2, hi1 - 1]
@@ -775,6 +912,20 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
     # rig-frame azimuth, taken from the same samples, must move.
     runs = {s: [x for x in profile(twin, rig, s, step=step) if not x.blocked]
             for s in slews}
+    # A slew with NO gate-clear pose is a real finding, and the bare
+    # `min()` below used to meet it with a ValueError traceback — the
+    # worst possible signal, because it fires on exactly the broken
+    # states this suite exists to diagnose and reports them as a crash
+    # rather than a red line.
+    empty = [s for s, v in runs.items() if not v]
+    check("every sampled slew has at least one gate-clear pose in the band",
+          not empty,
+          "5 slews across j1's travel" if not empty else
+          f"no reachable pose at slew(s) {', '.join(f'{s:+.0f}' for s in empty)}")
+    if empty:
+        print("\nreach selftest FAILED — the radius profile cannot be "
+              "measured without a pose at every slew")
+        return 1
     r_in = [min(x.r_mm for x in v) for v in runs.values()]
     r_out = [max(x.r_mm for x in v) for v in runs.values()]
     az = [sum(x.az_rig_deg for x in v) / len(v) for v in runs.values()]
@@ -795,20 +946,84 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
     # bound, and that whichever cause is reported is the one the data
     # supports.
     gate_binds = ann.r_in_mm > ann.r_in_kinematic_mm + 1.0
-    check("the gate never loosens the inner bound",
+    # DERIVED, and labelled so. Both this and the check below read
+    # `gated` against `ungated`, which admit the same pose set — so this
+    # one is a subset theorem that cannot fail, and the next one
+    # short-circuits on a quantity computed from it. When the gate dies
+    # they BOTH print green ("geometry binds", "no arm pair") directly
+    # beneath the golden probe's failure, and someone triaging that sees
+    # one failure and two reassurances that are artifacts of it. They
+    # are kept for their DETAIL text, which is genuinely informative,
+    # not for their verdicts.
+    check("(derived) the gate never loosens the inner bound",
           ann.r_in_mm >= ann.r_in_kinematic_mm - 0.001,
           f"gated {ann.r_in_mm:.0f} mm vs ungated "
           f"{ann.r_in_kinematic_mm:.0f} mm — "
           + ("self-collision binds" if gate_binds else "geometry binds"))
-    check("...and if self-collision is what binds, a real arm pair is "
-          "named for it",
-          (not gate_binds) or (bool(ann.inner_blockers)
-                               and not any("table" in k
-                                           for k in ann.inner_blockers)),
-          ", ".join(sorted(ann.inner_blockers)[:2]) or "no blockers")
-    check("the ring is an annulus, not a disc",
-          ann.r_in_mm > 1.0 and ann.band_mm > 1.0,
-          f"{ann.r_in_mm:.0f}..{ann.r_out_mm:.0f} mm")
+    # A table strike among these is LEGITIMATE and the check no longer
+    # forbids it. Folded tight over its own base the gripper housing is
+    # wider than the site, so it can touch down while the grip point is
+    # still 5 mm up — a real constraint, and the old condition banned
+    # any table pair outright.
+    #
+    # AN EARLIER DRAFT OF THIS COMMENT GOT THE HISTORY WRONG and it is
+    # corrected rather than deleted, because the wrong version is the
+    # more tempting story. It said the old check "stayed green on an
+    # accident of tally composition" — that the pre-fix tally happened
+    # to hold only arm-vs-arm pairs. Measured, the pre-fix tally was
+    # EMPTY and `gate_binds` was False, so the check passed through its
+    # `(not gate_binds)` short-circuit and never read the tally at all.
+    # Loosening a check the day it starts failing is how a real defect
+    # gets silenced, so the reason had better be the true one: what
+    # makes this safe is not this check, it is that the band check above
+    # now measures height directly and catches a mis-framed sweep on the
+    # evidence rather than through a proxy.
+    arm_pairs = {k: v for k, v in ann.inner_blockers.items()
+                 if "table" not in k}
+    tbl = sum(v for k, v in ann.inner_blockers.items() if "table" in k)
+    check("(derived) ...and if self-collision is what binds, a real arm "
+          "pair is named for it",
+          (not gate_binds) or bool(arm_pairs),
+          f"{sum(arm_pairs.values())} poses arm-vs-arm, {tbl} table — "
+          + (", ".join(sorted(arm_pairs)[:2]) or "no arm pair"))
+    # "the ring is an annulus, not a disc" used to live here, asserting
+    # `r_in > 1` and `band > 1`. The characterization pin below entails
+    # both — if it is green, r_in is within 1 mm of 84.7 and the band is
+    # ~191 mm — so it could not fail in any state where the pin passes,
+    # three lines away. This module's own rule applies: a passing test
+    # on dead machinery reads as coverage. Its numbers are in the pin's
+    # detail string instead.
+    #
+    # CHARACTERIZATION, and the only written-down number in this module.
+    # It is here because the golden poses above cannot cover the case
+    # that matters most. Both of them sit far outside the sampled volume
+    # — the folded one at r 46 mm, the clear one at r 441 mm, against a
+    # ring of 85..276 — so they pin the gate at two extremes while it
+    # can be arbitrarily wrong in between. `r_in` is not set by deep
+    # penetrations; it is set by MARGINAL, grazing contacts, and an
+    # extreme probe is blind to that regime by construction. Measured:
+    # adding four pairs to ALLOWED_PAIRS ships r_in at 59 mm — within
+    # 3 mm of the totally-dead-gate number — with both goldens green. A
+    # 5 mm depth filter ships 75 mm, likewise green. Those are far more
+    # likely defects than the gate dying outright.
+    #
+    # This module's rule is that PROSE must not carry a constant,
+    # because a docstring cannot be made to fail. That is an argument
+    # FOR putting the number somewhere that can. If this goes red,
+    # exactly one of two things happened, and they are told apart by
+    # whether calibration.json moved:
+    #   calibration changed  -> re-measure with `show --step 4`, and
+    #                           update these two numbers deliberately
+    #   calibration did NOT  -> the gate or the geometry changed, which
+    #                           is the defect this exists to catch
+    RING_AT_STEP_4 = (84.7, 275.6)
+    got = (ann.r_in_mm, ann.r_out_mm)
+    drift = max(abs(a - b) for a, b in zip(got, RING_AT_STEP_4))
+    check("the ring is where it was when this was last measured",
+          drift < 1.0,
+          f"{got[0]:.1f}..{got[1]:.1f} mm vs recorded "
+          f"{RING_AT_STEP_4[0]}..{RING_AT_STEP_4[1]} "
+          f"(worst drift {drift:.2f} mm)")
 
     # The jaw-height bound is an OUTER bound on a mesh. Measure what is
     # left of it against real transformed vertices rather than asserting
@@ -852,6 +1067,70 @@ def cmd_selftest(twin: Twin, rig: Rig, cell) -> int:
           f"sweep", worst_gap < 12.0,
           f"furthest it ever sits from a jaw vertex: {worst_gap:.2f} mm"
           + (f" (at r {worst_at.r_mm:.0f} mm)" if worst_at else ""))
+
+    # THE FRAME CONTRACT, checked against the world rather than against
+    # `_grip_mm`'s own arithmetic. The band means "above the TABLE" and
+    # the table is world z=0, so every sample the sweep admits must have
+    # its grip site inside the band measured straight off `site_xpos` —
+    # no origin subtraction anywhere in this check, because subtracting
+    # the origin is exactly what was wrong. `_grip_mm` used to return
+    # height above the m1 ANCHOR, 62 mm up the column, so the sweep
+    # silently profiled the arm at 67-82 mm instead of 5-20 and every
+    # radius shipped on 2026-07-31 was the ring at the wrong height.
+    # Nothing failed: the old checks all compared the module against
+    # itself, and both sides moved together.
+    # RANKED BY HOW FAR OUTSIDE THE BAND, and the first draft of this
+    # ranked by `abs(z - smp.jaw_mm)` instead — the disagreement between
+    # the world reading and the reported one. After the fix those two
+    # are BITWISE equal, so the seed of 0.0 was never beaten and the
+    # offender was never recorded: the check was green with poses 25 mm
+    # THROUGH the tabletop. It still went red on the reintroduced origin
+    # bug, which is how it passed for a working test — it was a one-line
+    # regression test wearing the label of a frame contract. Two
+    # reviewers found it independently and that is the only reason it is
+    # not in the commit.
+    worst_z, worst_r = 0.0, None
+    for s in (lo1 / 2, 0.0, hi1 / 2):
+        for smp in profile(twin, rig, s, step=step):
+            repose(twin, rig, smp.ticks)
+            z = float(rig.data.site_xpos[sid][2]) * 1000.0
+            dev = max(band_lo - z, z - band_hi)
+            if dev > 0.001 and dev > worst_z:
+                worst_z, worst_r = dev, (smp.r_mm, z)
+    check("every admitted pose really is in the grasp band above the "
+          "TABLE, measured in world z",
+          worst_r is None,
+          f"band {band_lo:g}-{band_hi:g} mm"
+          if worst_r is None else
+          f"worst offender r {worst_r[0]:.0f} mm sits at z {worst_r[1]:.1f} mm, "
+          f"{worst_z:.1f} mm outside the band")
+
+    # ...and the arm is bolted to that table, so a height above it is
+    # never negative. A separate claim from the one above: the band
+    # could be honoured and the frame still be flipped.
+    # TWO CLAIMS, and the second is the one with teeth. That the m1
+    # anchor is above the table only says the two frames are not
+    # interchangeable; it cannot tell a right answer from a 60 mm wrong
+    # one. What the band actually depends on is that the arm is mounted
+    # AT z=0 — put the model on a riser and every height in this file is
+    # wrong by the riser, with nothing else noticing.
+    origin_z = float(rig._origin[2]) * 1000.0
+    # Reads `twin.data` without reposing, which the golden-pose comment
+    # above warns against — EXEMPT, and here is why, so nobody copies
+    # the pattern somewhere it does not hold: `base` is the root body,
+    # fixed to the worldbody, so its xpos is a model constant and no
+    # qpos can move it. Verified invariant across the rest pose and both
+    # goldens. Any body further down the chain would need `repose`.
+    base_z = float(twin.data.body("base").xpos[2]) * 1000.0
+    check("the rig origin is genuinely ABOVE the table, so the two "
+          "frames are not interchangeable",
+          origin_z > 1.0,
+          f"m1's anchor sits {origin_z:.1f} mm up — the exact error the "
+          f"check above exists to catch")
+    check("...and the arm is mounted AT the table, which is what makes "
+          "world z a height above it",
+          abs(base_z) < 0.001,
+          f"base body origin at z {base_z:+.4f} mm")
 
     # Acceptance from the ARM, not from the inverse of can_grasp: take a
     # pose the sweep actually produced, convert ITS tool position to a
