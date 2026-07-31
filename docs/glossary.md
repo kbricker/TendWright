@@ -64,6 +64,48 @@ Lives in `calibration.json`, captured by `calibrate capture`, torque-off.
 | **deviation** | The gap between what the servo was *told* (the trapezoid) and where it actually was. Some is expected — a real joint lags under gravity. It is the size of the gap, not a defect count. |
 | **e-stop** | Any keypress during motion: halts and **holds** (torque stays on). The power switch is the hard one — and it *drops* the arm rather than stopping it. Unattended running has no keypress e-stop at all. |
 
+## 5a. Named whole-arm postures
+
+A posture is **j2, j3, j4** — those three set where the hand is in the
+vertical plane. **j1 is independent of it** (it only rotates that plane;
+the reachable radius/height profile is identical to 0.000 mm across the
+slew range). **j5 is nearly independent** — it rolls the hand about its
+pointing axis, so it does not change reach, but it does move the
+self-collision inner bound by ~6 mm and changes which part of the jaw is
+lowest. Independent enough to name a posture by; not independent enough
+for the gate. **j6 is not a posture at all** — it is grip state, in
+percent open.
+
+| term | meaning |
+|---|---|
+| **fully extended** | j2/j3/j4 in line: `j3 = 0, j4 = 0`, j2 setting the elevation. Named by Kyle 2026-07-31. Level (`j2 = 90`) needs **0.864 N·m** at j2 to hold — the arm's worst-case holding torque, because it is the longest moment arm it can make. Deliberately NOT called "prone": that word would collide with pronation, which is about j5. |
+
+**THE REFERENCE POINT IS THE WHOLE ARGUMENT.** "Reach" means nothing
+until you say *reach of what*, and the gripper is **85 mm long beyond
+the m6 axis** — so the answer moves by 85 mm depending on where you
+measure. Kyle, 2026-07-31: *"the m6 is the gripper angle motor, but the
+gripper has a length!"* Measured at fully extended, level:
+
+| point | radius from the m1 axis |
+|---|---|
+| m6 axis (the gripper joint) | **366 mm** |
+| moving-jaw body origin | 369 mm — the *base* of the jaw, and what `sim.reach` measured before this was noticed |
+| where the two jaws overlap, so a part can be held | **353 … 427 mm** |
+| fixed jaw tip | **451 mm** |
+
+The chain: `m1→m2 64.8, m2→m3 116.0, m3→m4 135.0, m4→m5 63.7, m5→m6
+36.2`, then **85 mm of gripper**. A body origin is where a link's frame
+is anchored, which is a modelling artefact — it is not where the arm
+touches anything.
+
+**Holding torque is computed from the MODEL's masses** (0.632 kg total,
+from the vendored Menagerie file). The meshes were verified against the
+printed parts to 0.09% (#670), but mass depends on infill and material,
+which the model cannot know. **The STS3215's own torque rating is not
+recorded anywhere in this repo** — that is the number that decides
+whether a posture is holdable, and it should come off the servo sticker
+into `lab-inventory.md`.
+
 ## 6. The crane family — this arm's shorthand
 
 j2, j3 and j4 all rotate about the **same axis in the same sense**, so
