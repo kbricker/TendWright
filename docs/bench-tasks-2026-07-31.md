@@ -125,14 +125,28 @@ mirrored model.
 
 ## E. Blocked on Kyle, from earlier work
 
+**The blocker on these changed today.** The arm's power is now mine —
+Kyle 2026-07-31: *"you have control of the arms power now, the arm
+should be powered up when we are doing things, and powered down when we
+are not."* So "needs the arm powered" is no longer a reason to wait.
+What still gates them is **attendance**: 712.11's rule that the arm is
+never MOVED with nobody at the bench, because the e-stop is a keypress
+that does not exist in an empty room. Power is mine; motion needs you in
+the chair.
+
 - [ ] **714.6** — one item left: *`sim/ik.py` solves for a target on the
-      arm's left and the arm actually goes left*. Needs the arm powered.
+      arm's left and the arm actually goes left*. Say when you are at the
+      bench and I will power up and run it; it is one short move, and
+      9ba1c6f is the fix it is testing.
 - [ ] **712.11** — needs a real batch run, a deliberately-failing run,
       and **explicit authorization for unattended operation** recorded on
-      the plan. That last one is a decision, not work.
-- [ ] **716.4** — fix the arm, place the cameras, measure the obstacles.
-      This is the big one: 11 open Vision plans and 6 Cell plans are
-      waiting behind it.
+      the plan. That last one is a decision, not work — and it is now the
+      *only* thing standing between us and running batches from the desk.
+- [x] **716.4** — 7 of 8. The obstacle measurement is answered: there are
+      none but the table and the arm, both already in the gate. The
+      cameras are placed and fixed. **One item left, and it is two
+      minutes of yours: photograph the layout** from a couple of angles.
+      It is the only record of what all these numbers refer to.
 
 ---
 
