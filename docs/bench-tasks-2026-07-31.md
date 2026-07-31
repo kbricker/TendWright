@@ -104,10 +104,18 @@ mirrored model.
 
 ## D. Small things noticed while working
 
-- [ ] The **KP303 bench strip** (`192.168.86.90`) answers ping but did
-      not show up in `kasa list` discovery on 2026-07-31. The other two
-      Kasa devices did. Worth a look before anything relies on the
-      guarded `Arm` outlet.
+- [x] ~~The **KP303 bench strip** did not show up in `kasa list`~~ —
+      **withdrawn, it was a transient discovery miss.** It answered
+      fully on the next attempt: `[0] Arm off [guarded]`, `[1] Light on`,
+      `[2] USB on`. Discovery is a UDP broadcast and one dropped reply
+      looks exactly like an absent device, so a single silent `list` is
+      not evidence of a fault — re-run before believing it.
+- [ ] **Is the arm's 12 V PSU actually plugged into KP303 outlet 0?**
+      The outlet is labelled `Arm` and guarded, but the labels were
+      applied before anything was wired (Kyle 2026-07-29: *"nothing is
+      plugged into the new one, I just labeled them"*). This is the last
+      unknown on **716.2**'s remote-power chain — everything else in it
+      is either verified working or a decision. One look.
 - [ ] `low` is aimed low. Rendering its view from the cell model, the
       arm sits crammed into the top-left corner and **the bottom ~60% of
       the frame is empty near tabletop**. The 7° down tilt was chosen
