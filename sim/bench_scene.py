@@ -807,9 +807,38 @@ def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
         rgba=rgba, group=group)
 
 
+def _add_reach_zone(spec, scene: Scene, tiles) -> None:
+    """Lay the arm's functional reach zone on the tabletop.
+
+    `tiles` is plain data — (centre x, centre y, yaw deg, half-radial mm,
+    half-tangential mm) per angular slice, already resolved into bench
+    coordinates. Deliberately not computed here: the zone needs the twin
+    and the calibration, and `sim.reach` imports this module, so pushing
+    the arithmetic up the dependency keeps that one-way.
+
+    Drawn in GROUP_TABLE because it IS a statement about the tabletop —
+    the part of it the arm can actually work on — so it toggles with the
+    surface it describes. Non-colliding: this is an annotation, and a
+    zone that could be hit would change every gate verdict in the scene.
+    """
+    import mujoco
+
+    m = scene.to_m
+    for i, (cx, cy, yaw, half_r, half_t) in enumerate(tiles):
+        half = math.radians(yaw) / 2.0
+        spec.worldbody.add_geom(
+            name=f"reach_{i:03d}", type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[half_r / 1000.0, half_t / 1000.0, 0.0005],
+            pos=[cx * m, cy * m, 0.0015],
+            quat=[math.cos(half), 0.0, 0.0, math.sin(half)],
+            rgba=[0.20, 0.85, 0.35, 0.30],
+            contype=0, conaffinity=0, group=GROUP_TABLE)
+
+
 def build_spec(scene: Scene, shadows: bool = False,
                cameras: 'tuple[Camera, ...]' = (),
-               arm: 'tuple[float, float, float] | None' = None):
+               arm: 'tuple[float, float, float] | None' = None,
+               reach_zone: tuple = ()):
     """MuJoCo spec of the measured bench, in the DATUM frame.
 
     Metres, table top at z=0, +z up. Geometry only - no arm: this exists
@@ -1320,12 +1349,18 @@ def build_spec(scene: Scene, shadows: bool = False,
     # they set the viewer's zoom/pan rate and its near/far clipping.
     spec.stat.center = [cx, cy, 0.15]
     spec.stat.extent = reach
+    # Last, so the annotation never participates in the navigation
+    # statistics computed above — and note the local `reach` here is the
+    # scene's EXTENT, which is why the zone parameter is `reach_zone`.
+    if reach_zone:
+        _add_reach_zone(spec, scene, reach_zone)
     return spec
 
 
 def build_model(scene: Scene, shadows: bool = False,
                 cameras: 'tuple[Camera, ...]' = (),
-                arm: 'tuple[float, float, float] | None' = None):
+                arm: 'tuple[float, float, float] | None' = None,
+                reach_zone: tuple = ()):
     """Compile the cell. Pair with `rest_data` to get an MjData posed at
     the arm's rest pose.
 
@@ -1336,7 +1371,7 @@ def build_model(scene: Scene, shadows: bool = False,
     default-pose knob and is not one. That bug shipped 2026-07-26 and
     made the arm play the exercise routine through itself; `_selftest_
     arm_pose_matches_twin` now pins it."""
-    return build_spec(scene, shadows, cameras, arm).compile()
+    return build_spec(scene, shadows, cameras, arm, reach_zone).compile()
 
 
 def rest_data(model):
@@ -1377,7 +1412,7 @@ def rest_data(model):
 
 
 def view(cell: 'Cell', save_view: bool = True,
-         path: Path = CELL_JSON) -> int:
+         path: Path = CELL_JSON, reach_zone: tuple = ()) -> int:
     """Open the bench in MuJoCo's interactive viewer.
 
     Needs a display, so this is a DESK command - cell1 is headless.
@@ -1393,9 +1428,15 @@ def view(cell: 'Cell', save_view: bool = True,
     import mujoco
     import mujoco.viewer
 
-    model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
+    model = build_model(cell.bench, cell.shadows, cell.cameras,
+                        cell.arm_pose, reach_zone)
     data = rest_data(model)
     print("opening the MuJoCo viewer - close the window to exit")
+    if reach_zone:
+        print(f"  the GREEN patch on the table is the functional reach "
+              f"zone ({len(reach_zone)} slices)")
+        print("  it is where the JAWS can reach down and grasp, already "
+              "clipped to the tabletop")
     print("  left-drag = orbit, right-drag = pan, scroll = zoom")
     print("  [ / ] cycles cameras (there is a fixed 'bench' one)")
     print("  number keys 0-5 toggle geom groups: "
@@ -1466,7 +1507,14 @@ def view(cell: 'Cell', save_view: bool = True,
                 if attempt == 19:
                     print(f"reload failed: {exc}", file=sys.stderr)
                     return 2
-        model = build_model(cell.bench, cell.shadows, cell.cameras, cell.arm_pose)
+        # The zone rides the reload too. It is derived from the arm's
+        # placement, so a cell.json edit that moves the arm and leaves a
+        # stale zone drawn would be worse than not drawing one at all.
+        if reach_zone:
+            from .reach import zone_tiles           # local: reach imports us
+            reach_zone = zone_tiles(cell)
+        model = build_model(cell.bench, cell.shadows, cell.cameras,
+                            cell.arm_pose, reach_zone)
         data = rest_data(model)
         print("scene changed - reloaded")
         for gap in cell.missing():
@@ -2133,7 +2181,13 @@ def main() -> int:
     if "--exercise" in sys.argv:
         return animate_exercise(cell)
     if "--view" in sys.argv:
-        return view(cell)
+        zone = ()
+        if "--reach" in sys.argv:
+            # Local import: sim.reach imports THIS module for load_cell,
+            # so a module-scope import here would be circular.
+            from .reach import zone_tiles
+            zone = zone_tiles(cell)
+        return view(cell, reach_zone=zone)
     if render_to is not None:
         for p in render(cell.bench, render_to, cameras=cell.cameras,
                         arm=cell.arm_pose):

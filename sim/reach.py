@@ -504,6 +504,44 @@ def can_grasp(ann: Annulus, place: Placement, bx: float, by: float
                    f"r {r:.0f} mm, slew {slew:+.1f} deg", r, slew, surface)
 
 
+def zone_tiles(cell, twin: Twin | None = None, rig: Rig | None = None,
+               step_deg: float = 1.0,
+               sweep_step: float = DEFAULT_STEP_DEG) -> tuple:
+    """The reach zone as drawable tiles, in bench coordinates.
+
+    One thin box per angular slice, each spanning the ring radially and
+    already CLIPPED to where the tabletop actually extends — so what
+    gets drawn is the usable zone, not the theoretical one. A slice with
+    no table under it produces no tile rather than a zero-width one.
+
+    Returns (centre x, centre y, yaw deg, half-radial mm, half-tangential
+    mm) per tile. Plain numbers on purpose: `bench_scene` draws these and
+    must not have to import the twin to do it.
+    """
+    twin = twin or Twin()
+    rig = rig or Rig(twin)
+    ann = annulus(twin, rig, step=sweep_step)
+    place = placement(cell, twin)
+    tiles = []
+    n = max(1, int(round(ann.arc_deg / step_deg)))
+    width = ann.arc_deg / n
+    for k in range(n):
+        slew = ann.slew_min_deg + (k + 0.5) * width
+        az = slew + ann.az_offset_at(ann.r_out_mm)
+        outer = min(ann.r_out_mm, table_limit_mm(place, az, ann.r_out_mm))
+        if outer <= ann.r_in_mm + 0.5:
+            continue                       # nothing usable along this ray
+        mid = (ann.r_in_mm + outer) / 2.0
+        cx, cy = bench_of(place, mid, az)
+        tiles.append((
+            cx, cy, az + place.rot_deg,
+            (outer - ann.r_in_mm) / 2.0,
+            # Half the chord this slice subtends at its mid radius, with
+            # a hair of overlap so consecutive tiles do not show seams.
+            mid * math.tan(math.radians(width / 2.0)) * 1.08))
+    return tuple(tiles)
+
+
 # -------------------------------------------------------------- commands
 
 
