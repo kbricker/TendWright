@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "name": "lift-off-table",
+  "_comment": "RECOVERY, forced on purpose. The arm fell onto the table when torque was cut on a strain stop, so the START pose is already in contact and the gate refuses EVERY trajectory out of it - correctly, and unhelpfully. This is the one move that cannot make it worse: j4 tips the wrist UP, lifting the lowest hand point from -8.3 mm to +25.7 mm, measured in the twin. Nothing else moves. Run with --force, then use a normally-gated clip from there.",
+  "profile": {
+    "speed": 80,
+    "acceleration": 6
+  },
+  "poses": [
+    {
+      "name": "here",
+      "joints": {
+        "1": 0.1,
+        "2": 60.1,
+        "3": 49.4,
+        "4": 32.4,
+        "5": -89.7,
+        "6": 20
+      }
+    },
+    {
+      "name": "lifted",
+      "joints": {
+        "4": 14.9
+      }
+    }
+  ]
+}

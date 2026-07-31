@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "recover-to-rest",
+  "_comment": "Recovery only. The runner gates the APPROACH from wherever the arm is actually sitting, so this is the safe way back from a mid-clip stop: it re-gates the path rather than assuming one. Slow on purpose - the point is to arrive, not to arrive quickly, and a stop happened here already.",
+  "profile": {"speed": 120, "acceleration": 8},
+  "poses": [
+    {"name": "stage", "pose": "STAGE"},
+    {"name": "home",  "pose": "REST"}
+  ]
+}
