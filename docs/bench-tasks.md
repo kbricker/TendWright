@@ -76,17 +76,21 @@ along the table where everything flat is foreshortened. Cost is about
 half the frame rate (4.7 fps against 8.8 at 1080p). That trade belongs to
 **713.10 / 713.11**, not to the stand.
 
-## C. cell1 is 5 commits behind, and camserve is older still
+## C. Restart camserve on cell1
 
-- [ ] `git pull` in `~/TendWright` on cell1 — it is at `c8d2ed8` and is
-      missing **9ba1c6f (the twin's j1 left/right mirror fix)**, the
-      trace fix, the glossary and the camserve health fix. The j1 one
-      matters: anything gating on the twin over there is using the
-      mirrored model.
-- [ ] Restart `camserve` afterwards — the running process is >22 h old
-      and predates `472291a`, so `/status` there still has no `health`
-      field. **Needs Kyle's say-so** (standing rule: no service restarts
-      on cell1 without asking).
+**Not Kyle's job to sync cell1** — files there are mine to manage (Kyle
+2026-07-31: *"we dont git anything on cell1, you manage the files
+there"*). It had drifted 5 commits behind and is now current at
+`45b2690`; it had been missing **9ba1c6f, the twin's j1 left/right
+mirror fix**, so anything gating on the twin over there was using the
+mirrored model.
+
+- [ ] Restart `camserve` — **needs Kyle's say-so** (standing rule: no
+      service restarts on cell1 without asking). The running process is
+      >22 h old and predates `472291a`, so `/status` there still has no
+      `health` field. It is now also running old code against new files
+      on disk, which is fine for anything imported at startup and a
+      genuine hazard for anything imported lazily inside a request.
 
 ## D. Small things noticed while working
 
