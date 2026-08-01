@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "reach-tour",
+  "_comment": "swing-tour with the pose that put the arm on the table replaced by the two the arm can actually HOLD. Kyle 2026-07-31: 'we know the crane phase of the last sim is gtg, the arm did it, so now adjust the sim to render the max capable extension of the arm before gravity overwhelms the servos'.",
+  "_what_changed": "The crane half is UNCHANGED and deliberately so — it ran clean on hardware on 2026-07-31 through edge 7, so it is evidence rather than hope. Only the far half is new:\n\n  swing-tour   ... -> EXTENDED (r 441 mm, 0.864 N.m at j2) -> swing -> home\n  reach-tour   ... -> REACH_PLUMB (r 187 mm, 0.439) -> swing\n                   -> REACH_MAX  (r 285 mm, 0.439) -> swing -> home\n\nEXTENDED needed roughly double the sustainable budget and the strain guard cut torque partway into edge 8. Both new poses sit just inside it, so the far half now demonstrates the working envelope instead of finding its far side by falling through it.",
+  "_two_walls": "There are two far poses because there are two walls, and the difference is worth seeing side by side. REACH_PLUMB is as far as the arm reaches with the JAWS VERTICAL — the safe grasp, and the wall to site work against. REACH_MAX is as far as it reaches at all, ~100 mm further, bought entirely by letting the wrist arrive tilted. Same torque, very different usefulness.",
+  "_stage_far": "`stage_far` is NOT optional and is not a tidiness step. The direct edge plumb_centre -> reach_max flips j4 through 121 deg while the arm is low over the bench, and the gate refuses it with the jaw 87.2 mm THROUGH the table — the same failure shape as the REST<->CRANE edges that STAGE exists for.\n\nIt also fixes a second problem that only shows up once torque is being tracked: GETTING to REACH_MAX costs more than HOLDING it. Every staging pose in the obvious region (arm forward, wrist flipping) peaked between 0.446 and 0.552 N.m on the path, against a 0.446 budget — so the tour would have tripped the guard in transit while every named pose in it sat comfortably inside the envelope. Folding the elbow up and leaning the shoulder BACK (j2 -10, j3 130) keeps the mass near the base through the flip, and the worst torque anywhere on the two legs drops to 0.439 — the destination's own cost, i.e. the transit adds nothing.\n\nSearched, not guessed: 54 routes satisfy both legs, and this is one of the cheapest.",
+  "_slew": "The swing is j1 only. Everything else is carry-forward, so a swing entry names ONE joint and the posture underneath it cannot drift between the -30 and the +30.",
+  "_wrist": "j5 rolls 90 deg on the way out and back on the way home, as its own step, with the arm staged and clear. REST is frame 0 — jaws side by side, the orientation the arm parks in. The plumb poses want them front-to-back, which is frame -90.",
+  "profile": {"speed": 200, "acceleration": 10},
+  "poses": [
+    {"name": "rest",         "pose": "REST"},
+    {"name": "stage",        "pose": "STAGE"},
+    {"name": "wrist_out",    "joints": {"5": -90}},
+
+    {"name": "tuck",         "pose": "TUCK"},
+    {"name": "tuck_left",    "joints": {"1": -30}},
+    {"name": "tuck_right",   "joints": {"1": 30}},
+    {"name": "tuck_centre",  "joints": {"1": 0}},
+
+    {"name": "stage_mid",    "joints": {"1": 7.2, "2": -86.2, "3": 90, "4": 69.8, "6": 10}},
+
+    {"name": "plumb_max",    "pose": "REACH_PLUMB"},
+    {"name": "plumb_left",   "joints": {"1": -30}},
+    {"name": "plumb_right",  "joints": {"1": 30}},
+    {"name": "plumb_centre", "joints": {"1": 0}},
+
+    {"name": "stage_far",    "joints": {"2": -10, "3": 130, "4": -40}},
+    {"name": "reach_max",    "pose": "REACH_MAX"},
+    {"name": "reach_left",   "joints": {"1": -30}},
+    {"name": "reach_right",  "joints": {"1": 30}},
+    {"name": "reach_centre", "joints": {"1": 0}},
+
+    {"name": "unstage_far",  "joints": {"2": -10, "3": 130, "4": -40}},
+    {"name": "stage_home",   "joints": {"1": 7.2, "2": -86.2, "3": 90, "4": 69.8, "6": 10}},
+    {"name": "wrist_home",   "joints": {"5": 0}},
+    {"name": "home",         "pose": "REST"}
+  ]
+}

@@ -124,7 +124,7 @@ from hardware.errors import BenchError
 
 from .bench_scene import load_cell
 from .rig import Rig
-from .twin import Twin
+from .twin import JOINT_MAPS, Twin
 
 # The band a jaw must sit in to count as able to grasp something resting
 # on the table. Not zero: a jaw ON the table is a table strike, and a
@@ -203,6 +203,60 @@ def _hand_geoms(model) -> list[int]:
 
 
 GRIP_SITE = "gripperframe"
+
+# The arm's own base body. Anything inside its footprint is a place the
+# robot already is.
+BASE_BODY = "base"
+
+
+def base_footprint_mm(twin: Twin) -> float:
+    """How far the arm's own base sticks out from the j1 axis, in mm.
+
+    Kyle spotted this by eye in the viewer, 2026-07-31 — "there is a dead
+    zone in the middle of the range reach". The hole is real and this
+    is the other half of the answer: the zone was ALSO being drawn ON
+    TOP OF THE ROBOT. 205 tiles spanned 48-83 mm against a base that
+    reaches 74.4, so three quarters of the innermost band was painted
+    over the arm's own plastic and read as usable table.
+
+    EVERY GEOM ON THE BODY COUNTS, INCLUDING VISUAL-ONLY ONES, and that
+    is the opposite of what the collision gate does. The gate ignores
+    `contype=0` geoms because they cannot produce a contact — correct
+    for "will the arm hit itself". Here the question is "can a part
+    SIT here", and a lump of plastic occupies space whether or not
+    MuJoCo will collide with it. This model's base is entirely
+    non-colliding, so a footprint built from collidable geoms alone
+    would be exactly zero and the bug would look fixed.
+    """
+    bid = mujoco.mj_name2id(twin.model, mujoco.mjtObj.mjOBJ_BODY, BASE_BODY)
+    if bid < 0:
+        raise BenchError(
+            f"the model has no `{BASE_BODY}` body, so the arm's own "
+            f"footprint cannot be measured",
+            "the vendored model changed; find the body that replaced it "
+            "rather than assuming the arm occupies nothing")
+    origin = twin.data.xanchor[
+        mujoco.mj_name2id(twin.model, mujoco.mjtObj.mjOBJ_JOINT,
+                          JOINT_MAPS[1].model_joint)]
+    out = 0.0
+    for g in range(twin.model.ngeom):
+        if twin.model.geom_bodyid[g] != bid:
+            continue
+        did = twin.model.geom_dataid[g]
+        if did < 0:                       # primitive: use its bound
+            out = max(out, float(
+                np.hypot(twin.data.geom_xpos[g][0] - origin[0],
+                         twin.data.geom_xpos[g][1] - origin[1])
+                + twin.model.geom_rbound[g]) * 1000.0)
+            continue
+        adr = twin.model.mesh_vertadr[did]
+        n = twin.model.mesh_vertnum[did]
+        v = twin.model.mesh_vert[adr:adr + n].reshape(-1, 3)
+        w = (v @ twin.data.geom_xmat[g].reshape(3, 3).T) \
+            + twin.data.geom_xpos[g]
+        out = max(out, float(np.hypot(w[:, 0] - origin[0],
+                                      w[:, 1] - origin[1]).max()) * 1000.0)
+    return out
 
 
 def _grip_mm(data, model, origin) -> tuple[float, float, float]:
@@ -630,7 +684,8 @@ def can_grasp(ann: Annulus, place: Placement, bx: float, by: float
 
 def zone_tiles(cell, twin: Twin | None = None, rig: Rig | None = None,
                step_deg: float = 1.0,
-               sweep_step: float = DEFAULT_STEP_DEG) -> tuple:
+               sweep_step: float = DEFAULT_STEP_DEG,
+               hold_mm: float | None = None) -> tuple:
     """The reach zone as drawable tiles, in bench coordinates.
 
     One thin box per angular slice, each spanning the ring radially and
@@ -656,13 +711,38 @@ def zone_tiles(cell, twin: Twin | None = None, rig: Rig | None = None,
                                  (ann.slew_min_deg + ann.slew_max_deg) / 2.0,
                                  step=sweep_step, plumb=False)
               if not s.blocked]
-    rings = [("plumb", ann.r_in_mm, ann.r_out_mm)]
+    # THE TORQUE SPLIT, when a caller supplies the limit. `hold_mm` is
+    # the furthest radius the arm can still HOLD against its own weight
+    # (sim.hold), which is a different and smaller number than the one
+    # this module computes — the first hardware run reached a pose this
+    # module calls perfectly clear and fell out of it. The bands are
+    # drawn separately so the difference is visible rather than being a
+    # number in a report nobody reads at siting time.
+    #
+    # The limit is PASSED IN rather than computed. `sim.hold` imports
+    # this module, so reaching back for it here would close a cycle;
+    # more to the point, geometry and torque are separate claims and
+    # this module should not quietly start making the second one.
+    if hold_mm is not None and ann.r_in_mm < hold_mm < ann.r_out_mm:
+        rings = [("hold", ann.r_in_mm, hold_mm),
+                 ("strain", hold_mm, ann.r_out_mm)]
+    else:
+        rings = [("plumb", ann.r_in_mm, ann.r_out_mm)]
     if tilted:
         t_in, t_out = min(s.r_mm for s in tilted), max(s.r_mm for s in tilted)
         if t_out > ann.r_out_mm + 1.0:
             rings.append(("tilt", ann.r_out_mm, t_out))
         if t_in < ann.r_in_mm - 1.0:
             rings.append(("tilt", t_in, ann.r_in_mm))
+
+    # NOTHING IS DRAWN OVER THE ARM'S OWN BASE. The tilt ring reaches
+    # inside the footprint — the grip point really can be put there,
+    # tilted, which is why the sweep admits it — but a part cannot SIT
+    # there because the robot is there. Drawing it made 205 tiles of
+    # solid-looking workspace out of the arm's own plastic.
+    foot = base_footprint_mm(twin)
+    rings = [(kind, max(lo, foot), hi) for kind, lo, hi in rings
+             if hi > foot + 0.5]
 
     tiles = []
     n = max(1, int(round(ann.arc_deg / step_deg)))

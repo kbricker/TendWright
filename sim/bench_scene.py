@@ -807,6 +807,29 @@ def _add_prism(spec, mujoco, name: str, corners, rgba, group) -> None:
         rgba=rgba, group=group)
 
 
+def _hold_limit_mm():
+    """The furthest radius the arm can still HOLD, or None.
+
+    Local import on purpose: `sim.hold` imports `sim.reach`, which
+    imports THIS module for `load_cell`, so a module-scope import would
+    close the cycle. Returns None rather than raising — a viewer that
+    refuses to open because a torque model could not be built would be
+    worse than one that draws the geometric zone undivided, and the
+    colour key says which it drew.
+    """
+    try:
+        from .hold import envelope
+        from .reach import Rig, Twin
+        twin = Twin()
+        env = envelope(twin, Rig(twin))
+        limit = env.r_hold_mm[1]
+        return None if limit != limit else limit      # NaN -> None
+    except Exception as exc:                          # noqa: BLE001
+        print(f"note: torque limit unavailable ({exc}); drawing the "
+              f"geometric zone undivided", file=sys.stderr)
+        return None
+
+
 def _add_reach_zone(spec, scene: Scene, tiles) -> None:
     """Lay the arm's functional reach zone on the tabletop.
 
@@ -834,8 +857,30 @@ def _add_reach_zone(spec, scene: Scene, tiles) -> None:
     # overlay sat on top of both and read as a lighting artefact instead
     # of an annotation. Blue is the one hue nothing else in this scene
     # uses.
-    colour = {"plumb": [0.20, 0.85, 0.35, 0.34],
+    # FOUR BANDS NOW, because "can reach" and "can hold" turned out to be
+    # different questions and the first hardware run is what proved it:
+    # the arm reached a pose this scene drew as plainly green, j2 hit the
+    # strain guard's peak and it fell (2026-07-31, plan 716.6).
+    #
+    #   GREEN  hold    plumb AND the servos can hold it — the working area
+    #   RED    strain  plumb, reachable, but gravity wins. NOT a place to
+    #                  put a worksite, and the colour has to say so
+    #   GREEN  plumb   the undivided ring, when no torque limit was given
+    #   BLUE   tilt    the extra reach when the wrist may arrive tilted
+    #
+    # Blue rather than amber for the tilt ring (Kyle 2026-07-31: "that
+    # yellow looks terrible"): the arm is yellow and the tabletop tan, so
+    # an amber overlay sat on top of both and read as a lighting artefact.
+    # Red is safe to add here for the same reason blue was — nothing else
+    # in the scene is red, so it cannot be mistaken for shading.
+    colour = {"hold": [0.20, 0.85, 0.35, 0.38],
+              "strain": [0.90, 0.20, 0.15, 0.34],
+              "plumb": [0.20, 0.85, 0.35, 0.34],
               "tilt": [0.15, 0.45, 0.95, 0.30]}
+    # Stacked so the more specific claim wins where they overlap; the
+    # holdable band sits highest because it is the one to read.
+    height = {"hold": 0.0020, "strain": 0.0015,
+              "plumb": 0.0015, "tilt": 0.0010}
     for i, t in enumerate(tiles):
         cx, cy, yaw, half_r, half_t = t[:5]
         kind = t[5] if len(t) > 5 else "plumb"
@@ -843,7 +888,7 @@ def _add_reach_zone(spec, scene: Scene, tiles) -> None:
         spec.worldbody.add_geom(
             name=f"reach_{i:04d}", type=mujoco.mjtGeom.mjGEOM_BOX,
             size=[half_r / 1000.0, half_t / 1000.0, 0.0005],
-            pos=[cx * m, cy * m, 0.0015 if kind == "plumb" else 0.0010],
+            pos=[cx * m, cy * m, height.get(kind, 0.0015)],
             quat=[math.cos(half), 0.0, 0.0, math.sin(half)],
             rgba=colour.get(kind, colour["plumb"]),
             contype=0, conaffinity=0, group=GROUP_TABLE)
@@ -1526,7 +1571,7 @@ def view(cell: 'Cell', save_view: bool = True,
         # stale zone drawn would be worse than not drawing one at all.
         if reach_zone:
             from .reach import zone_tiles           # local: reach imports us
-            reach_zone = zone_tiles(cell)
+            reach_zone = zone_tiles(cell, hold_mm=_hold_limit_mm())
         model = build_model(cell.bench, cell.shadows, cell.cameras,
                             cell.arm_pose, reach_zone)
         data = rest_data(model)
@@ -2266,7 +2311,7 @@ def main() -> int:
         zone = ()
         if "--reach" in sys.argv:
             from .reach import zone_tiles
-            zone = zone_tiles(cell)
+            zone = zone_tiles(cell, hold_mm=_hold_limit_mm())
         try:
             return animate_clip(cell, Path(sys.argv[i + 1]), reach_zone=zone)
         except BenchError as exc:
@@ -2280,7 +2325,7 @@ def main() -> int:
             # Local import: sim.reach imports THIS module for load_cell,
             # so a module-scope import here would be circular.
             from .reach import zone_tiles
-            zone = zone_tiles(cell)
+            zone = zone_tiles(cell, hold_mm=_hold_limit_mm())
         return view(cell, reach_zone=zone)
     if render_to is not None:
         for p in render(cell.bench, render_to, cameras=cell.cameras,
