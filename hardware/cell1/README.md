@@ -70,6 +70,11 @@ uv run python -m hardware.bench.wake cell1     # expect: up in ~40s
 values re-checked.** A unit that runs once at install time and a unit
 that runs at every boot look identical the day you install them.
 
+**Proven 2026-08-06:** from full power-off, `wake cell1` from the desk
+reached sshd in 24 s, with `wol-enp4s0.service` reading `active` after
+boot. The wake→shutdown→wake cycle is now routine — cell1 stays off
+when idle.
+
 ## Memory budget
 
 8192 MB installed, and only 5.23 GiB reaches the OS. Where the rest goes:

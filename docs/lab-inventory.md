@@ -22,6 +22,7 @@ goes in the repo. Addresses, MACs, wiring and calibration qualify.
 | BIOS | AMI 5.14, dated 2022-04-06. **No update exists** — Minisforum publishes none and `fwupdmgr get-updates` reports "No updatable devices" |
 | Network | `enp4s0`, Realtek RTL8111/8168, MAC `1c:83:41:30:ec:2d`, **192.168.86.202** |
 | Access | `ssh cell1`, repo at `~/TendWright`, `uv` at `~/.local/bin/uv` |
+| Power | off when idle; wake from the desk with `uv run python -m hardware.bench.wake cell1` (~24 s to sshd), shut down over ssh with the scoped sudoers grant |
 | Display | **Not headless.** Boots to `graphical.target`; Kyle uses the GNOME desktop at the bench. ~280 MB resident, and it is not to be "reclaimed" |
 
 Two more identical UM350s are unimaged spares (future MES box). They are the
@@ -132,6 +133,7 @@ it a systemd unit is the first item on #744.
 | Start/stop own processes (soaks, samplers) | always | none |
 | Restart camserve | ask Kyle first | standing rule |
 | Shut cell1 down | **yes** — `sudo -n /usr/sbin/shutdown -h now` | scoped NOPASSWD, see below |
+| Wake cell1 up | **yes** — `uv run python -m hardware.bench.wake cell1` from the desk | none. WoL armed by BIOS + `wol-enp4s0.service`; proven from full power-off 2026-08-06, sshd in 24 s. See `hardware/cell1/README.md` |
 | Switch a normal outlet / the bench light | **yes** | none |
 | Switch a guarded outlet ON (`Arm`, `psu`, `12v`, …) | yes | `--confirm <alias>`. Works from the desk |
 | Switch a guarded outlet OFF | yes | arm must read within `REST_TOL_TICKS` of rest, verified from the encoders; **must be run on cell1** (the desk has no bus and is refused); `--force` overrides |
