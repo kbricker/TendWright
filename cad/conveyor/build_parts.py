@@ -78,7 +78,8 @@ straight_len    = 120.0   # straight module
 corner_len      = 70.0    # corner module — same mechanism, built short
 frame_gap       = 1.5     # module face to module face (was 4.0)
 
-motor_shaft_d   = 3.0     # N20
+motor_shaft_d   = 3.0     # N20 / Pololu micro metal gearmotor
+motor_shaft_len = 9.0     # measured spec, NOT 10 — it sets the D-bore engagement
 motor_shaft_flat= 2.5     # across the D
 motor_nose_d    = 12.0
 motor_bolt_pitch= 10.0
@@ -216,7 +217,12 @@ def make_roller(driven=False):
 
     # Bore is the shape of the SHAFT: a Ø3 cylinder with one side flattened to
     # 2.5 across. Build the shaft, then subtract it.
-    depth = 8.0
+    #
+    # Depth is what the shaft can actually REACH, not a round number: it crosses
+    # the motor-side plate and the side gap before it meets the roller, so
+    # engagement = 9 - (wall + side_gap) = 5 mm. Boring deeper than that would
+    # overstate the bearing area every strength check is computed from.
+    depth = motor_shaft_len - (wall + side_gap)
     shaft = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth, Vector(0, -0.5, 0), Vector(0, 1, 0))
     beyond = motor_shaft_flat - motor_shaft_d / 2.0
     sliver = Part.makeBox(motor_shaft_d + 2, depth + 1, motor_shaft_d,

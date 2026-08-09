@@ -11,36 +11,53 @@
 
 ## 1 · The motor
 
-> **CHANGED 2026-08-09 — buy ~250 RPM, not 100 RPM.** The drive roller moved from
-> Ø25 to Ø10 (see below), and belt speed is π × roller × RPM. A 100 RPM motor on a
-> Ø10 roller gives **31 mm/s**, not 131. Nothing had been ordered when this changed.
+> **CORRECTED 2026-08-09 (twice).** First the roller went Ø25 → Ø10, which changes the
+> speed you need. Then I checked a real datasheet and found I had conflated gear RATIO
+> with output RPM — a "250:1" gearmotor runs at **130 RPM**, not 250. Buy on the RPM
+> column below, never on the ratio.
 
-**12 V N20 metal gearmotor, ~250 RPM, 3 mm D-shaft.** Anything **200–400 RPM**
-works; buy the speed you want as the *maximum*, because PWM only throttles downward.
+**12 V micro metal gearmotor (N20 class), ~330 RPM, 3 mm D-shaft.**
+Reference part: **Pololu #3041, 100:1 HPCB 12 V** — 330 RPM free-run, 1.3 kg·cm stall.
 
-**Torque is not the constraint, and the smaller roller improved it.** Shaft torque is
-belt pull × roller radius, so halving the radius halves the load on the D-bore:
+**Pick the ratio from measured data, not by name.** Pololu publishes the whole table:
 
-| | |
-|---|---|
-| Belt + a 50 g part, normal force | ~0.6 N |
-| × µ ≈ 0.35, printed belt on printed slider bed | ~0.21 N |
-| × ~3 for roller, bearing and tracking drag | **~1 N of belt pull** |
-| At a Ø10 mm roller → 1 N × 0.005 m | **0.005 N·m ≈ 0.05 kg·cm** |
-| A 12 V N20 @ 250 RPM delivers | ~0.5–0.8 kg·cm |
-| Margin | **10–16×** |
+| ratio | free-run @ 12 V | stall torque | belt speed at Ø10 |
+|---|---|---|---|
+| 75:1 | 450 RPM | 1.0 kg·cm | 236 mm/s |
+| **100:1** ← | **330 RPM** | **1.3 kg·cm** | **173 mm/s** |
+| 150:1 | 220 RPM | 1.8 kg·cm | 115 mm/s |
+| 250:1 | 130 RPM | 3.0 kg·cm | 68 mm/s |
 
-**Speed is what actually decides it.** A Ø10 roller advances 31.4 mm per turn:
+100:1 gives the most usable range — 173 mm/s at full, ~35 mm/s at 20 % duty — and PWM
+only throttles downward, so buy the top speed you want.
 
-| Motor | Top belt speed | At 20% duty |
-|---|---|---|
-| 150 RPM | 79 mm/s | 16 mm/s |
-| **250 RPM** ← | **131 mm/s** | **26 mm/s** |
-| 400 RPM | 209 mm/s | 42 mm/s |
+**A LOW ratio is right twice over, and the second reason is the important one.**
+Torque needed is 0.05 kg·cm, so every ratio here has ≥20× margin and torque is not the
+selector. But stall torque is what a **jammed part** puts through the printed D-bore,
+and that scales with ratio:
 
-250 RPM gives the most usable range: brisk at full, still controllable at a crawl.
+| motor | stall torque | D-bore stress | margin vs 40 MPa |
+|---|---|---|---|
+| 100:1 | 1.3 kg·cm | 11.4 MPa | **3.5×** |
+| gearbox instantaneous limit | 2.0 kg·cm | 17.5 MPa | 2.3× |
+| 250:1 | 3.0 kg·cm | 26.3 MPa | **1.5× — too tight** |
 
-**Buy one or two spares.** N20s are cheap and the gearboxes are the weak point.
+So a high-ratio motor would have been wrong on both counts: too slow, and marginal on
+the one printed part carrying drive torque.
+
+**Shaft engagement is 5 mm, not 8.** The shaft is **9 mm** long and crosses the 3 mm
+side plate plus 1 mm clearance before it reaches the roller. `build_parts.py` now
+computes the bore depth from that rather than assuming a round number.
+
+⚠ **Mounting — check this before ordering.** The bracket cuts the **generic N20 face
+pattern**: a Ø12 boss clearance plus two M2 holes at 10 mm pitch. Cheap N20s on
+Amazon/AliExpress have it. **Pololu's micro metal gearmotors mount by clamping the
+10×12 mm body instead** — which is why Pololu sells brackets for them. Either buy
+generic N20s (fits as designed) or buy Pololu and change `make_bracket`'s motor
+pattern to a body clamp. Pololu is the one with published speed/torque data, which is
+why it is the reference part above.
+
+**Buy one or two spares.** The gearboxes are the weak point.
 
 ### Why Ø10 rollers at BOTH ends, and why the drive is on the discharge end
 
@@ -176,7 +193,7 @@ is 8 chances to get it wrong. Only worth it if TPU turns out to be a problem.
 
 | Item | Qty | Notes |
 |---|---|---|
-| N20 gearmotor, 12 V, **250 RPM**, 3 mm D-shaft | 8 (+2 spare) | §1 — NOT 100 RPM, the roller is Ø10 now |
+| Gearmotor, 12 V, **~330 RPM** (100:1), 3 mm D-shaft | 8 (+2 spare) | §1 — buy on RPM, not gear ratio. Check the mounting pattern |
 | TB6612FNG dual motor driver breakout | 4 | 2 channels each. **4.5–13.5 V** — covers 12 V |
 | Raspberry Pi **Pico 2** (RP2350) | 1 | 24 PWM channels vs the RP2040's 16 — see below |
 | 12 V PSU, 5 A, barrel jack | 1 | Size from *measured* stall current, not the datasheet |
