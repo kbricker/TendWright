@@ -79,7 +79,11 @@ corner_len      = 70.0    # corner module — same mechanism, built short
 frame_gap       = 1.5     # module face to module face (was 4.0)
 
 motor_shaft_d   = 3.0     # N20 / Pololu micro metal gearmotor
-motor_shaft_len = 9.0     # measured spec, NOT 10 — it sets the D-bore engagement
+motor_shaft_len = 9.0     # Pololu spec; generic GA12-N20 is 10. Bore is cut deeper
+                          # than either so the shaft can never bottom out and shove
+                          # the roller into the far plate — engagement is whatever
+                          # the shaft reaches, and that is what the stress check uses.
+motor_bore_depth = 8.0
 motor_shaft_flat= 2.5     # across the D
 motor_nose_d    = 12.0
 motor_bolt_pitch= 10.0
@@ -134,6 +138,12 @@ def side_entry_inset():
 
 def end_entry_inset():
     return nose_edge
+
+
+def shaft_engagement():
+    # How much D-shaft is actually inside the roller: it crosses the motor-side
+    # plate and the side gap first. THIS is the bearing length, not the bore depth.
+    return min(motor_shaft_len - (wall + side_gap), motor_bore_depth)
 
 
 def unsupported_span(kind):
@@ -218,11 +228,11 @@ def make_roller(driven=False):
     # Bore is the shape of the SHAFT: a Ø3 cylinder with one side flattened to
     # 2.5 across. Build the shaft, then subtract it.
     #
-    # Depth is what the shaft can actually REACH, not a round number: it crosses
-    # the motor-side plate and the side gap before it meets the roller, so
-    # engagement = 9 - (wall + side_gap) = 5 mm. Boring deeper than that would
-    # overstate the bearing area every strength check is computed from.
-    depth = motor_shaft_len - (wall + side_gap)
+    # Bore DEEPER than any shaft can reach. Cutting it to the exact engagement
+    # would let a 10 mm generic shaft bottom out and jam the roller against the
+    # far plate. Engagement (below) is shaft-limited and is the number the
+    # bearing-stress check uses — the two are deliberately different.
+    depth = motor_bore_depth
     shaft = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth, Vector(0, -0.5, 0), Vector(0, 1, 0))
     beyond = motor_shaft_flat - motor_shaft_d / 2.0
     sliver = Part.makeBox(motor_shaft_d + 2, depth + 1, motor_shaft_d,
@@ -459,6 +469,8 @@ geom = {
                "offset_x": corner_offset_x},
     "straight2": {"offset_x": s2_offset_x, "offset_y": s2_offset_y},
     "frame_gap": frame_gap,
+    "motor_shaft_len": motor_shaft_len,
+    "shaft_engagement": shaft_engagement(),
     "joint_a_side_entry": unsupported_span("side"),
     "joint_b_end_entry": unsupported_span("end"),
 }
