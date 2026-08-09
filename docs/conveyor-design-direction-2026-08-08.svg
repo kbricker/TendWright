@@ -1,0 +1,290 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1560" width="1400" height="1560" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/>
+    </marker>
+    <marker id="ahw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffffff"/>
+    </marker>
+    <marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+    <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#777"/>
+    </marker>
+    <marker id="dot" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="6" markerHeight="6">
+      <circle cx="3" cy="3" r="2.5" fill="#777"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="1560" fill="#faf9f6"/>
+
+  <!-- ============ TITLE ============ -->
+  <text x="40" y="46" font-size="30" font-weight="700" fill="#1a1a1a">Mini modular conveyor — design direction</text>
+  <text x="40" y="72" font-size="16" fill="#666">Plan #835 (v0) · #840 (v1) · TendWright/Build · drawn 2026-08-08 for Kyle to argue with. Not to scale.</text>
+  <line x1="40" y1="84" x2="1360" y2="84" stroke="#d8d5cc" stroke-width="2"/>
+
+  <!-- ============ PANEL A ============ -->
+  <rect x="40" y="98" width="1320" height="378" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="130" font-size="20" font-weight="600" fill="#1a1a1a">A · v0 layout, top view — three independently driven modules, an open line</text>
+
+  <!-- straight 1 -->
+  <rect x="120" y="330" width="340" height="80" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <!-- link hatching: travel +X so links run across Y -->
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="140" y1="332" x2="140" y2="408"/><line x1="160" y1="332" x2="160" y2="408"/>
+    <line x1="180" y1="332" x2="180" y2="408"/><line x1="200" y1="332" x2="200" y2="408"/>
+    <line x1="220" y1="332" x2="220" y2="408"/><line x1="240" y1="332" x2="240" y2="408"/>
+    <line x1="260" y1="332" x2="260" y2="408"/><line x1="280" y1="332" x2="280" y2="408"/>
+    <line x1="300" y1="332" x2="300" y2="408"/><line x1="320" y1="332" x2="320" y2="408"/>
+    <line x1="340" y1="332" x2="340" y2="408"/><line x1="360" y1="332" x2="360" y2="408"/>
+    <line x1="380" y1="332" x2="380" y2="408"/><line x1="400" y1="332" x2="400" y2="408"/>
+    <line x1="420" y1="332" x2="420" y2="408"/><line x1="440" y1="332" x2="440" y2="408"/>
+  </g>
+  <!-- corner -->
+  <rect x="472" y="330" width="80" height="80" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="474" y1="350" x2="550" y2="350"/><line x1="474" y1="370" x2="550" y2="370"/>
+    <line x1="474" y1="390" x2="550" y2="390"/>
+  </g>
+  <!-- straight 2 -->
+  <rect x="472" y="178" width="80" height="140" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="474" y1="198" x2="550" y2="198"/><line x1="474" y1="218" x2="550" y2="218"/>
+    <line x1="474" y1="238" x2="550" y2="238"/><line x1="474" y1="258" x2="550" y2="258"/>
+    <line x1="474" y1="278" x2="550" y2="278"/><line x1="474" y1="298" x2="550" y2="298"/>
+  </g>
+
+  <!-- guide rail -->
+  <rect x="556" y="326" width="9" height="88" fill="#2b6cb0"/>
+
+  <!-- travel arrows -->
+  <line x1="230" y1="370" x2="410" y2="370" stroke="#1a1a1a" stroke-width="3.5" marker-end="url(#ah)"/>
+  <line x1="512" y1="398" x2="512" y2="344" stroke="#1a1a1a" stroke-width="3.5" marker-end="url(#ah)"/>
+  <line x1="512" y1="304" x2="512" y2="212" stroke="#1a1a1a" stroke-width="3.5" marker-end="url(#ah)"/>
+
+  <!-- the blank -->
+  <rect x="163" y="350" width="40" height="40" fill="#c8452b" stroke="#8e2f1d" stroke-width="2"/>
+
+  <!-- motors -->
+  <rect x="414" y="418" width="48" height="30" rx="4" fill="#3a3a3a"/>
+  <text x="438" y="438" font-size="14" fill="#fff" text-anchor="middle" font-weight="600">M1</text>
+  <rect x="574" y="352" width="48" height="30" rx="4" fill="#3a3a3a"/>
+  <text x="598" y="372" font-size="14" fill="#fff" text-anchor="middle" font-weight="600">M2</text>
+  <rect x="574" y="192" width="48" height="30" rx="4" fill="#3a3a3a"/>
+  <text x="598" y="212" font-size="14" fill="#fff" text-anchor="middle" font-weight="600">M3</text>
+
+  <!-- annotations -->
+  <g font-size="15" fill="#333">
+    <line x1="258" y1="222" x2="464" y2="350" stroke="#777" stroke-width="1.3" marker-start="url(#dot)"/>
+    <text x="140" y="218" font-weight="700" fill="#c0392b">① the handoff gap</text>
+    <text x="140" y="238">the one thing v0 exists to prove</text>
+
+    <line x1="330" y1="272" x2="486" y2="336" stroke="#777" stroke-width="1.3" marker-start="url(#dot)"/>
+    <text x="140" y="268" font-weight="700">② corner belt runs ⊥ to the feed</text>
+    <text x="140" y="288">a corner is just a short segment, turned</text>
+
+    <line x1="392" y1="308" x2="556" y2="368" stroke="#777" stroke-width="1.3" marker-start="url(#dot)"/>
+    <text x="140" y="304" font-weight="700" fill="#2b6cb0">③ guide rail arrests the +X momentum</text>
+
+    <line x1="700" y1="368" x2="626" y2="368" stroke="#777" stroke-width="1.3" marker-end="url(#ahg)"/>
+    <text x="712" y="358" font-size="15" font-weight="700">3 × N20 12 V gearmotors</text>
+    <text x="712" y="378" font-size="15">one TB6612FNG pair + a Pico drives all three</text>
+    <text x="712" y="398" font-size="15" fill="#777">(not the DRV8833 — it tops out at 10.8 V)</text>
+
+    <line x1="700" y1="243" x2="630" y2="210" stroke="#777" stroke-width="1.3" marker-end="url(#ahg)"/>
+    <text x="712" y="238" font-size="15">every module is a complete little conveyor:</text>
+    <text x="712" y="258" font-size="15">its own belt, its own motor, its own speed</text>
+
+    <line x1="183" y1="440" x2="183" y2="396" stroke="#777" stroke-width="1.3" marker-end="url(#ahg)"/>
+    <text x="183" y="458" font-size="15" text-anchor="middle">40×40×20 mm blank (we already have these)</text>
+  </g>
+
+  <!-- ============ PANEL B ============ -->
+  <rect x="40" y="492" width="650" height="418" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="524" font-size="20" font-weight="600" fill="#1a1a1a">B · the corner, close up</text>
+  <text x="62" y="546" font-size="14.5" fill="#777">why ⊥ transfer beats a curved belt at this scale</text>
+
+  <!-- incoming -->
+  <rect x="86" y="660" width="196" height="150" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="106" y1="662" x2="106" y2="808"/><line x1="126" y1="662" x2="126" y2="808"/>
+    <line x1="146" y1="662" x2="146" y2="808"/><line x1="166" y1="662" x2="166" y2="808"/>
+    <line x1="186" y1="662" x2="186" y2="808"/><line x1="206" y1="662" x2="206" y2="808"/>
+    <line x1="226" y1="662" x2="226" y2="808"/><line x1="246" y1="662" x2="246" y2="808"/>
+    <line x1="266" y1="662" x2="266" y2="808"/>
+  </g>
+  <!-- corner -->
+  <rect x="294" y="660" width="150" height="150" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="296" y1="680" x2="442" y2="680"/><line x1="296" y1="700" x2="442" y2="700"/>
+    <line x1="296" y1="720" x2="442" y2="720"/><line x1="296" y1="740" x2="442" y2="740"/>
+    <line x1="296" y1="760" x2="442" y2="760"/><line x1="296" y1="780" x2="442" y2="780"/>
+  </g>
+  <!-- outgoing -->
+  <rect x="294" y="576" width="150" height="72" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.5"/>
+  <g stroke="#b3afa3" stroke-width="1.2">
+    <line x1="296" y1="596" x2="442" y2="596"/><line x1="296" y1="616" x2="442" y2="616"/>
+    <line x1="296" y1="636" x2="442" y2="636"/>
+  </g>
+  <!-- guide rail -->
+  <rect x="450" y="656" width="10" height="158" fill="#2b6cb0"/>
+  <text x="474" y="700" font-size="14" fill="#2b6cb0" font-weight="700">guide</text>
+  <text x="474" y="717" font-size="14" fill="#2b6cb0" font-weight="700">rail</text>
+
+  <!-- part ghosts -->
+  <rect x="150" y="710" width="50" height="50" fill="none" stroke="#c8452b" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="175" y="742" font-size="17" fill="#c8452b" text-anchor="middle" font-weight="700">1</text>
+  <rect x="344" y="710" width="50" height="50" fill="#c8452b" stroke="#8e2f1d" stroke-width="2"/>
+  <text x="369" y="742" font-size="17" fill="#fff" text-anchor="middle" font-weight="700">2</text>
+  <rect x="344" y="586" width="50" height="50" fill="none" stroke="#c8452b" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="369" y="618" font-size="17" fill="#c8452b" text-anchor="middle" font-weight="700">3</text>
+
+  <!-- path -->
+  <path d="M 206 735 L 330 735" stroke="#c0392b" stroke-width="3" fill="none" marker-end="url(#ahr)"/>
+  <path d="M 369 704 L 369 650" stroke="#c0392b" stroke-width="3" fill="none" marker-end="url(#ahr)"/>
+
+  <!-- gap callout -->
+  <line x1="282" y1="840" x2="294" y2="840" stroke="#c0392b" stroke-width="2.5"/>
+  <line x1="282" y1="832" x2="282" y2="848" stroke="#c0392b" stroke-width="2.5"/>
+  <line x1="294" y1="832" x2="294" y2="848" stroke="#c0392b" stroke-width="2.5"/>
+  <text x="288" y="872" font-size="14.5" fill="#c0392b" text-anchor="middle" font-weight="700">the gap</text>
+
+  <g font-size="14.5" fill="#333">
+    <text x="86" y="885" font-weight="700">Belts run perpendicular —</text>
+    <text x="86" y="903">see the link hatching change direction.</text>
+  </g>
+
+  <!-- ============ PANEL C ============ -->
+  <rect x="710" y="492" width="650" height="418" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="732" y="524" font-size="20" font-weight="600" fill="#1a1a1a">C · one module, side section</text>
+  <text x="732" y="546" font-size="14.5" fill="#777">identical for a straight and a corner — only the length changes</text>
+
+  <!-- frame -->
+  <rect x="784" y="606" width="512" height="216" rx="10" fill="none" stroke="#c9c5ba" stroke-width="2"/>
+  <!-- sprockets -->
+  <circle cx="862" cy="714" r="52" fill="#eeece5" stroke="#1a1a1a" stroke-width="2.5"/>
+  <circle cx="862" cy="714" r="9" fill="#3a3a3a"/>
+  <circle cx="1218" cy="714" r="52" fill="#eeece5" stroke="#1a1a1a" stroke-width="2.5"/>
+  <circle cx="1218" cy="714" r="9" fill="#3a3a3a"/>
+  <!-- sprocket teeth hint -->
+  <g stroke="#1a1a1a" stroke-width="2">
+    <line x1="862" y1="662" x2="862" y2="676"/><line x1="914" y1="714" x2="900" y2="714"/>
+    <line x1="862" y1="766" x2="862" y2="752"/><line x1="810" y1="714" x2="824" y2="714"/>
+    <line x1="1218" y1="662" x2="1218" y2="676"/><line x1="1270" y1="714" x2="1256" y2="714"/>
+    <line x1="1218" y1="766" x2="1218" y2="752"/><line x1="1166" y1="714" x2="1180" y2="714"/>
+  </g>
+  <!-- chain -->
+  <line x1="862" y1="662" x2="1218" y2="662" stroke="#1a1a1a" stroke-width="4"/>
+  <line x1="862" y1="766" x2="1218" y2="766" stroke="#1a1a1a" stroke-width="4"/>
+  <path d="M 862 662 A 52 52 0 0 0 862 766" fill="none" stroke="#1a1a1a" stroke-width="4"/>
+  <path d="M 1218 662 A 52 52 0 0 1 1218 766" fill="none" stroke="#1a1a1a" stroke-width="4"/>
+  <!-- slider bed -->
+  <rect x="880" y="668" width="320" height="13" fill="#2b6cb0"/>
+  <!-- return guide -->
+  <rect x="910" y="774" width="260" height="9" fill="#8fa8c4"/>
+  <!-- motor -->
+  <rect x="762" y="682" width="60" height="64" rx="5" fill="#3a3a3a"/>
+  <text x="792" y="720" font-size="13" fill="#fff" text-anchor="middle" font-weight="600">N20</text>
+  <!-- tension slot -->
+  <rect x="1196" y="704" width="76" height="20" rx="10" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 3"/>
+  <line x1="1246" y1="690" x2="1272" y2="690" stroke="#c0392b" stroke-width="2" marker-end="url(#ahr)"/>
+  <!-- part -->
+  <rect x="1000" y="620" width="46" height="42" fill="#c8452b" stroke="#8e2f1d" stroke-width="2"/>
+
+  <g font-size="14.5" fill="#333">
+    <text x="1058" y="638" font-weight="700">carry run</text>
+    <line x1="1210" y1="676" x2="1250" y2="640" stroke="#777" stroke-width="1.2" marker-start="url(#dot)"/>
+    <text x="1256" y="636" fill="#2b6cb0" font-weight="700">slider bed</text>
+    <text x="1256" y="654" fill="#2b6cb0" font-size="13.5">stops the chain sagging</text>
+    <line x1="1170" y1="779" x2="1216" y2="806" stroke="#777" stroke-width="1.2" marker-start="url(#dot)"/>
+    <text x="1222" y="810" font-size="13.5">return run + guide</text>
+    <text x="762" y="774" font-size="13.5">drive end</text>
+    <text x="1150" y="748" font-size="13.5" fill="#c0392b" font-weight="700">idler in a slot = tension</text>
+    <text x="732" y="878" font-size="14.5" font-weight="700">Bidirectional means there is no permanent slack side —</text>
+    <text x="732" y="896" font-size="14.5">the tensioner has to hold both directions honestly.</text>
+  </g>
+
+  <!-- ============ PANEL D ============ -->
+  <rect x="40" y="926" width="650" height="400" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="958" font-size="20" font-weight="600" fill="#1a1a1a">D · the belt is a printed link chain</text>
+  <text x="62" y="980" font-size="14.5" fill="#777">this is the ME rep — and the one real risk in the build</text>
+
+  <!-- links -->
+  <g>
+    <rect x="86" y="1014" width="76" height="30" rx="7" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.2"/>
+    <rect x="168" y="1014" width="76" height="30" rx="7" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.2"/>
+    <rect x="250" y="1014" width="76" height="30" rx="7" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.2"/>
+    <rect x="332" y="1014" width="76" height="30" rx="7" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.2"/>
+    <circle cx="165" cy="1029" r="8.5" fill="#6b6b6b" stroke="#1a1a1a" stroke-width="1.6"/>
+    <circle cx="247" cy="1029" r="8.5" fill="#6b6b6b" stroke="#1a1a1a" stroke-width="1.6"/>
+    <circle cx="329" cy="1029" r="8.5" fill="#6b6b6b" stroke="#1a1a1a" stroke-width="1.6"/>
+  </g>
+  <line x1="86" y1="1064" x2="168" y2="1064" stroke="#333" stroke-width="1.6" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <text x="127" y="1084" font-size="13.5" fill="#333" text-anchor="middle">pitch</text>
+  <text x="430" y="1024" font-size="14.5" fill="#333" font-weight="700">3 mm steel rod = the hinge pin</text>
+  <text x="430" y="1044" font-size="14.5" fill="#333">pitch ≈ 3.5 mm — prior art runs ~2.8 links/cm</text>
+  <text x="430" y="1064" font-size="14.5" fill="#333">≈ 85 links for a 30 cm segment</text>
+
+  <!-- magnified hinge -->
+  <circle cx="180" cy="1200" r="76" fill="#fdfcf9" stroke="#c0392b" stroke-width="2.5"/>
+  <line x1="238" y1="1150" x2="322" y2="1035" stroke="#c0392b" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <rect x="112" y="1178" width="66" height="44" rx="8" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2"/>
+  <rect x="190" y="1178" width="66" height="44" rx="8" fill="#dedbd2" stroke="#1a1a1a" stroke-width="2"/>
+  <circle cx="180" cy="1200" r="15" fill="#6b6b6b" stroke="#1a1a1a" stroke-width="2"/>
+  <line x1="178" y1="1240" x2="196" y2="1240" stroke="#c0392b" stroke-width="3"/>
+  <text x="180" y="1296" font-size="14" fill="#c0392b" text-anchor="middle" font-weight="700">clearance</text>
+
+  <g font-size="14.5" fill="#333">
+    <text x="290" y="1138" font-weight="700" fill="#c0392b">The clearance is the whole risk.</text>
+    <text x="290" y="1160">FDM eats it. On CableCell a 1.8 mm modelled</text>
+    <text x="290" y="1180">slot came out nearer 1.6 mm.</text>
+    <text x="290" y="1210" font-weight="700">So the first thing we print is not a segment —</text>
+    <text x="290" y="1230" font-weight="700">it's a coupon of links at 3–4 clearances.</text>
+    <text x="290" y="1260" fill="#777">If they bind, we fall back to GT2 belt over</text>
+    <text x="290" y="1278" fill="#777">printed drums and the corner design is unaffected.</text>
+  </g>
+
+  <!-- ============ PANEL E ============ -->
+  <rect x="710" y="926" width="650" height="400" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="732" y="958" font-size="20" font-weight="600" fill="#1a1a1a">E · where it goes — v1, plan #840</text>
+  <text x="732" y="980" font-size="14.5" fill="#777">v0 proves the mechanism; v1 is assembly</text>
+
+  <g fill="#dedbd2" stroke="#1a1a1a" stroke-width="2.2">
+    <rect x="812" y="1010" width="64" height="64"/>
+    <rect x="1188" y="1010" width="64" height="64"/>
+    <rect x="812" y="1206" width="64" height="64"/>
+    <rect x="1188" y="1206" width="64" height="64"/>
+    <rect x="886" y="1010" width="292" height="64"/>
+    <rect x="886" y="1206" width="292" height="64"/>
+    <rect x="812" y="1084" width="64" height="112"/>
+    <rect x="1188" y="1084" width="64" height="112"/>
+  </g>
+  <g stroke="#1a1a1a" stroke-width="3" fill="none">
+    <line x1="950" y1="1042" x2="1120" y2="1042" marker-end="url(#ah)"/>
+    <line x1="1220" y1="1110" x2="1220" y2="1172" marker-end="url(#ah)"/>
+    <line x1="1114" y1="1238" x2="944" y2="1238" marker-end="url(#ah)"/>
+    <line x1="844" y1="1170" x2="844" y2="1108" marker-end="url(#ah)"/>
+  </g>
+  <text x="1032" y="1148" font-size="17" font-weight="700" fill="#1a1a1a" text-anchor="middle">4 corners + 4 straights</text>
+  <text x="1032" y="1172" font-size="15" fill="#555" text-anchor="middle">8 modules · 8 motors · one controller</text>
+  <text x="1032" y="1194" font-size="14" fill="#777" text-anchor="middle">4 can't close a loop — 8 is the minimum</text>
+
+  <g font-size="14.5" fill="#333">
+    <text x="732" y="1300" font-weight="700">Reverse every module and it circulates the other way,</text>
+    <text x="732" y="1318">with no special corner handling. That's free because of ⊥ corners.</text>
+  </g>
+
+  <!-- ============ FOOTER ============ -->
+  <rect x="40" y="1342" width="1320" height="182" rx="8" fill="#f2efe6" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="1374" font-size="19" font-weight="700" fill="#1a1a1a">What I'd most like you to push on</text>
+
+  <text x="62" y="1408" font-size="15.5" fill="#333"><tspan font-weight="700">1 · Is the ⊥ corner the right feel?</tspan> It's the pragmatic call and industry agrees, but a part visibly stops and</text>
+  <text x="62" y="1430" font-size="15.5" fill="#333">restarts at every corner. A curved belt would glide. At desk scale a true radius belt is genuinely hard —</text>
+  <text x="62" y="1452" font-size="15.5" fill="#333">Intralox's tightest is a 600 mm radius — but "looks industrial" may matter more than "is industrial."</text>
+
+  <text x="700" y="1408" font-size="15.5" fill="#333"><tspan font-weight="700">2 · Segment size?</tspan> Prior art runs a 37 mm track. Our 40 mm blank</text>
+  <text x="700" y="1430" font-size="15.5" fill="#333">forces ~60 mm — nearly double, so double the print time and torque.</text>
+  <text x="700" y="1452" font-size="15.5" fill="#333"><tspan font-weight="700">3 · Chain vs. rollers.</tspan> Rollers are far easier and look just as industrial;</text>
+  <text x="700" y="1474" font-size="15.5" fill="#333">chain is the better rep and handles small parts. I picked chain.</text>
+</svg>

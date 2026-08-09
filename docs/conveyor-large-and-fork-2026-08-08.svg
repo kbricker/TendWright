@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1140" width="1400" height="1140" font-family="Segoe UI, system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/>
+    </marker>
+  </defs>
+  <rect width="1400" height="1140" fill="#faf9f6"/>
+
+  <text x="40" y="46" font-size="30" font-weight="700" fill="#1a1a1a">The large version — and what we can fork</text>
+  <text x="40" y="72" font-size="16" fill="#666">Plan #835 / #840 · researched 2026-08-08</text>
+  <line x1="40" y1="84" x2="1360" y2="84" stroke="#d8d5cc" stroke-width="2"/>
+
+  <!-- ===== PANEL A ===== -->
+  <rect x="40" y="98" width="460" height="562" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="132" font-size="21" font-weight="600" fill="#1a1a1a">A · the 60 mm build</text>
+  <text x="62" y="154" font-size="14.5" fill="#777">v1 = the closed loop, plan #840</text>
+
+  <!-- footprint sketch -->
+  <g fill="#dedbd2" stroke="#1a1a1a" stroke-width="1.8">
+    <rect x="130" y="190" width="55" height="55"/><rect x="315" y="190" width="55" height="55"/>
+    <rect x="130" y="330" width="55" height="55"/><rect x="315" y="330" width="55" height="55"/>
+    <rect x="188" y="190" width="124" height="55"/><rect x="188" y="330" width="124" height="55"/>
+    <rect x="130" y="248" width="55" height="79"/><rect x="315" y="248" width="55" height="79"/>
+  </g>
+  <g stroke="#1a1a1a" stroke-width="2" fill="none">
+    <line x1="215" y1="217" x2="285" y2="217" marker-end="url(#a)"/>
+    <line x1="342" y1="272" x2="342" y2="305" marker-end="url(#a)"/>
+    <line x1="285" y1="357" x2="215" y2="357" marker-end="url(#a)"/>
+    <line x1="157" y1="305" x2="157" y2="272" marker-end="url(#a)"/>
+  </g>
+  <line x1="130" y1="410" x2="370" y2="410" stroke="#c0392b" stroke-width="1.6" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="250" y="431" font-size="14" fill="#c0392b" text-anchor="middle" font-weight="700">~300 mm</text>
+
+  <g font-size="15" fill="#333">
+    <text x="70" y="470" font-weight="700">60 mm</text><text x="180" y="470">belt width</text>
+    <text x="70" y="494" font-weight="700">76 mm</text><text x="180" y="494">module outer width</text>
+    <text x="70" y="518" font-weight="700">150 mm</text><text x="180" y="518">straight module length</text>
+    <text x="70" y="542" font-weight="700">~55 mm</text><text x="180" y="542">height off the desk</text>
+    <text x="70" y="566" font-weight="700">300 × 300</text><text x="180" y="566">loop footprint, mm</text>
+    <text x="70" y="590" font-weight="700">8</text><text x="180" y="590">modules · 8 motors</text>
+    <text x="70" y="614" font-weight="700">~1.8 m</text><text x="180" y="614">of belt to produce</text>
+    <text x="70" y="642" font-size="13.5" fill="#777">Every module fits an A1 plate easily.</text>
+  </g>
+
+  <!-- ===== PANEL B ===== -->
+  <rect x="520" y="98" width="840" height="562" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="542" y="132" font-size="21" font-weight="600" fill="#1a1a1a">B · motor controller — 8 channels on one board</text>
+  <text x="542" y="154" font-size="14.5" fill="#777">TB6612FNG is dual-channel, so 8 motors = 4 driver boards</text>
+
+  <!-- 12V PSU -->
+  <rect x="558" y="190" width="104" height="52" rx="5" fill="#c0392b"/>
+  <text x="610" y="213" font-size="14" fill="#fff" text-anchor="middle" font-weight="700">12 V PSU</text>
+  <text x="610" y="232" font-size="12" fill="#ffd5cf" text-anchor="middle">6–8 A</text>
+
+  <!-- Pico -->
+  <rect x="558" y="330" width="104" height="150" rx="6" fill="#2e7d4f"/>
+  <text x="610" y="398" font-size="15" fill="#fff" text-anchor="middle" font-weight="700">Pico</text>
+  <text x="610" y="418" font-size="12" fill="#c8e6d3" text-anchor="middle">MicroPython</text>
+  <text x="610" y="500" font-size="12" fill="#777" text-anchor="middle">USB 5 V + data</text>
+  <line x1="530" y1="405" x2="556" y2="405" stroke="#2e7d4f" stroke-width="3" marker-start="url(#a)"/>
+
+  <!-- driver boards -->
+  <g>
+    <rect x="770" y="196" width="118" height="58" rx="5" fill="#3a3a3a"/>
+    <text x="829" y="222" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">TB6612FNG</text>
+    <text x="829" y="240" font-size="11.5" fill="#bbb" text-anchor="middle">2 channels</text>
+    <rect x="770" y="286" width="118" height="58" rx="5" fill="#3a3a3a"/>
+    <text x="829" y="312" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">TB6612FNG</text>
+    <text x="829" y="330" font-size="11.5" fill="#bbb" text-anchor="middle">2 channels</text>
+    <rect x="770" y="376" width="118" height="58" rx="5" fill="#3a3a3a"/>
+    <text x="829" y="402" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">TB6612FNG</text>
+    <text x="829" y="420" font-size="11.5" fill="#bbb" text-anchor="middle">2 channels</text>
+    <rect x="770" y="466" width="118" height="58" rx="5" fill="#3a3a3a"/>
+    <text x="829" y="492" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">TB6612FNG</text>
+    <text x="829" y="510" font-size="11.5" fill="#bbb" text-anchor="middle">2 channels</text>
+  </g>
+
+  <!-- motors -->
+  <g>
+    <rect x="990" y="190" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="211" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M1</text>
+    <rect x="990" y="228" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="249" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M2</text>
+    <rect x="990" y="280" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="301" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M3</text>
+    <rect x="990" y="318" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="339" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M4</text>
+    <rect x="990" y="370" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="391" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M5</text>
+    <rect x="990" y="408" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="429" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M6</text>
+    <rect x="990" y="460" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="481" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M7</text>
+    <rect x="990" y="498" width="86" height="30" rx="4" fill="#5b6d7e"/><text x="1033" y="519" font-size="12.5" fill="#fff" text-anchor="middle">N20 · M8</text>
+  </g>
+
+  <!-- 12V lines -->
+  <g stroke="#c0392b" stroke-width="2.2" fill="none">
+    <path d="M 662 216 L 720 216 L 720 225 L 768 225"/>
+    <path d="M 720 216 L 720 315 L 768 315"/>
+    <path d="M 720 315 L 720 405 L 768 405"/>
+    <path d="M 720 405 L 720 495 L 768 495"/>
+  </g>
+  <!-- logic lines -->
+  <g stroke="#2e7d4f" stroke-width="2" fill="none" stroke-dasharray="6 4">
+    <path d="M 662 360 L 742 360 L 742 240 L 768 240"/>
+    <path d="M 662 385 L 748 385 L 748 330 L 768 330"/>
+    <path d="M 662 425 L 748 425 L 748 420 L 768 420"/>
+    <path d="M 662 450 L 742 450 L 742 510 L 768 510"/>
+  </g>
+  <!-- motor lines -->
+  <g stroke="#1a1a1a" stroke-width="2" fill="none">
+    <path d="M 888 214 L 988 205"/><path d="M 888 236 L 988 243"/>
+    <path d="M 888 304 L 988 295"/><path d="M 888 326 L 988 333"/>
+    <path d="M 888 394 L 988 385"/><path d="M 888 416 L 988 423"/>
+    <path d="M 888 484 L 988 475"/><path d="M 888 506 L 988 513"/>
+  </g>
+
+  <text x="700" y="182" font-size="12.5" fill="#c0392b" font-weight="700">12 V motor rail</text>
+  <text x="700" y="556" font-size="12.5" fill="#2e7d4f" font-weight="700">3.3 V logic — PWM + 2 direction pins each</text>
+
+  <!-- pin budget callout -->
+  <rect x="558" y="574" width="782" height="72" rx="6" fill="#fdf4f2" stroke="#e8c4bc" stroke-width="1.5"/>
+  <text x="578" y="600" font-size="15.5" fill="#c0392b" font-weight="700">Pin budget is the pinch: 8 motors × 3 pins + STBY = 25 of the Pico's 26 GPIO. Nothing left for a sensor.</text>
+  <text x="578" y="626" font-size="14.5" fill="#333">Two outs — drive IN1/IN2 as complementary PWM (2 pins each = 16), or move to a Pico 2 / RP2350: 24 PWM channels vs the RP2040's 16.</text>
+
+  <!-- ===== PANEL C ===== -->
+  <rect x="40" y="680" width="1320" height="410" rx="8" fill="#ffffff" stroke="#ddd9d0" stroke-width="1.5"/>
+  <text x="62" y="714" font-size="21" font-weight="600" fill="#1a1a1a">C · forking tanius/smallopticalsorter — Unlicense (public domain), parametric CadQuery, 33 stars, live May 2025</text>
+
+  <rect x="62" y="734" width="418" height="336" rx="6" fill="#f1f7f2" stroke="#bcd9c3" stroke-width="1.5"/>
+  <text x="84" y="764" font-size="16.5" font-weight="700" fill="#2e7d32">What it hands us, free</text>
+  <g font-size="14.5" fill="#333">
+    <text x="84" y="794">· A parametric straight module, already sized</text>
+    <text x="84" y="815">  at belt 50 · length 150 · rollers Ø40</text>
+    <text x="84" y="840">· A sliding-slot belt tensioner (20 mm travel)</text>
+    <text x="84" y="865">· D-shaft motor coupling, parameterised by</text>
+    <text x="84" y="886">  major/minor dia and flat count — the exact</text>
+    <text x="84" y="907">  gap I flagged in the planning review</text>
+    <text x="84" y="932">· Roller edge flanges that keep the belt tracking</text>
+    <text x="84" y="957">· Bearing pockets, bolt/nut sizing tables</text>
+    <text x="84" y="982">· shaft_coupling.py · motor_h_mount.py</text>
+    <text x="84" y="1003">  plate/bracket/guide/spacer · 88 KB of utils</text>
+    <text x="84" y="1034" font-weight="700" fill="#2e7d32">Every dimension is already a named parameter.</text>
+    <text x="84" y="1055" font-weight="700" fill="#2e7d32">Set belt_width and it rebuilds.</text>
+  </g>
+
+  <rect x="500" y="734" width="418" height="336" rx="6" fill="#fdf4f2" stroke="#e8c4bc" stroke-width="1.5"/>
+  <text x="522" y="764" font-size="16.5" font-weight="700" fill="#c0392b">What it does not have</text>
+  <g font-size="14.5" fill="#333">
+    <text x="522" y="794" font-weight="700">· No corner. None. Straight modules only.</text>
+    <text x="522" y="815">  The corner is the hard half of your brief and</text>
+    <text x="522" y="836">  we would still be designing it ourselves.</text>
+    <text x="522" y="866">· It is rollers + a flat belt, not a printed link</text>
+    <text x="522" y="887">  chain — so the belt is a bought part, and</text>
+    <text x="522" y="908">  a flat belt cannot go round a corner.</text>
+    <text x="522" y="938">· Needs ball bearings (Ø24 × 10) per roller</text>
+    <text x="522" y="963">· Motor axis defaults to 5 mm — a bigger</text>
+    <text x="522" y="984">  gearmotor than an N20's 3 mm shaft</text>
+    <text x="522" y="1014">· Repo says UNFINISHED; it is one man&#8217;s</text>
+    <text x="522" y="1035">  sorter project, not a released product</text>
+  </g>
+
+  <rect x="938" y="734" width="400" height="336" rx="6" fill="#f6f4ee" stroke="#d8d2c4" stroke-width="1.5"/>
+  <text x="960" y="764" font-size="16.5" font-weight="700" fill="#8a6d1f">What it costs</text>
+  <g font-size="14.5" fill="#333">
+    <text x="960" y="794" font-weight="700">· It is CadQuery, not FreeCAD.</text>
+    <text x="960" y="815">  Same OCCT kernel underneath, but it is a</text>
+    <text x="960" y="836">  pip package — so it trips the</text>
+    <text x="960" y="857">  new-dependency gate and needs your yes.</text>
+    <text x="960" y="887">· Taking it flips the belt decision from</text>
+    <text x="960" y="908">  printed chain to bought belt — which is</text>
+    <text x="960" y="929">  the easier build but less of the ME rep</text>
+    <text x="960" y="950">  you said this project is for.</text>
+    <text x="960" y="980">· Its geometry choices become ours, and</text>
+    <text x="960" y="1001">  reading 19 KB of someone else&#8217;s CadQuery</text>
+    <text x="960" y="1022">  is not free either.</text>
+  </g>
+</svg>
