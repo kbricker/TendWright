@@ -40,21 +40,34 @@ bracket_h = G["bracket_h"]
 side_gap = G["side_gap"]
 roller_flange_w = G["roller_flange_w"]
 
-STR, COR = G["straight"], G["corner"]
+STR, COR, S2 = G["straight"], G["corner"], G["straight2"]
 straight_len, corner_len = STR["len"], COR["len"]
-corner_dx = COR["offset_x"]
 
-# Two roller radii now — the drive stays Ø25, the discharge nose is Ø10, and
-# they are aligned by their TOPS (the carry plane), not by a shared centreline.
-drive_r = G["roller_dia"] / 2.0 + belt_thickness
+# One roller size everywhere now — both ends of every module are Ø10 noses, the
+# discharge one driven. So a single radius, and both at the same height.
 nose_r = G["nose_dia"] / 2.0 + belt_thickness
 belt_top = G["carry_z"] + belt_thickness
-drive_z, nose_z = G["drive_z"], G["nose_z"]
+nose_z = G["nose_z"]
 
 
 def belt_y(mod):
     y0 = mod["t"] + side_gap + roller_flange_w
     return y0, y0 + belt_width
+
+
+# v0 is three modules in two orientations, so placement is a transform rather
+# than three hand-written coordinate sets. rot=90 maps local (x,y) -> (-y, x).
+MODULES = [
+    ("s1", STR, 0, 0.0, 0.0, 0),                                  # feeds +X
+    ("c", COR, 90, COR["offset_x"], 0.0, 1),                      # turns, feeds +Y
+    ("s2", STR, 90, S2["offset_x"], S2["offset_y"], 1),           # receives end-on, +Y
+]
+
+
+def placer(rot, ox, oy):
+    if rot == 0:
+        return lambda x, y: (x + ox, y + oy)
+    return lambda x, y: (-y + ox, x + oy)
 
 PART = (32.0, 32.0, 16.0)
 PART_MASS = 0.030
@@ -79,7 +92,8 @@ RAIL_C = (43, 108, 176)
 
 def mesh_assets():
     names = ["cs_brackets", "cs_rollers", "cs_bed", "cs_belt",
-             "cc_brackets", "cc_rollers", "cc_bed", "cc_belt"]
+             "cc_brackets", "cc_rollers", "cc_bed", "cc_belt",
+             "s2_brackets", "s2_rollers", "s2_bed", "s2_belt"]
     out = []
     for n in names:
         p = os.path.join(PARTS, n + ".stl").replace("\\", "/")
@@ -92,90 +106,85 @@ def visual_geom(mesh, colour):
             'rgba="%s"/>' % (mesh, rgba(colour)))
 
 
+def module_body(tag, mod, rot, ox, oy, meshes):
+    # Collision for one module: a nose cylinder at each end plus a carry plate
+    # between them, and whichever side plates actually stand above the belt.
+    p = placer(rot, ox, oy)
+    y0, y1 = belt_y(mod)
+    ymid = (y0 + y1) / 2.0
+    a0, a1 = mod["drive_ax"], mod["nose_ax"]
+    euler = "90 0 0" if rot == 0 else "0 90 0"
+    fric = 'friction="0.04 0.005 0.0001"'
+
+    g = [visual_geom(n, c) for n, c in meshes]
+
+    for name, ax in (("infeed", a0), ("driven", a1)):
+        cx, cy = p(ax, ymid)
+        g.append('<geom name="%s_%s" type="cylinder" size="%g %g" pos="%g %g %g" '
+                 'euler="%s" rgba="%s" %s/>'
+                 % (tag, name, m(nose_r), m(belt_width / 2.0),
+                    m(cx), m(cy), m(nose_z), euler, rgba(BELT_C, 0.0), fric))
+
+    cx, cy = p((a0 + a1) / 2.0, ymid)
+    half_len, half_wid = (a1 - a0) / 2.0, belt_width / 2.0
+    sx, sy = (half_len, half_wid) if rot == 0 else (half_wid, half_len)
+    g.append('<geom name="%s_belt" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s" %s/>'
+             % (tag, m(sx), m(sy), m(1.0), m(cx), m(cy), m(belt_top - 1.0),
+                rgba(BELT_C, 0.0), fric))
+
+    # Only the part of a plate standing ABOVE the belt can touch the payload, so
+    # a plate cut to the carry plane contributes no collision geom at all —
+    # which is exactly what an open transfer face should be.
+    for i, yc in enumerate((mod["t"] / 2.0, mod["outer_width"] - mod["t"] / 2.0)):
+        rt = mod["rail_top"][i]
+        if rt <= belt_top:
+            continue
+        rx, ry = p(mod["len"] / 2.0, yc)
+        rsx, rsy = (mod["len"] / 2.0, mod["t"] / 2.0) if rot == 0 else (mod["t"] / 2.0, mod["len"] / 2.0)
+        g.append('<geom name="%s_rail%d" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>'
+                 % (tag, i, m(rsx), m(rsy), m((rt - belt_top) / 2.0),
+                    m(rx), m(ry), m((rt + belt_top) / 2.0), rgba(BRACKET_C, 0.0)))
+
+    return '<body name="%s" pos="0 0 0">\n      %s\n    </body>' % (tag, "\n      ".join(g))
+
+
 def build_xml():
     s_y0, s_y1 = belt_y(STR)
+    s_ymid = (s_y0 + s_y1) / 2.0
     c_y0, c_y1 = belt_y(COR)
-    s_ymid, c_ymid = (s_y0 + s_y1) / 2.0, (c_y0 + c_y1) / 2.0
 
-    # --- straight module collision: drive + nose cylinders, carry plate ----
-    s_cyl = []
-    for tag, ax, az, ar in (("drive", STR["drive_ax"], drive_z, drive_r),
-                            ("nose", STR["nose_ax"], nose_z, nose_r)):
-        s_cyl.append(
-            '<geom name="s_%s" type="cylinder" size="%g %g" pos="%g %g %g" '
-            'euler="90 0 0" rgba="%s" friction="0.04 0.005 0.0001"/>'
-            % (tag, m(ar), m(belt_width / 2.0),
-               m(ax), m(s_ymid), m(az), rgba(BELT_C, 0.0)))
+    MESHES = {"s1": [("cs_brackets", BRACKET_C), ("cs_rollers", ROLLER_C),
+                     ("cs_bed", RAIL_C), ("cs_belt", BELT_C)],
+              "c": [("cc_brackets", BRACKET_C), ("cc_rollers", ROLLER_C),
+                    ("cc_bed", RAIL_C), ("cc_belt", BELT_C)],
+              "s2": [("s2_brackets", BRACKET_C), ("s2_rollers", ROLLER_C),
+                     ("s2_bed", RAIL_C), ("s2_belt", BELT_C)]}
 
-    s_plate = ('<geom name="s_belt" type="box" size="%g %g %g" pos="%g %g %g" '
-               'rgba="%s" friction="0.04 0.005 0.0001"/>'
-               % (m((STR["nose_ax"] - STR["drive_ax"]) / 2.0), m(belt_width / 2.0), m(1.0),
-                  m((STR["drive_ax"] + STR["nose_ax"]) / 2.0), m(s_ymid), m(belt_top - 1.0),
-                  rgba(BELT_C, 0.0)))
+    bodies = [module_body(tag, mod, rot, ox, oy, MESHES[tag])
+              for tag, mod, rot, ox, oy, _ in MODULES]
 
-    # Side plates. Only the part standing ABOVE the belt surface can touch the
-    # payload, so a plate cut to the carry plane contributes no collision geom
-    # at all — which is exactly what an open transfer face should be.
-    s_rails = []
-    for i, yc in enumerate((STR["t"] / 2.0, STR["outer_width"] - STR["t"] / 2.0)):
-        rt = STR["rail_top"][i]
-        if rt <= belt_top:
-            continue
-        s_rails.append(
-            '<geom name="s_rail%d" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>'
-            % (i, m(straight_len / 2.0), m(STR["t"] / 2.0), m((rt - belt_top) / 2.0),
-               m(straight_len / 2.0), m(yc), m((rt + belt_top) / 2.0), rgba(BRACKET_C, 0.0)))
-
-    # --- corner module: rotated 90 deg about Z, then shifted +X ------------
-    # local (x,y) -> (-y + corner_dx, x)
-    def cpos(x, y, z):
-        return (-y + corner_dx, x, z)
-
-    c_cyl = []
-    for tag, ax, az, ar in (("drive", COR["drive_ax"], drive_z, drive_r),
-                            ("nose", COR["nose_ax"], nose_z, nose_r)):
-        px, py, pz = cpos(ax, c_ymid, az)
-        c_cyl.append(
-            '<geom name="c_%s" type="cylinder" size="%g %g" pos="%g %g %g" '
-            'euler="0 90 0" rgba="%s" friction="0.04 0.005 0.0001"/>'
-            % (tag, m(ar), m(belt_width / 2.0), m(px), m(py), m(pz), rgba(BELT_C, 0.0)))
-
-    cx, cy, _ = cpos((COR["drive_ax"] + COR["nose_ax"]) / 2.0, c_ymid, 0)
-    c_plate = ('<geom name="c_belt" type="box" size="%g %g %g" pos="%g %g %g" '
-               'rgba="%s" friction="0.04 0.005 0.0001"/>'
-               % (m(belt_width / 2.0), m((COR["nose_ax"] - COR["drive_ax"]) / 2.0), m(1.0),
-                  m(cx), m(cy), m(belt_top - 1.0), rgba(BELT_C, 0.0)))
-
-    c_rails = []
-    for i, yc in enumerate((COR["t"] / 2.0, COR["outer_width"] - COR["t"] / 2.0)):
-        rt = COR["rail_top"][i]
-        if rt <= belt_top:
-            continue
-        px, py, _ = cpos(corner_len / 2.0, yc, 0)
-        c_rails.append(
-            '<geom name="c_rail%d" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>'
-            % (i, m(COR["t"] / 2.0), m(corner_len / 2.0), m((rt - belt_top) / 2.0),
-               m(px), m(py), m((rt + belt_top) / 2.0), rgba(BRACKET_C, 0.0)))
-
-    # guide rail on the corner's far side — arrests the incoming +X momentum
-    rail_x = corner_dx - c_y0 + 4.0
-    guide = ('<geom name="guide" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>'
-             % (m(2.0), m(corner_len / 2.0), m(10.0),
-                m(rail_x), m(corner_len / 2.0), m(belt_top + 10.0), rgba(RAIL_C)))
+    # Guide rail on the corner's far side — arrests the incoming +X momentum so
+    # the part squares up before the corner belt carries it away.
+    rail_x = COR["offset_x"] - c_y0 + 4.0
+    bodies.append(
+        '<body name="guide" pos="0 0 0">\n      '
+        '<geom name="guide" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>\n    </body>'
+        % (m(2.0), m(corner_len / 2.0), m(10.0),
+           m(rail_x), m(corner_len / 2.0), m(belt_top + 10.0), rgba(RAIL_C)))
 
     # Dead plate — the industrial answer to a transfer gap. A fixed, unpowered
-    # bridge flush with both belt surfaces, so the part is pushed across by the
-    # belt behind it instead of nosing into the void. Off by default so the
-    # failure it fixes stays reproducible.
-    dead = ""
+    # bridge flush with both belt surfaces. Kept because it is what proved the
+    # 27 mm gap could not be bridged: the part goes flat and still stalls, since
+    # its weight comes off the belt and the belt loses the traction to push it.
     if DEADPLATE:
         x0 = STR["nose_ax"] + nose_r - 0.5
-        x1 = corner_dx - c_y1 + 1.5
-        dead = ('<geom name="deadplate" type="box" size="%g %g %g" pos="%g %g %g" '
-                'rgba="%s" friction="0.04 0.005 0.0001"/>'
-                % (m((x1 - x0) / 2.0), m(belt_width / 2.0), m(1.0),
-                   m((x0 + x1) / 2.0), m(s_ymid), m(belt_top - 1.0),
-                   rgba((150, 148, 140))))
+        x1 = COR["offset_x"] - c_y1 + 1.5
+        bodies.append(
+            '<body name="dead" pos="0 0 0">\n      '
+            '<geom name="deadplate" type="box" size="%g %g %g" pos="%g %g %g" '
+            'rgba="%s" friction="0.04 0.005 0.0001"/>\n    </body>'
+            % (m((x1 - x0) / 2.0), m(belt_width / 2.0), m(1.0),
+               m((x0 + x1) / 2.0), m(s_ymid), m(belt_top - 1.0), rgba((150, 148, 140))))
 
     part_z = belt_top + PART[2] / 2.0 + 0.5
 
@@ -202,27 +211,7 @@ def build_xml():
     <light pos="0.1 -0.15 0.4" dir="-0.2 0.4 -1" directional="true" diffuse="0.55 0.55 0.55"/>
     <geom name="floor" type="plane" size="1 1 0.05" material="gridmat" friction="0.8 0.01 0.001"/>
 
-    <body name="straight" pos="0 0 0">
-      {vs_brackets}
-      {vs_rollers}
-      {vs_bed}
-      {vs_belt}
-      {s_cyl}
-      {s_plate}
-      {s_rails}
-    </body>
-
-    <body name="corner" pos="0 0 0">
-      {vc_brackets}
-      {vc_rollers}
-      {vc_bed}
-      {vc_belt}
-      {c_cyl}
-      {c_plate}
-      {c_rails}
-      {guide}
-      {dead}
-    </body>
+    {bodies}
 
     <body name="part" pos="{px} {py} {pz}">
       <freejoint name="partfree"/>
@@ -236,17 +225,7 @@ def build_xml():
 </mujoco>
 """.format(
         meshes=mesh_assets(),
-        vs_brackets=visual_geom("cs_brackets", BRACKET_C),
-        vs_rollers=visual_geom("cs_rollers", ROLLER_C),
-        vs_bed=visual_geom("cs_bed", RAIL_C),
-        vs_belt=visual_geom("cs_belt", BELT_C),
-        vc_brackets=visual_geom("cc_brackets", BRACKET_C),
-        vc_rollers=visual_geom("cc_rollers", ROLLER_C),
-        vc_bed=visual_geom("cc_bed", RAIL_C),
-        vc_belt=visual_geom("cc_belt", BELT_C),
-        s_cyl="\n      ".join(s_cyl), s_plate=s_plate, s_rails="\n      ".join(s_rails),
-        c_cyl="\n      ".join(c_cyl), c_plate=c_plate, c_rails="\n      ".join(c_rails),
-        guide=guide, dead=dead,
+        bodies="\n\n    ".join(bodies),
         px=m(40.0), py=m(s_ymid), pz=m(part_z),
         hx=m(PART[0] / 2.0), hy=m(PART[1] / 2.0), hz=m(PART[2] / 2.0),
         pm=PART_MASS, pc=rgba(PART_C))
@@ -264,66 +243,72 @@ MU_BELT = 0.9               # belt surface against the part
 # traction limit mu*N. That is what a real belt does — it drags a part until the
 # part matches the belt, and it cannot pull harder than friction allows. It also
 # means a commanded speed of 0 brakes the part, which is correct.
-def belt_drive(model, data, straight_ids, corner_ids, part_gid, part_bid):
-    touching_s = touching_c = False
+def belt_drive(model, data, belts, part_gid, part_bid):
+    # belts: list of (geom-id set, axis 0=X 1=Y, commanded speed). A part
+    # straddling two modules gets pulled by both, which is exactly what happens
+    # at a transfer and is the reason a handoff can stall.
+    touching = [False] * len(belts)
     normal = 0.0
     for i in range(data.ncon):
         c = data.contact[i]
-        g1, g2 = c.geom1, c.geom2
-        if part_gid not in (g1, g2):
+        if part_gid not in (c.geom1, c.geom2):
             continue
-        other = g2 if g1 == part_gid else g1
-        if other in straight_ids:
-            touching_s = True
-        elif other in corner_ids:
-            touching_c = True
-        else:
+        other = c.geom2 if c.geom1 == part_gid else c.geom1
+        hit = False
+        for k, (ids, _, _) in enumerate(belts):
+            if other in ids:
+                touching[k] = True
+                hit = True
+        if not hit:
             continue
         f = np.zeros(6)
         mujoco.mj_contactForce(model, data, i, f)
         normal += abs(f[0])
 
-    if not (touching_s or touching_c):
+    if not any(touching):
         data.xfrc_applied[part_bid][:3] = (0.0, 0.0, 0.0)
         return
 
     traction = MU_BELT * max(normal, 0.05 * PART_MASS * 9.81)
     v = data.cvel[part_bid][3:6]
 
-    fx = fy = 0.0
-    if touching_s:
-        fx = DRIVE_GAIN * PART_MASS * (STRAIGHT_SPEED - v[0])
-    if touching_c:
-        fy = DRIVE_GAIN * PART_MASS * (CORNER_SPEED - v[1])
+    force = [0.0, 0.0]
+    for k, (_, axis, speed) in enumerate(belts):
+        if touching[k]:
+            force[axis] += DRIVE_GAIN * PART_MASS * (speed - v[axis])
 
-    mag = math.hypot(fx, fy)
+    mag = math.hypot(force[0], force[1])
     if mag > traction and mag > 0:
-        fx *= traction / mag
-        fy *= traction / mag
+        force[0] *= traction / mag
+        force[1] *= traction / mag
 
-    data.xfrc_applied[part_bid][:3] = (fx, fy, 0.0)
+    data.xfrc_applied[part_bid][:3] = (force[0], force[1], 0.0)
 
 
 def gid(model, name):
     return mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
 
 
+SPEEDS = {"s1": STRAIGHT_SPEED, "c": CORNER_SPEED, "s2": STRAIGHT_SPEED}
+
+
 def setup():
     model = mujoco.MjModel.from_xml_string(build_xml())
     data = mujoco.MjData(model)
-    s_ids = {gid(model, n) for n in ("s_belt", "s_drive", "s_nose")}
-    c_ids = {gid(model, n) for n in ("c_belt", "c_drive", "c_nose")}
+    belts = [({gid(model, "%s_%s" % (tag, s)) for s in ("belt", "infeed", "driven")},
+              axis, SPEEDS[tag])
+             for tag, _, _, _, _, axis in MODULES]
     part_gid = gid(model, "partgeom")
     part_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "part")
-    return model, data, s_ids, c_ids, part_gid, part_bid
+    return model, data, belts, part_gid, part_bid
 
 
 def run_headless(seconds=6.0, frames=6):
-    model, data, s_ids, c_ids, part_gid, part_bid = setup()
+    model, data, belts, part_gid, part_bid = setup()
     renderer = mujoco.Renderer(model, 900, 1400)
     cam = mujoco.MjvCamera()
-    cam.lookat[:] = (m(120), m(32), m(26))
-    cam.distance = 0.30
+    cam.lookat[:] = (m(150), m(70), m(26))
+    cam.distance = 0.42
     cam.azimuth = 132
     cam.elevation = -22
 
@@ -348,7 +333,7 @@ def run_headless(seconds=6.0, frames=6):
     shot = 0
     track = []
     for i in range(steps):
-        belt_drive(model, data, s_ids, c_ids, part_gid, part_bid)
+        belt_drive(model, data, belts, part_gid, part_bid)
         mujoco.mj_step(model, data)
         if i % max(1, shot_every) == 0 and shot < frames:
             renderer.update_scene(data, cam)
@@ -367,17 +352,17 @@ def run_headless(seconds=6.0, frames=6):
 
 def run_viewer():
     import mujoco.viewer
-    model, data, s_ids, c_ids, part_gid, part_bid = setup()
+    model, data, belts, part_gid, part_bid = setup()
     with mujoco.viewer.launch_passive(model, data) as v:
-        v.cam.lookat[:] = (m(corner_dx / 2.0 + 20), m(35), m(20))
-        v.cam.distance = 0.40
+        v.cam.lookat[:] = (m(150), m(70), m(20))
+        v.cam.distance = 0.50
         v.cam.azimuth = 128
         v.cam.elevation = -26
         import time
         while v.is_running():
             t0 = time.time()
             for _ in range(20):
-                belt_drive(model, data, s_ids, c_ids, part_gid, part_bid)
+                belt_drive(model, data, belts, part_gid, part_bid)
                 mujoco.mj_step(model, data)
             v.sync()
             dt = model.opt.timestep * 20 - (time.time() - t0)

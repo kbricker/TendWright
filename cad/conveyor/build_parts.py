@@ -39,21 +39,26 @@ def step(msg):
 belt_width      = 50.0    # Kyle, 2026-08-08
 belt_thickness  = 1.5     # printed TPU loop wall
 
-roller_dia      = 25.0    # drive roller only — the discharge end uses the nose roller below
-roller_flange_d = 28.0    # keeps the belt tracking
+# BOTH ends are small nose rollers, and the DISCHARGE one is driven.
+#
+# The Ø25 drive roller is gone. It lived at the infeed end, where a concentric
+# stadium put its axis bracket_h/2 = 17.5 mm inboard of the module face — fine
+# while that face pointed at open air, fatal once a corner discharges into it.
+# In the v1 loop every straight receives from a corner at that end, so a fat
+# infeed is systematic, not incidental. Both ends have to be small, which puts
+# the drive on a nose roller.
+#
+# It pays for itself: one roller part instead of two, the separate motor mount
+# is absorbed into the side plate, and shaft torque drops with the radius
+# (1 N × 5 mm = 0.005 N·m, against ~0.0125 at Ø25) — which is what makes a
+# printed D-bore at this diameter reasonable.
+nose_dia        = 10.0
+nose_axle_dia   = 4.0     # idler stub axle; the driven end rides the motor shaft
+nose_edge       = 6.0     # module face to nose axis
+nose_travel     = 8.0     # take-up slot at the INFEED nose (pull the slack back)
+roller_flange_d = 13.0    # keeps the belt tracking
 roller_flange_w = 1.5
 roller_len      = belt_width + 2 * roller_flange_w
-
-# Nose roller — the fix for the transfer gap (sim finding, rev 38/40).
-# A Ø25 roller in a concentric stadium end sits bracket_h/2 = 17.5 mm inboard of
-# the module edge, and that inset was the dominant term in a 27 mm unsupported
-# span against a 32 mm part. A small roller on a SQUARED end carries the belt
-# apex out to within nose_edge of the module face instead. Ø10 is the industrial
-# nose-bar answer scaled to this build.
-nose_dia        = 10.0
-nose_axle_dia   = 4.0
-nose_edge       = 6.0     # module face to nose axis when fully tensioned
-nose_travel     = 8.0     # take-up slot; a printed belt only absorbs tolerance
 
 side_gap        = 1.0     # roller end to bracket inner face
 wall            = 3.0
@@ -65,10 +70,6 @@ bracket_h       = 35.0
 straight_len    = 120.0   # straight module
 corner_len      = 70.0    # corner module — same mechanism, built short
 frame_gap       = 1.5     # module face to module face (was 4.0)
-
-axle_dia        = 5.0
-bearing_od      = 10.0    # MR105ZZ
-bearing_t       = 4.0
 
 motor_shaft_d   = 3.0     # N20
 motor_shaft_flat= 2.5     # across the D
@@ -83,75 +84,84 @@ TESS = 0.04
 
 import math
 
-# The carry surface — the plane the part actually rides on. Both rollers are
-# aligned to THIS, not to a shared centreline, which is why the nose axis sits
-# higher than the drive axis.
-carry_z = bracket_h / 2.0 + roller_dia / 2.0
-
-drive_z = bracket_h / 2.0
+# The carry surface — the plane the part rides on. Both nose rollers are aligned
+# to THIS by their tops, so the carry run is flat and sits on the slider bed.
+carry_z = 30.0
 nose_z = carry_z - nose_dia / 2.0
 
 
 def roller_axis_x(module_len):
-    # Drive end keeps its concentric stadium. Discharge end is squared, so the
-    # nose axis is set by the module face, not by bracket_h.
-    return bracket_h / 2.0, module_len - nose_edge
+    # Squared at both ends now: infeed nose (idler, take-up) and discharge nose
+    # (driven). Both set from their own module face.
+    return nose_edge, module_len - nose_edge
 
 
 def belt_path_length(module_len):
-    # Two pulleys of DIFFERENT radii at different heights — an open-belt wrap,
-    # not a stadium. Getting this wrong mis-sizes the printed TPU loop, and a
-    # loop that is 3 mm long simply will not tension.
+    # Equal radii at equal height, so this is back to a stadium — but computed,
+    # not assumed, because nose_dia is a parameter and the sim reads the result.
     ax0, ax1 = roller_axis_x(module_len)
-    r1 = roller_dia / 2.0
-    r2 = nose_dia / 2.0
-    d = math.hypot(ax1 - ax0, nose_z - drive_z)
-    dr = r1 - r2
-    tangent = math.sqrt(d * d - dr * dr)
-    alpha = math.asin(dr / d)
-    return 2.0 * tangent + r1 * (math.pi + 2 * alpha) + r2 * (math.pi - 2 * alpha)
+    return 2.0 * (ax1 - ax0) + math.pi * nose_dia
 
 
-def unsupported_span(feed_len=None):
-    # What the sim measured, computed straight from the parameters so it can
-    # never drift from the geometry. Support ends at the nose axis; the corner's
-    # belt starts one mating wall + clearance + flange in from its own face.
-    feed_len = straight_len if feed_len is None else feed_len
-    _, nose_x = roller_axis_x(feed_len)
-    return (feed_len - nose_x) + frame_gap + (mating_wall + side_gap + roller_flange_w)
+# A transfer's unsupported span is (feeding module's discharge inset) + frame gap
+# + (receiving module's inset ON THE FACE THE PART CROSSES). Those two receiving
+# faces are different numbers, and the v1 loop uses BOTH — a straight discharges
+# into a corner's side, and a corner discharges into a straight's end.
+def side_entry_inset():
+    return mating_wall + side_gap + roller_flange_w
+
+
+def end_entry_inset():
+    return nose_edge
+
+
+def unsupported_span(kind):
+    return nose_edge + frame_gap + (side_entry_inset() if kind == "side" else end_entry_inset())
 
 
 # ------------------------------------------------------------- side bracket
-def make_bracket(module_len, t=None, top_z=None):
-    # Rounded at the drive end, SQUARED at the discharge end. The square end is
-    # the whole point: it lets the nose axis sit nose_edge from the module face
-    # instead of bracket_h/2.
+def make_bracket(module_len, t=None, top_z=None, motor_side=False):
+    # SQUARED at both ends, so each nose axis is set from its own module face
+    # rather than by bracket_h. Infeed end carries the take-up slot; discharge
+    # end carries the driven nose — either the motor (motor_side) or the stub
+    # axle that supports the far end of the same roller.
     #
     # top_z cuts the plate down flush with the carry plane. A full-height plate
     # stands bracket_h - (carry_z + belt_thickness) = 3.5 mm PROUD of its own
-    # belt, which is a side rail on a through face and a kerb on a transfer face.
-    # The sim found this the hard way: the part crossed the gap fine and then
-    # stopped dead against the receiving module's wall.
+    # belt, which is a useful side rail on a through face and a kerb on a
+    # transfer face. The sim found this the hard way: the part crossed the gap
+    # fine and then stopped dead against the receiving module's wall.
     t = wall if t is None else t
-    step("bracket: len=%.1f thickness=%.1f (rounded drive end, squared nose end)" % (module_len, t))
+    step("bracket: len=%.1f t=%.1f motor_side=%s" % (module_len, t, motor_side))
     ax0, nose_x = roller_axis_x(module_len)
-    r = bracket_h / 2.0
 
-    body = Part.makeBox(module_len - ax0, t, bracket_h, Vector(ax0, 0, 0))
-    body = body.fuse(Part.makeCylinder(r, t, Vector(ax0, 0, drive_z), Vector(0, 1, 0)))
+    body = Part.makeBox(module_len, t, bracket_h, Vector(0, 0, 0))
 
-    step("bracket: drive-end bore")
-    body = body.cut(Part.makeCylinder(bearing_od / 2.0, t, Vector(ax0, -1, drive_z), Vector(0, 1, 0)))
-
-    step("bracket: nose take-up slot")
+    step("bracket: infeed take-up slot")
     sw = nose_axle_dia + 0.5
-    # Slot runs INBOARD from the tensioned position — take-up pulls the nose out
-    # toward the face, so the fully-tensioned axis is the outer limit and the
-    # design span is what you actually get.
-    slot = Part.makeBox(nose_travel, t + 2, sw, Vector(nose_x - nose_travel, -1, nose_z - sw / 2.0))
-    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(nose_x - nose_travel, -1, nose_z), Vector(0, 1, 0)))
-    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
+    # Slot runs INBOARD from the tensioned position — take-up pulls the infeed
+    # nose out toward the face, so the fully-tensioned axis is the outer limit
+    # and the design span is what you actually get, not a best case.
+    slot = Part.makeBox(nose_travel, t + 2, sw, Vector(ax0, -1, nose_z - sw / 2.0))
+    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(ax0, -1, nose_z), Vector(0, 1, 0)))
+    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(ax0 + nose_travel, -1, nose_z),
+                                       Vector(0, 1, 0)))
     body = body.cut(slot)
+
+    if motor_side:
+        step("bracket: N20 face mount at the driven nose")
+        # The motor's Ø12 output boss passes through; its two M2 screws carry the
+        # load. Shaft then has t + side_gap = 4 mm to cross before it reaches the
+        # roller, leaving ~6 mm of a 10 mm D-shaft engaged.
+        body = body.cut(Part.makeCylinder(motor_nose_d / 2.0 + 0.2, t + 2,
+                                          Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
+        for dz in (-motor_bolt_pitch / 2.0, motor_bolt_pitch / 2.0):
+            body = body.cut(Part.makeCylinder(motor_bolt_d / 2.0, t + 2,
+                                              Vector(nose_x, -1, nose_z + dz), Vector(0, 1, 0)))
+    else:
+        step("bracket: stub-axle bore at the driven nose")
+        body = body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, t + 2,
+                                          Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
 
     step("bracket: cross-member mounting holes")
     for hx in (ax0 + 18.0, nose_x - 18.0):
@@ -166,51 +176,35 @@ def make_bracket(module_len, t=None, top_z=None):
 
 
 # ------------------------------------------------------------------ rollers
-def _roller_blank():
-    r = roller_dia / 2.0
+# One roller body serves both ends. The idler rides a Ø4 stub axle as a plain
+# bearing; the driven one takes the motor's D-shaft directly. At Ø10 there is no
+# room for a rolling bearing — 10 mm OD is the whole roller — and no room for a
+# grub screw either: a Ø3.2 hole through a 3.5 mm wall leaves nothing. The D-flat
+# IS the key, which is what it is for, and shaft torque here is only 0.005 N·m.
+def make_roller(driven=False):
+    step("roller: Ø%.0f %s" % (nose_dia, "driven (D-bore)" if driven else "idler (plain bore)"))
+    r = nose_dia / 2.0
     fr = roller_flange_d / 2.0
     body = Part.makeCylinder(r, belt_width, Vector(0, roller_flange_w, 0), Vector(0, 1, 0))
     body = body.fuse(Part.makeCylinder(fr, roller_flange_w, Vector(0, 0, 0), Vector(0, 1, 0)))
     body = body.fuse(Part.makeCylinder(fr, roller_flange_w,
                                        Vector(0, roller_len - roller_flange_w, 0), Vector(0, 1, 0)))
-    return body
 
+    if not driven:
+        return body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, roller_len + 2,
+                                          Vector(0, -1, 0), Vector(0, 1, 0)))
 
-def make_roller_nose():
-    # Replaces the Ø25 idler entirely. At Ø10 there is no room for an MR105
-    # (10 mm OD is the whole roller), so this runs as a plain bearing directly on
-    # the Ø4 axle — acceptable on the slack end, where load is belt tension only.
-    step("roller/nose: Ø%.0f blank + plain bore" % nose_dia)
-    r = nose_dia / 2.0
-    fr = (nose_dia + 3.0) / 2.0
-    body = Part.makeCylinder(r, belt_width, Vector(0, roller_flange_w, 0), Vector(0, 1, 0))
-    body = body.fuse(Part.makeCylinder(fr, roller_flange_w, Vector(0, 0, 0), Vector(0, 1, 0)))
-    body = body.fuse(Part.makeCylinder(fr, roller_flange_w,
-                                       Vector(0, roller_len - roller_flange_w, 0), Vector(0, 1, 0)))
-    body = body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, roller_len + 2,
-                                      Vector(0, -1, 0), Vector(0, 1, 0)))
-    return body
-
-
-def make_roller_drive():
-    step("roller/drive: blank + D-shaft bore + grub screw")
-    body = _roller_blank()
-    depth = 14.0
-    # The bore is the shape of the SHAFT: a Ø3 cylinder with one side flattened
-    # to 2.5 across. Build the shaft, then subtract it.
+    # Bore is the shape of the SHAFT: a Ø3 cylinder with one side flattened to
+    # 2.5 across. Build the shaft, then subtract it.
+    depth = 8.0
     shaft = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth, Vector(0, -0.5, 0), Vector(0, 1, 0))
     beyond = motor_shaft_flat - motor_shaft_d / 2.0
     sliver = Part.makeBox(motor_shaft_d + 2, depth + 1, motor_shaft_d,
                           Vector(-(motor_shaft_d / 2.0 + 1), -1, beyond))
-    shaft = shaft.cut(sliver)
-    body = body.cut(shaft)
-    # relieve the far end so it can still ride an axle stub
-    body = body.cut(Part.makeCylinder(axle_dia / 2.0 + 0.15, roller_len - depth + 1,
+    body = body.cut(shaft.cut(sliver))
+    # far end still rides a stub axle in the opposite plate
+    return body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, roller_len - depth + 1,
                                       Vector(0, depth, 0), Vector(0, 1, 0)))
-    # M3 grub screw, radially inward from the outside surface to the bore.
-    body = body.cut(Part.makeCylinder(1.6, roller_dia / 2.0,
-                                      Vector(0, 6.0, roller_dia / 2.0), Vector(0, 0, -1)))
-    return body
 
 
 # --------------------------------------------------------------- slider bed
@@ -231,19 +225,10 @@ def make_slider_bed(module_len, t=None):
     return bed
 
 
-# -------------------------------------------------------------- motor mount
-def make_motor_mount():
-    step("motor mount: plate + nose clearance + N20 bolt pattern")
-    plate = Part.makeBox(bracket_h, wall, bracket_h, Vector(0, 0, 0))
-    c = bracket_h / 2.0
-    plate = plate.cut(Part.makeCylinder(motor_nose_d / 2.0, wall + 2, Vector(c, -1, c), Vector(0, 1, 0)))
-    for dz in (-motor_bolt_pitch / 2.0, motor_bolt_pitch / 2.0):
-        plate = plate.cut(Part.makeCylinder(motor_bolt_d / 2.0, wall + 2,
-                                            Vector(c, -1, c + dz), Vector(0, 1, 0)))
-    for dz in (-14.0, 14.0):
-        plate = plate.cut(Part.makeCylinder(m3_clear / 2.0, wall + 2,
-                                            Vector(6.0, -1, c + dz), Vector(0, 1, 0)))
-    return plate
+# The separate motor mount plate is gone. Driving a nose roller puts the motor
+# on the side plate's outer face, so the N20 pattern is cut into make_bracket
+# directly — one fewer printed part, and one fewer stack-up between the shaft
+# and the roller (t + side_gap = 4 mm, leaving ~6 mm of a 10 mm D-shaft engaged).
 
 
 # ---------------------------------------------------------- corner guide rail
@@ -269,8 +254,10 @@ def _tangent_normal(c1, r1, c2, r2, upper):
 
 
 def make_belt(module_len):
+    # Equal radii at equal height now, so the tangents come out horizontal and
+    # this is a stadium again. Kept general because nose_dia is a parameter.
     ax0, nose_x = roller_axis_x(module_len)
-    c1, r1 = (ax0, drive_z), roller_dia / 2.0
+    c1, r1 = (ax0, nose_z), nose_dia / 2.0
     c2, r2 = (nose_x, nose_z), nose_dia / 2.0
     bt = belt_thickness
 
@@ -307,30 +294,31 @@ step("=== build start ===")
 corner_outer_width = inner_width + 2 * mating_wall
 corner_offset_x = straight_len + frame_gap + corner_outer_width
 
-export(make_bracket(straight_len), "bracket_straight")
-export(make_bracket(corner_len, t=mating_wall), "bracket_corner_outer")
+export(make_bracket(straight_len, motor_side=True), "bracket_straight_motor")
+export(make_bracket(straight_len), "bracket_straight_plain")
+export(make_bracket(corner_len, t=mating_wall, motor_side=True), "bracket_corner_motor")
 export(make_bracket(corner_len, t=mating_wall, top_z=carry_z), "bracket_corner_infeed")
-export(make_roller_nose(), "roller_nose")
-export(make_roller_drive(), "roller_drive")
+export(make_roller(), "roller_idler")
+export(make_roller(driven=True), "roller_driven")
 export(make_slider_bed(straight_len), "slider_bed_straight")
-export(make_motor_mount(), "motor_mount")
 export(make_guide_rail(), "guide_rail")
 
 
 # ---- assemblies, for rendering -------------------------------------------
+# The motor always goes on the local y=0 plate. open_face cuts the OTHER plate
+# down to the carry plane — that is the face a feeding module butts against once
+# a corner is rotated into place.
 def assemble(module_len, t=None, with_belt=True, open_face=False):
-    # open_face cuts the far side plate (local +y, which is the side a feeding
-    # module butts against once this one is rotated) down to the carry plane.
     t = wall if t is None else t
     step("assembly: len=%.1f t=%.1f open_face=%s" % (module_len, t, open_face))
     ax0, nose_x = roller_axis_x(module_len)
     ry = t + side_gap
 
-    parts = [make_bracket(module_len, t),
+    parts = [make_bracket(module_len, t, motor_side=True),
              make_bracket(module_len, t, top_z=carry_z if open_face else None
                           ).translated(Vector(0, inner_width + t, 0)),
-             make_roller_drive().translated(Vector(ax0, ry, drive_z)),
-             make_roller_nose().translated(Vector(nose_x, ry, nose_z)),
+             make_roller().translated(Vector(ax0, ry, nose_z)),
+             make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)),
              make_slider_bed(module_len, t)]
 
     if with_belt:
@@ -361,44 +349,54 @@ def export_components(module_len, tag, t=None, rot=0.0, offset=None, open_face=F
             s = s.translated(offset)
         return s
 
-    br = make_bracket(module_len, t)
+    br = make_bracket(module_len, t, motor_side=True)
     br = br.fuse(make_bracket(module_len, t, top_z=carry_z if open_face else None
                               ).translated(Vector(0, inner_width + t, 0)))
     export(place(br), tag + "_brackets")
 
-    ro = make_roller_drive().translated(Vector(ax0, ry, drive_z))
-    ro = ro.fuse(make_roller_nose().translated(Vector(nose_x, ry, nose_z)))
+    ro = make_roller().translated(Vector(ax0, ry, nose_z))
+    ro = ro.fuse(make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)))
     export(place(ro), tag + "_rollers")
 
     export(place(make_slider_bed(module_len, t)), tag + "_bed")
     export(place(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0))), tag + "_belt")
 
 
+# straight2 sits beyond the corner in +Y with its belt laterally aligned to the
+# corner's. The +1 offset is (wall - mating_wall): the two modules have different
+# side-plate thicknesses, so aligning their FRAMES would misalign their BELTS.
+s2_offset_x = corner_offset_x + (wall - mating_wall)
+s2_offset_y = corner_len + frame_gap
+
 export_components(straight_len, "cs")
 export_components(corner_len, "cc", t=mating_wall, open_face=True,
                   rot=90.0, offset=Vector(corner_offset_x, 0, 0))
+export_components(straight_len, "s2", rot=90.0, offset=Vector(s2_offset_x, s2_offset_y, 0))
 
-# ---- the L: straight feeding a corner ------------------------------------
-step("assembly: L = straight + corner, corner belt perpendicular")
+# ---- v0: straight -> corner -> straight, the full three-module line -------
+step("assembly: v0 line = straight + corner + straight")
 a_str = assemble(straight_len)
 a_cor = assemble(corner_len, t=mating_wall, open_face=True)
-# rotate the corner 90 deg about Z so its belt runs across the feed, then park
-# it beyond the straight's discharge end.
+a_s2 = assemble(straight_len)
+# rotate 90 about Z so the belt runs across the feed, then park beyond it.
 a_cor = a_cor.copy()
 a_cor.rotate(Vector(0, 0, 0), Vector(0, 0, 1), 90)
 a_cor = a_cor.translated(Vector(corner_offset_x, 0, 0))
+a_s2 = a_s2.copy()
+a_s2.rotate(Vector(0, 0, 0), Vector(0, 0, 1), 90)
+a_s2 = a_s2.translated(Vector(s2_offset_x, s2_offset_y, 0))
 export(a_str.fuse(a_cor), "assembly_L")
+export(a_str.fuse(a_cor).fuse(a_s2), "assembly_v0")
 
 step("belt path lengths: straight=%.1f mm (TPU cyl dia %.1f) corner=%.1f mm (dia %.1f)"
      % (belt_path_length(straight_len), belt_path_length(straight_len) / math.pi,
         belt_path_length(corner_len), belt_path_length(corner_len) / math.pi))
 
 _ax0, _nose_x = roller_axis_x(straight_len)
-step("TRANSFER GAP: support ends x=%.1f, corner belt starts x=%.1f, unsupported=%.1f mm"
-     % (_nose_x, corner_offset_x - corner_outer_width + mating_wall + side_gap + roller_flange_w,
-        unsupported_span()))
-step("  breakdown: nose inset %.1f + frame gap %.1f + corner side inset %.1f"
-     % (straight_len - _nose_x, frame_gap, mating_wall + side_gap + roller_flange_w))
+step("JOINT A straight->corner (side entry): %.1f + %.1f + %.1f = %.1f mm"
+     % (nose_edge, frame_gap, side_entry_inset(), unsupported_span("side")))
+step("JOINT B corner->straight (end entry): %.1f + %.1f + %.1f = %.1f mm"
+     % (nose_edge, frame_gap, end_entry_inset(), unsupported_span("end")))
 
 # ---- publish the derived geometry ----------------------------------------
 # The sim used to re-declare these constants by hand, which meant a dimension
@@ -413,11 +411,11 @@ _c_ax0, _c_nose_x = roller_axis_x(corner_len)
 geom = {
     "_generated_by": "cad/conveyor/build_parts.py — do not hand-edit",
     "belt_width": belt_width, "belt_thickness": belt_thickness,
-    "roller_dia": roller_dia, "nose_dia": nose_dia,
+    "nose_dia": nose_dia,
     "roller_flange_w": roller_flange_w, "side_gap": side_gap,
     "bracket_h": bracket_h, "wall": wall, "mating_wall": mating_wall,
     "inner_width": inner_width, "outer_width": outer_width,
-    "carry_z": carry_z, "drive_z": drive_z, "nose_z": nose_z,
+    "carry_z": carry_z, "nose_z": nose_z,
     # rail_top is the top of each side plate, [local y=0 side, local y=max side].
     # The corner's y=max plate is its infeed face and is cut to the carry plane
     # so a part can cross onto it; everything else stays full height as a rail.
@@ -430,8 +428,10 @@ geom = {
                "rail_top": [bracket_h, carry_z],
                "belt_len": belt_path_length(corner_len),
                "offset_x": corner_offset_x},
+    "straight2": {"offset_x": s2_offset_x, "offset_y": s2_offset_y},
     "frame_gap": frame_gap,
-    "unsupported_span": unsupported_span(),
+    "joint_a_side_entry": unsupported_span("side"),
+    "joint_b_end_entry": unsupported_span("end"),
 }
 with open(os.path.join(OUT, "geometry.json"), "w", encoding="utf-8") as fh:
     json.dump(geom, fh, indent=2)

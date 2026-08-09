@@ -176,26 +176,30 @@ SCENES = {
           (P("cs_bed"), BED), (P("cs_belt"), BELT),
           (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
           (P("cc_bed"), BED), (P("cc_belt"), BELT)],
-    "roller_drive": [(P("roller_drive"), ROLLER)],
-    "roller_nose": [(P("roller_nose"), ROLLER)],
-    "bracket": [(P("bracket_straight"), BRACKET)],
+    "v0": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
+           (P("cs_bed"), BED), (P("cs_belt"), BELT),
+           (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
+           (P("cc_bed"), BED), (P("cc_belt"), BELT),
+           (P("s2_brackets"), BRACKET), (P("s2_rollers"), ROLLER),
+           (P("s2_bed"), BED), (P("s2_belt"), BELT)],
+    "roller_driven": [(P("roller_driven"), ROLLER)],
+    "roller_idler": [(P("roller_idler"), ROLLER)],
+    "bracket": [(P("bracket_straight_motor"), BRACKET)],
     "bracket_corner": [(P("bracket_corner_infeed"), BRACKET)],
-    "motor_mount": [(P("motor_mount"), BRACKET)],
 }
 
 VIEWS = {
-    "roller_drive": (-0.55, 0.75, -0.38),
-    "roller_nose": (-0.55, 0.75, -0.38),
+    "roller_driven": (-0.55, 0.75, -0.38),
+    "roller_idler": (-0.55, 0.75, -0.38),
     "bracket": (-0.10, 1.0, -0.22),
-    "motor_mount": (-0.45, 0.9, -0.35),
 }
 
 SIZES = {
     "L": (1400, 720),
-    "roller_drive": (800, 620),
-    "roller_nose": (800, 620),
+    "v0": (1400, 900),
+    "roller_driven": (800, 620),
+    "roller_idler": (800, 620),
     "bracket": (1200, 480),
-    "motor_mount": (760, 620),
 }
 
 want = sys.argv[1:] or list(SCENES)

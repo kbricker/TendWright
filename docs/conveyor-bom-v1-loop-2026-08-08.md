@@ -11,37 +11,56 @@
 
 ## 1 · The motor
 
-**12 V N20 metal gearmotor, ~100 RPM, 3 mm D-shaft.** Sometimes sold as "N20 mini
-metal gear motor 12V 100RPM". Anything **60–150 RPM** works; buy the speed you want
-as the *maximum*, because PWM only throttles downward.
+> **CHANGED 2026-08-09 — buy ~250 RPM, not 100 RPM.** The drive roller moved from
+> Ø25 to Ø10 (see below), and belt speed is π × roller × RPM. A 100 RPM motor on a
+> Ø10 roller gives **31 mm/s**, not 131. Nothing had been ordered when this changed.
 
-**Torque is not the constraint — it has 8–12× margin.** The working:
+**12 V N20 metal gearmotor, ~250 RPM, 3 mm D-shaft.** Anything **200–400 RPM**
+works; buy the speed you want as the *maximum*, because PWM only throttles downward.
+
+**Torque is not the constraint, and the smaller roller improved it.** Shaft torque is
+belt pull × roller radius, so halving the radius halves the load on the D-bore:
 
 | | |
 |---|---|
 | Belt + a 50 g part, normal force | ~0.6 N |
 | × µ ≈ 0.35, printed belt on printed slider bed | ~0.21 N |
 | × ~3 for roller, bearing and tracking drag | **~1 N of belt pull** |
-| At a Ø25 mm roller → 1 N × 0.0125 m | **0.0125 N·m ≈ 0.13 kg·cm** |
-| A 12 V N20 @ 100 RPM delivers | ~1.0–1.5 kg·cm |
+| At a Ø10 mm roller → 1 N × 0.005 m | **0.005 N·m ≈ 0.05 kg·cm** |
+| A 12 V N20 @ 250 RPM delivers | ~0.5–0.8 kg·cm |
+| Margin | **10–16×** |
 
-**Speed is what actually decides it.** A Ø25 roller advances 78.5 mm per turn:
+**Speed is what actually decides it.** A Ø10 roller advances 31.4 mm per turn:
 
 | Motor | Top belt speed | At 20% duty |
 |---|---|---|
-| 60 RPM | 79 mm/s | 16 mm/s |
-| **100 RPM** ← | **131 mm/s** | **26 mm/s** |
-| 150 RPM | 196 mm/s | 39 mm/s |
+| 150 RPM | 79 mm/s | 16 mm/s |
+| **250 RPM** ← | **131 mm/s** | **26 mm/s** |
+| 400 RPM | 209 mm/s | 42 mm/s |
 
-100 RPM gives the most usable range: brisk at full, still controllable at a crawl.
+250 RPM gives the most usable range: brisk at full, still controllable at a crawl.
 
 **Buy one or two spares.** N20s are cheap and the gearboxes are the weak point.
 
-### Why Ø25 rollers, not tanius's Ø40
+### Why Ø10 rollers at BOTH ends, and why the drive is on the discharge end
 
-Smaller end rollers mean a smaller nose radius, which means **a smaller gap between
-adjacent modules** — and that gap is the one thing v0 exists to prove. Smaller rollers
-make the hard problem easier. Ø40 on a 3 mm shaft would also be a poor lever ratio.
+The module gap is what v0 exists to prove, and a roller in a rounded bracket end sits
+half a bracket-height (17.5 mm) inboard of the module face — so the belt apex is pushed
+away from the transfer by the frame's own shape. The sim measured the result: **27 mm of
+unsupported span against a 32 mm part, and the part stranded.**
+
+Squaring the ends and dropping to Ø10 noses brings both insets to 6 mm. Both ends have
+to be small, because in the loop **every straight receives from a corner at one end and
+discharges into a corner at the other** — so a fat roller anywhere on an end breaks half
+the joints in the system. That is what moved the drive onto a nose roller.
+
+Measured spans after the change: **joint A (into a corner's side) 12.0 mm, joint B (into
+a straight's end) 13.5 mm** — both proven to transfer in sim.
+
+**No grub screw on the driven roller.** A Ø3.2 hole through a Ø10 roller's 3.5 mm wall
+leaves nothing. The D-flat is the key, which is what a D-shaft is for, and 0.005 N·m is
+well within what a printed D-bore holds. This is a tolerance question the bench settles,
+not the sim.
 
 ---
 
@@ -53,32 +72,37 @@ make the hard problem easier. Ø40 on a 3 mm shaft would also be a poor lever ra
 | Module outer width | ~62 mm |
 | Straight module length | 120 mm |
 | Corner module length | 70 mm |
-| Roller diameter | 25 mm |
+| Roller diameter | 10 mm, both ends, discharge one driven |
 | Height off the desk | ~45 mm |
 | **Loop footprint** | **~260 × 260 mm** (70 + 120 + 70 per side) |
 | Total belt to produce | ~1.6 m at 50 mm wide |
 
 ---
 
-## 3 · Printed parts — 84 pieces, ~500 g
+## 3 · Printed parts — 76 pieces, ~460 g
 
-Per module (×8): 2 side brackets · 2 rollers · 1 slider bed · 1 motor mount ·
-2 tensioner blocks · 1 return guide = **9 parts**
+Per module (×8): 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner blocks ·
+1 return guide = **8 parts**
 
 Plus 4 corner guide rails and 8 frame connectors.
 
+The separate motor mount is **gone** — driving a nose roller puts the N20 on the side
+plate's outer face, so its bolt pattern is cut into the bracket. One fewer part per
+module, and one fewer stack-up between the shaft and the roller.
+
 | | Qty | Material | Notes |
 |---|---|---|---|
-| Side brackets | 16 | PETG | Carries bearing pockets and the tensioner slot |
-| Rollers Ø25 | 16 | PLA+ | Needs edge flanges to keep the belt tracking |
+| Side brackets, motor side | 8 | PETG | Take-up slot + the N20 face pattern |
+| Side brackets, plain | 8 | PETG | Take-up slot + stub-axle bore. Corner infeed plates are cut flush with the carry plane |
+| Rollers Ø10, idler | 8 | PLA+ | Plain Ø4 bore, edge flanges to keep the belt tracking |
+| Rollers Ø10, driven | 8 | PLA+ | Ø3 D-bore, no grub screw — the flat is the key |
 | Slider beds | 8 | PLA+ | The wear surface — print smooth side up |
-| Motor mounts | 8 | PETG | Takes the D-shaft coupling |
-| Tensioner blocks | 16 | PETG | 20 mm sliding travel |
+| Tensioner blocks | 16 | PETG | 8 mm sliding travel at the infeed nose |
 | Return guides | 8 | PLA+ | |
 | Corner guide rails | 4 | PLA+ | Arrests the part's incoming momentum |
-| Frame connectors | 8 | PETG | Sets and holds the inter-module gap |
+| Frame connectors | 8 | PETG | Sets and holds the 1.5 mm inter-module gap |
 
-**~500 g total**, so half a spool. PETG where it's loaded, PLA+ where the fit matters —
+**~460 g total**, so half a spool. PETG where it's loaded, PLA+ where the fit matters —
 same split as CableCell uses. Tree supports on, per your standing profile.
 
 ---
@@ -94,13 +118,13 @@ circumference equals the belt path. No seam, no splicing, no glue.
 
 | Belt | Cylinder Ø | Height | Wall | TPU |
 |---|---|---|---|---|
-| Straight (×4) | 79.1 mm | 50 mm | 1.5 mm | ~23 g each |
-| Corner (×4) | 47.3 mm | 50 mm | 1.5 mm | ~14 g each |
+| Straight (×4) | 78.8 mm | 50 mm | 1.5 mm | ~23 g each |
+| Corner (×4) | 46.9 mm | 50 mm | 1.5 mm | ~14 g each |
 
 **~150 g of TPU total** — one spool covers it with room for reprints.
 
 These diameters are **computed by the CAD, not estimated**: `build.log` reports
-belt path 248.5 mm (straight) and 148.5 mm (corner) from the actual roller centres.
+belt path 247.4 mm (straight) and 147.4 mm (corner) from the actual roller centres.
 Rerun `build_parts.py` after any dimension change and re-read them.
 
 ⚠ **TPU should not go through the AMS** — it wants an external spool holder and a
@@ -119,7 +143,7 @@ is 8 chances to get it wrong. Only worth it if TPU turns out to be a problem.
 
 | Item | Qty | Notes |
 |---|---|---|
-| N20 gearmotor, 12 V, 100 RPM, 3 mm D-shaft | 8 (+2 spare) | §1 |
+| N20 gearmotor, 12 V, **250 RPM**, 3 mm D-shaft | 8 (+2 spare) | §1 — NOT 100 RPM, the roller is Ø10 now |
 | TB6612FNG dual motor driver breakout | 4 | 2 channels each. **4.5–13.5 V** — covers 12 V |
 | Raspberry Pi **Pico 2** (RP2350) | 1 | 24 PWM channels vs the RP2040's 16 — see below |
 | 12 V PSU, 5 A, barrel jack | 1 | Size from *measured* stall current, not the datasheet |
@@ -150,11 +174,12 @@ like a firmware bug.
 
 | Item | Qty | Notes |
 |---|---|---|
-| MR105ZZ bearings (5 × 10 × 4 mm) | 24 | 2 per idler roller + 1 per drive roller far end |
-| 5 mm steel rod, 1 m | 1 | Idler axles, ~70 mm each |
+| ~~MR105ZZ bearings~~ | 0 | **Dropped.** At Ø10 the bearing OD *is* the roller — no room. Rollers run as plain bearings on the axle; load is belt tension only |
+| 4 mm steel rod, 1 m | 1 | Idler and stub axles, ~70 mm each |
 | M3 × 16 bolts + nyloc nuts | 60 | Frame assembly |
 | M4 × 20 bolts + nuts | 20 | Tensioners |
-| M3 × 6 grub screws | 10 | D-shaft roller retention |
+| M2 × 6 bolts | 20 | N20 face mount, straight into the side plate |
+| ~~M3 × 6 grub screws~~ | 0 | **Dropped.** Ø3.2 through a 3.5 mm wall leaves nothing; the D-flat carries the 0.005 N·m on its own |
 
 Bearing and axle sizes are the **most likely thing here to change** once the CAD is
 parameterised — they're set by roller wall thickness, which isn't fixed yet. Don't
@@ -185,7 +210,7 @@ is rollers-and-belt throughout.
 | 4 × TB6612FNG | $8 – 16 |
 | Pico 2 | $5 – 10 |
 | 12 V 5 A PSU + jack | $12 – 18 |
-| 24 × MR105ZZ | $8 – 12 |
+| ~~MR105ZZ~~ | $0 — dropped |
 | Rod + fasteners | $12 – 18 |
 | TPU spool (if not on hand) | $20 – 30 |
 | Wire, connectors, perfboard | $10 – 15 |

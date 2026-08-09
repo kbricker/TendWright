@@ -2,7 +2,6 @@
   "_generated_by": "cad/conveyor/build_parts.py \u2014 do not hand-edit",
   "belt_width": 50.0,
   "belt_thickness": 1.5,
-  "roller_dia": 25.0,
   "nose_dia": 10.0,
   "roller_flange_w": 1.5,
   "side_gap": 1.0,
@@ -12,11 +11,10 @@
   "inner_width": 55.0,
   "outer_width": 61.0,
   "carry_z": 30.0,
-  "drive_z": 17.5,
   "nose_z": 25.0,
   "straight": {
     "len": 120.0,
-    "drive_ax": 17.5,
+    "drive_ax": 6.0,
     "nose_ax": 114.0,
     "t": 3.0,
     "outer_width": 61.0,
@@ -24,11 +22,11 @@
       35.0,
       35.0
     ],
-    "belt_len": 249.14133569978446
+    "belt_len": 247.41592653589794
   },
   "corner": {
     "len": 70.0,
-    "drive_ax": 17.5,
+    "drive_ax": 6.0,
     "nose_ax": 64.0,
     "t": 2.0,
     "outer_width": 59.0,
@@ -36,9 +34,14 @@
       35.0,
       30.0
     ],
-    "belt_len": 150.37656828519468,
+    "belt_len": 147.41592653589794,
     "offset_x": 180.5
   },
+  "straight2": {
+    "offset_x": 181.5,
+    "offset_y": 71.5
+  },
   "frame_gap": 1.5,
-  "unsupported_span": 12.0
+  "joint_a_side_entry": 12.0,
+  "joint_b_end_entry": 13.5
 }
