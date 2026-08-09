@@ -113,22 +113,42 @@ same split as CableCell uses. Tree supports on, per your standing profile.
 
 ### Option A — printed TPU loops (recommended)
 
-Print each belt as a **thin-walled cylinder standing on the bed**, sized so its
-circumference equals the belt path. No seam, no splicing, no glue.
+**Filament: TPU 95A.** Shore 95A — roughly a skateboard wheel. Bambu's *TPU 95A HF*
+has an A1 profile and is the path of least resistance. Elongation at break is
+400–500%, which is what makes a printed part work as a belt at all: it bends round a
+Ø10 roller and springs back instead of creasing. Softer grades (85A) are more
+rubbery and considerably harder to print — not worth it here.
 
-| Belt | Cylinder Ø | Height | Wall | TPU |
+Print each belt as a **thin-walled cylinder standing upright on the plate**, sized so
+its circumference equals the belt path. No seam, no splicing, no glue.
+
+| Belt | Cylinder mean Ø | Height | Wall | TPU |
 |---|---|---|---|---|
-| Straight (×4) | 78.8 mm | 50 mm | 1.5 mm | ~23 g each |
-| Corner (×4) | 46.9 mm | 50 mm | 1.5 mm | ~14 g each |
+| Straight (×4) | 79.8 mm | 50 mm | 1.0 mm | ~15 g each |
+| Corner (×4) | 47.9 mm | 50 mm | 1.0 mm | ~9 g each |
 
-**~150 g of TPU total** — one spool covers it with room for reprints.
+**~100 g of TPU total** — one spool covers it several times over.
 
-These diameters are **computed by the CAD, not estimated**: `build.log` reports
-belt path 247.4 mm (straight) and 147.4 mm (corner) from the actual roller centres.
-Rerun `build_parts.py` after any dimension change and re-read them.
+**Wall is 1.0 mm, not 1.5, and that is set by the roller.** Belt practice wants
+pulley-diameter ÷ belt-thickness ≥ 10; Ø10 rollers put a 1.5 mm wall at **6.7**. It
+would not crack — 13% outer-fibre strain is nothing against 400% elongation — but a
+stiff belt fights the wrap and lifts off a small nose roller, which is precisely the
+geometry the nose exists to protect. 1.0 mm gives **D/t = 10.0** and prints as a
+clean 2–3 perimeters at a 0.4 mm nozzle.
 
-⚠ **TPU should not go through the AMS** — it wants an external spool holder and a
-direct feed. Worth confirming that's workable on your A1 before committing, since
+These diameters are **computed by the CAD, not estimated**: `build.log` reports belt
+path 250.6 mm (straight) and 150.6 mm (corner). Note they are measured at the belt's
+**neutral axis** (roller Ø + wall), not at the roller surface — the neutral axis is
+the fibre that neither stretches nor compresses, so it is the only length that stays
+constant as the belt wraps, and it is what the printed cylinder's *mean* diameter has
+to match. Measuring at the roller surface undersizes every loop by π × wall of
+circumference, against only 8 mm of take-up travel to absorb it.
+
+Rerun `build_parts.py` after any dimension change and re-read the log.
+
+⚠ **TPU must not go through the AMS** — flexible filament buckles in the long PTFE
+path. It wants an external spool holder and a direct feed to the extruder. The A1
+supports this, but confirm it with one test print before the design leans on it:
 it's the only new material in the whole build.
 
 ### Option B — bought belting, spliced

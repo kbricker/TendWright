@@ -350,9 +350,25 @@ def run_headless(seconds=6.0, frames=6):
     return data, part_bid
 
 
+def reset_part(model, data, part_bid):
+    # v0 is an open line, so the part runs off the end and stops being
+    # interesting. Put it back at the top so the viewer loops. This is a DEMO
+    # convenience only — run_headless never does it, because the run-off is a
+    # real result there and hiding it would be lying to the measurement.
+    s_y0, s_y1 = belt_y(STR)
+    qadr = model.body_jntadr[part_bid]
+    qpos = model.jnt_qposadr[qadr]
+    data.qpos[qpos:qpos + 7] = [m(40.0), m((s_y0 + s_y1) / 2.0),
+                                m(belt_top + PART[2] / 2.0 + 0.5), 1, 0, 0, 0]
+    dof = model.jnt_dofadr[qadr]
+    data.qvel[dof:dof + 6] = 0
+    data.xfrc_applied[part_bid][:3] = (0.0, 0.0, 0.0)
+
+
 def run_viewer():
     import mujoco.viewer
     model, data, belts, part_gid, part_bid = setup()
+    end_of_line = S2["offset_y"] + straight_len
     with mujoco.viewer.launch_passive(model, data) as v:
         v.cam.lookat[:] = (m(150), m(70), m(20))
         v.cam.distance = 0.50
@@ -364,6 +380,9 @@ def run_viewer():
             for _ in range(20):
                 belt_drive(model, data, belts, part_gid, part_bid)
                 mujoco.mj_step(model, data)
+            p = data.xpos[part_bid]
+            if p[1] * 1000 > end_of_line or p[2] * 1000 < belt_top - 10:
+                reset_part(model, data, part_bid)
             v.sync()
             dt = model.opt.timestep * 20 - (time.time() - t0)
             if dt > 0:

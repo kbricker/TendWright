@@ -37,7 +37,14 @@ def step(msg):
 # rerun; nothing downstream is hard-coded.
 
 belt_width      = 50.0    # Kyle, 2026-08-08
-belt_thickness  = 1.5     # printed TPU loop wall
+
+# Printed TPU 95A loop wall. 1.0, not 1.5, and the reason is the roller shrink:
+# belt practice wants pulley-diameter/belt-thickness >= 10, and Ø10 rollers put
+# 1.5 mm at D/t = 6.7. Not a cracking risk — 13% outer-fibre strain is nothing
+# against TPU's 400%+ elongation — but a stiff belt fights the wrap and lifts off
+# a small nose, which is the exact geometry the nose roller exists to protect.
+# 1.0 mm gives D/t = 10.0 and is a clean 2-3 perimeters at 0.4 mm nozzle.
+belt_thickness  = 1.0
 
 # BOTH ends are small nose rollers, and the DISCHARGE one is driven.
 #
@@ -99,8 +106,21 @@ def roller_axis_x(module_len):
 def belt_path_length(module_len):
     # Equal radii at equal height, so this is back to a stadium — but computed,
     # not assumed, because nose_dia is a parameter and the sim reads the result.
+    #
+    # Measured at the belt's NEUTRAL AXIS (nose_dia + belt_thickness), not at the
+    # roller surface. The neutral axis is the fibre that neither stretches nor
+    # compresses, so it is the only length that stays constant as the belt wraps
+    # — and it is what a printed loop's mean circumference has to match. Using
+    # the roller surface undersizes every belt by pi x thickness of circumference
+    # (~2% here), against only nose_travel of take-up to absorb it.
     ax0, ax1 = roller_axis_x(module_len)
-    return 2.0 * (ax1 - ax0) + math.pi * nose_dia
+    return 2.0 * (ax1 - ax0) + math.pi * (nose_dia + belt_thickness)
+
+
+def printed_cylinder_dia(module_len):
+    # What to actually type into the slicer: the MEAN diameter of the printed
+    # cylinder, whose circumference is the neutral-axis path.
+    return belt_path_length(module_len) / math.pi
 
 
 # A transfer's unsupported span is (feeding module's discharge inset) + frame gap
@@ -127,7 +147,7 @@ def make_bracket(module_len, t=None, top_z=None, motor_side=False):
     # axle that supports the far end of the same roller.
     #
     # top_z cuts the plate down flush with the carry plane. A full-height plate
-    # stands bracket_h - (carry_z + belt_thickness) = 3.5 mm PROUD of its own
+    # stands bracket_h - (carry_z + belt_thickness) = 4.0 mm PROUD of its own
     # belt, which is a useful side rail on a through face and a kerb on a
     # transfer face. The sim found this the hard way: the part crossed the gap
     # fine and then stopped dead against the receiving module's wall.
@@ -388,9 +408,10 @@ a_s2 = a_s2.translated(Vector(s2_offset_x, s2_offset_y, 0))
 export(a_str.fuse(a_cor), "assembly_L")
 export(a_str.fuse(a_cor).fuse(a_s2), "assembly_v0")
 
-step("belt path lengths: straight=%.1f mm (TPU cyl dia %.1f) corner=%.1f mm (dia %.1f)"
-     % (belt_path_length(straight_len), belt_path_length(straight_len) / math.pi,
-        belt_path_length(corner_len), belt_path_length(corner_len) / math.pi))
+step("belt (neutral axis, D/t=%.1f): straight=%.1f mm -> print cyl mean dia %.1f | corner=%.1f mm -> %.1f"
+     % (nose_dia / belt_thickness,
+        belt_path_length(straight_len), printed_cylinder_dia(straight_len),
+        belt_path_length(corner_len), printed_cylinder_dia(corner_len)))
 
 _ax0, _nose_x = roller_axis_x(straight_len)
 step("JOINT A straight->corner (side entry): %.1f + %.1f + %.1f = %.1f mm"
@@ -422,11 +443,13 @@ geom = {
     "straight": {"len": straight_len, "drive_ax": _ax0, "nose_ax": _nose_x,
                  "t": wall, "outer_width": outer_width,
                  "rail_top": [bracket_h, bracket_h],
-                 "belt_len": belt_path_length(straight_len)},
+                 "belt_len": belt_path_length(straight_len),
+                 "print_cyl_dia": printed_cylinder_dia(straight_len)},
     "corner": {"len": corner_len, "drive_ax": _c_ax0, "nose_ax": _c_nose_x,
                "t": mating_wall, "outer_width": corner_outer_width,
                "rail_top": [bracket_h, carry_z],
                "belt_len": belt_path_length(corner_len),
+               "print_cyl_dia": printed_cylinder_dia(corner_len),
                "offset_x": corner_offset_x},
     "straight2": {"offset_x": s2_offset_x, "offset_y": s2_offset_y},
     "frame_gap": frame_gap,

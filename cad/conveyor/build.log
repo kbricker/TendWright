@@ -144,7 +144,7 @@ roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=120.0
 export: assembly_L
 export: assembly_v0
-belt path lengths: straight=247.4 mm (TPU cyl dia 78.8) corner=147.4 mm (dia 46.9)
+belt (neutral axis, D/t=10.0): straight=250.6 mm -> print cyl mean dia 79.8 | corner=150.6 mm -> 47.9
 JOINT A straight->corner (side entry): 6.0 + 1.5 + 4.5 = 12.0 mm
 JOINT B corner->straight (end entry): 6.0 + 1.5 + 6.0 = 13.5 mm
 export: geometry.json
