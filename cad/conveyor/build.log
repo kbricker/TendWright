@@ -1,7 +1,8 @@
 === build start ===
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 export: bracket_straight_motor
 bracket: len=120.0 t=3.0 motor_side=False
@@ -11,7 +12,8 @@ bracket: cross-member mounting holes
 export: bracket_straight_plain
 bracket: len=70.0 t=2.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 export: bracket_corner_motor
 bracket: len=70.0 t=2.0 motor_side=False
@@ -28,10 +30,13 @@ slider bed: plate + lead-in chamfers, len=120.0
 export: slider_bed_straight
 guide rail: L-section
 export: guide_rail
+motor: GA12-N20 reference envelope
+export: ref_motor
 assembly: len=120.0 t=3.0 open_face=False
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=120.0 t=3.0 motor_side=False
 bracket: infeed take-up slot
@@ -44,7 +49,8 @@ export: assembly_straight
 assembly: len=70.0 t=2.0 open_face=True
 bracket: len=70.0 t=2.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=70.0 t=2.0 motor_side=False
 bracket: infeed take-up slot
@@ -58,7 +64,8 @@ export: assembly_corner
 components: cs
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=120.0 t=3.0 motor_side=False
 bracket: infeed take-up slot
@@ -68,13 +75,16 @@ export: cs_brackets
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 export: cs_rollers
+motor: GA12-N20 reference envelope
+export: cs_motor
 slider bed: plate + lead-in chamfers, len=120.0
 export: cs_bed
 export: cs_belt
 components: cc
 bracket: len=70.0 t=2.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=70.0 t=2.0 motor_side=False
 bracket: infeed take-up slot
@@ -85,13 +95,16 @@ export: cc_brackets
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 export: cc_rollers
+motor: GA12-N20 reference envelope
+export: cc_motor
 slider bed: plate + lead-in chamfers, len=70.0
 export: cc_bed
 export: cc_belt
 components: s2
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=120.0 t=3.0 motor_side=False
 bracket: infeed take-up slot
@@ -101,6 +114,8 @@ export: s2_brackets
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 export: s2_rollers
+motor: GA12-N20 reference envelope
+export: s2_motor
 slider bed: plate + lead-in chamfers, len=120.0
 export: s2_bed
 export: s2_belt
@@ -108,7 +123,8 @@ assembly: v0 line = straight + corner + straight
 assembly: len=120.0 t=3.0 open_face=False
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=120.0 t=3.0 motor_side=False
 bracket: infeed take-up slot
@@ -120,7 +136,8 @@ slider bed: plate + lead-in chamfers, len=120.0
 assembly: len=70.0 t=2.0 open_face=True
 bracket: len=70.0 t=2.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=70.0 t=2.0 motor_side=False
 bracket: infeed take-up slot
@@ -133,7 +150,8 @@ slider bed: plate + lead-in chamfers, len=70.0
 assembly: len=120.0 t=3.0 open_face=False
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
-bracket: N20 face mount at the driven nose
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
 bracket: cross-member mounting holes
 bracket: len=120.0 t=3.0 motor_side=False
 bracket: infeed take-up slot

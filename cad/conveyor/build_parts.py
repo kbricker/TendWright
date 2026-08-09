@@ -85,9 +85,21 @@ motor_shaft_len = 9.0     # Pololu spec; generic GA12-N20 is 10. Bore is cut dee
                           # the shaft reaches, and that is what the stress check uses.
 motor_bore_depth = 8.0
 motor_shaft_flat= 2.5     # across the D
-motor_nose_d    = 12.0
-motor_bolt_pitch= 10.0
-motor_bolt_d    = 2.2
+# Motor envelope, read off the GA12-N20 dimension drawing and confirmed against
+# Pololu's published body size. The face pattern is 2 x M1.6 THREADED at 9 mm
+# pitch, placed DIAGONALLY about the shaft, around a O4 boss — not the M2 / 10 mm
+# / O12 pattern this file cut before checking. M1.6 diagonal is fiddly and its
+# exact offsets are not legible from the drawing, so the motor is held by a
+# SADDLE on its 10 x 12 body instead. That dimension is unambiguous and identical
+# across Pololu and every GA12-N20, so the mount stops depending on the vendor.
+motor_boss_d    = 4.0     # boss around the shaft at the gearbox face
+motor_body_w    = 10.0    # across the belt direction (X)
+motor_body_h    = 12.0    # vertical (Z)
+motor_body_len  = 24.0    # gearbox + can, outboard of the plate
+motor_can_d     = 11.5    # steel can, rounded — the part the saddle grips
+saddle_wall     = 2.5
+saddle_clear    = 0.4
+m2_clear        = 2.2
 
 m3_clear        = 3.2
 
@@ -180,15 +192,30 @@ def make_bracket(module_len, t=None, top_z=None, motor_side=False):
     body = body.cut(slot)
 
     if motor_side:
-        step("bracket: N20 face mount at the driven nose")
-        # The motor's Ø12 output boss passes through; its two M2 screws carry the
-        # load. Shaft then has t + side_gap = 4 mm to cross before it reaches the
-        # roller, leaving ~6 mm of a 10 mm D-shaft engaged.
-        body = body.cut(Part.makeCylinder(motor_nose_d / 2.0 + 0.2, t + 2,
+        step("bracket: motor saddle + boss clearance at the driven nose")
+        # Only the O4 boss and the shaft pass through the plate. The old O12.4
+        # hole was sized for the BODY by mistake and needlessly gutted the plate.
+        body = body.cut(Part.makeCylinder(motor_boss_d / 2.0 + 0.3, t + 2,
                                           Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
-        for dz in (-motor_bolt_pitch / 2.0, motor_bolt_pitch / 2.0):
-            body = body.cut(Part.makeCylinder(motor_bolt_d / 2.0, t + 2,
-                                              Vector(nose_x, -1, nose_z + dz), Vector(0, 1, 0)))
+
+        # Saddle: a tunnel outboard of the plate that the motor slides into,
+        # shaft first. CLIPPED to the module footprint — an unclipped wall
+        # overhangs the discharge face by 1.5 mm and would foul the next module
+        # across a 1.5 mm frame gap. The motor body itself (10 wide) clears with
+        # 1 mm to spare; only the retaining wall had to give.
+        pw = motor_body_w + 2 * saddle_clear
+        ph = motor_body_h + 2 * saddle_clear
+        ow, oh = pw + 2 * saddle_wall, ph + 2 * saddle_wall
+        slen = motor_body_len + 2.0
+        sad = Part.makeBox(ow, slen, oh, Vector(nose_x - ow / 2.0, -slen, nose_z - oh / 2.0))
+        sad = sad.common(Part.makeBox(module_len, slen + 2, bracket_h * 3,
+                                      Vector(0, -slen - 1, -bracket_h)))
+        body = body.fuse(sad)
+        body = body.cut(Part.makeBox(pw, slen + 1, ph,
+                                     Vector(nose_x - pw / 2.0, -slen - 0.5, nose_z - ph / 2.0)))
+        step("bracket: saddle clamp screw")
+        body = body.cut(Part.makeCylinder(m2_clear / 2.0, oh, Vector(nose_x, -slen / 2.0, nose_z),
+                                          Vector(0, 0, 1)))
     else:
         step("bracket: stub-axle bore at the driven nose")
         body = body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, t + 2,
@@ -267,6 +294,25 @@ def make_slider_bed(module_len, t=None):
 # and the roller (t + side_gap = 4 mm, leaving ~6 mm of a 10 mm D-shaft engaged).
 
 
+# ------------------------------------------- motor (reference only, not printed)
+def make_motor_body():
+    # Dimensioned envelope for fit checks and renders, NOT a printed part.
+    step("motor: GA12-N20 reference envelope")
+    gear_len = motor_body_len - 15.2
+    m = Part.makeBox(motor_body_w, gear_len, motor_body_h,
+                     Vector(-motor_body_w / 2.0, -gear_len, -motor_body_h / 2.0))
+    can = Part.makeCylinder(motor_can_d / 2.0, 15.2, Vector(0, -motor_body_len, 0), Vector(0, 1, 0))
+    can = can.common(Part.makeBox(motor_body_w, 15.2, motor_body_h,
+                                  Vector(-motor_body_w / 2.0, -motor_body_len, -motor_body_h / 2.0)))
+    m = m.fuse(can)
+    m = m.fuse(Part.makeCylinder(motor_boss_d / 2.0, 0.8, Vector(0, 0, 0), Vector(0, 1, 0)))
+    shaft = Part.makeCylinder(motor_shaft_d / 2.0, motor_shaft_len, Vector(0, 0, 0), Vector(0, 1, 0))
+    beyond = motor_shaft_flat - motor_shaft_d / 2.0
+    shaft = shaft.cut(Part.makeBox(motor_shaft_d + 2, motor_shaft_len + 1, motor_shaft_d,
+                                   Vector(-(motor_shaft_d / 2.0 + 1), -0.5, beyond)))
+    return m.fuse(shaft)
+
+
 # ---------------------------------------------------------- corner guide rail
 def make_guide_rail():
     step("guide rail: L-section")
@@ -338,6 +384,7 @@ export(make_roller(), "roller_idler")
 export(make_roller(driven=True), "roller_driven")
 export(make_slider_bed(straight_len), "slider_bed_straight")
 export(make_guide_rail(), "guide_rail")
+export(make_motor_body(), "ref_motor")
 
 
 # ---- assemblies, for rendering -------------------------------------------
@@ -394,6 +441,7 @@ def export_components(module_len, tag, t=None, rot=0.0, offset=None, open_face=F
     ro = ro.fuse(make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)))
     export(place(ro), tag + "_rollers")
 
+    export(place(make_motor_body().translated(Vector(nose_x, 0, nose_z))), tag + "_motor")
     export(place(make_slider_bed(module_len, t)), tag + "_bed")
     export(place(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0))), tag + "_belt")
 
