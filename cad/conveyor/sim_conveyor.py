@@ -240,7 +240,19 @@ def _argv(flag, default):
 STRAIGHT_SPEED = _argv("--speed", 0.131)    # N20 @ 250 RPM on a 10 mm roller
 CORNER_SPEED = _argv("--corner-speed", STRAIGHT_SPEED)
 DRIVE_GAIN = 60.0
-MU_BELT = 0.9               # belt surface against the part
+
+# Belt-to-part friction. NOT a guess and not a bench unknown — it is bounded by
+# published elastomer tribology plus the contact regime this build actually runs in.
+#
+# Published TPU/PU numbers span 0.3 to >1.0, and the spread is mostly CONTACT
+# PRESSURE, not material variation. Elastomer friction is adhesion-dominated, and
+# the adhesion term falls monotonically with normal load (power law), so pin-on-disc
+# tests at 50 N over a few mm2 — order MPa — report the LOW end. A 30 g part on a
+# 32x32 mm footprint is 0.29 kPa, about three orders of magnitude lower, which puts
+# this build firmly in the adhesion-dominated regime where the HIGH end applies.
+#
+# 0.9 is the working value; sweep with --mu to check the design does not depend on it.
+MU_BELT = _argv("--mu", 0.9)
 
 # The belt geoms are given near-zero MuJoCo friction on purpose: their tangential
 # behaviour is modelled here instead, as a drag toward the belt's surface VELOCITY

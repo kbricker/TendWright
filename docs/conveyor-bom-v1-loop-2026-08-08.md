@@ -96,7 +96,7 @@ module, and one fewer stack-up between the shaft and the roller.
 | Side brackets, plain | 8 | PETG | Take-up slot + stub-axle bore. Corner infeed plates are cut flush with the carry plane |
 | Rollers Ø10, idler | 8 | PLA+ | Plain Ø4 bore, edge flanges to keep the belt tracking |
 | Rollers Ø10, driven | 8 | PLA+ | Ø3 D-bore, no grub screw — the flat is the key |
-| Slider beds | 8 | PLA+ | The wear surface — print smooth side up |
+| Slider beds | 8 | PLA+ | The wear surface — print smooth side up. **Consider facing with UHMW or PTFE tape:** published conveyor practice puts a PU belt on UHMW at µ 0.03–0.06 vs 0.15–0.30 on steel, and printed PLA sits nearer the steel end. Cuts belt drag ~5–10×. Not needed at v0's 10–16× torque margin; matters at 8 motors on one supply |
 | Tensioner blocks | 16 | PETG | 8 mm sliding travel at the infeed nose |
 | Return guides | 8 | PLA+ | |
 | Corner guide rails | 4 | PLA+ | Arrests the part's incoming momentum |
@@ -250,7 +250,7 @@ RP2040 8 PWM slices / 16 channels, RP2350 12 slices / 24 channels · A1 build vo
 this machine, FreeCAD 1.1 is.
 
 **Estimated — treat as a starting point, not a spec:**
-N20 stall current (measure it — it sizes the PSU) · µ ≈ 0.35 for the friction pair ·
+N20 stall current (measure it — it sizes the PSU) · µ ≈ 0.35 belt-on-PLA-bed, pessimistic (UHMW would be 0.03–0.06) ·
 all filament weights · all prices · the 610-link count in §7 · whether TPU feeds
 acceptably on your A1 without the AMS.
 
