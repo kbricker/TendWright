@@ -233,16 +233,26 @@ def build_xml():
 
 # Commanded belt velocities, m/s. This is the thing the whole architecture
 # exists to allow: each module driven independently.
-STRAIGHT_SPEED = 0.131      # N20 @ 100 RPM on a 25 mm roller
-CORNER_SPEED = 0.131
+def _argv(flag, default):
+    return type(default)(sys.argv[sys.argv.index(flag) + 1]) if flag in sys.argv else default
+
+
+STRAIGHT_SPEED = _argv("--speed", 0.131)    # N20 @ 250 RPM on a 10 mm roller
+CORNER_SPEED = _argv("--corner-speed", STRAIGHT_SPEED)
 DRIVE_GAIN = 60.0
 MU_BELT = 0.9               # belt surface against the part
 
 # The belt geoms are given near-zero MuJoCo friction on purpose: their tangential
-# behaviour is modelled here instead, as a drag toward belt speed clipped at the
-# traction limit mu*N. That is what a real belt does — it drags a part until the
-# part matches the belt, and it cannot pull harder than friction allows. It also
-# means a commanded speed of 0 brakes the part, which is correct.
+# behaviour is modelled here instead, as a drag toward the belt's surface VELOCITY
+# VECTOR, clipped at the traction limit mu*N. That is what a real belt does — it
+# drags a part until the part matches the belt, and it cannot pull harder than
+# friction allows. It also means a commanded speed of 0 brakes the part.
+#
+# The vector part matters and was wrong until 2026-08-09. This used to add force
+# only along each module's DRIVE axis, which left a part sliding sideways with no
+# friction from the model AND near-zero friction from MuJoCo — so lateral motion,
+# once started, persisted almost undamped. Real belt friction is isotropic in the
+# plane: sliding across a belt is opposed exactly as much as sliding along it.
 def belt_drive(model, data, belts, part_gid, part_bid):
     # belts: list of (geom-id set, axis 0=X 1=Y, commanded speed). A part
     # straddling two modules gets pulled by both, which is exactly what happens
@@ -274,8 +284,14 @@ def belt_drive(model, data, belts, part_gid, part_bid):
 
     force = [0.0, 0.0]
     for k, (_, axis, speed) in enumerate(belts):
-        if touching[k]:
-            force[axis] += DRIVE_GAIN * PART_MASS * (speed - v[axis])
+        if not touching[k]:
+            continue
+        # This belt's surface velocity as a 2D vector, then drag the part toward
+        # it in BOTH components — the cross-axis term is what damps lateral drift.
+        surface = [0.0, 0.0]
+        surface[axis] = speed
+        force[0] += DRIVE_GAIN * PART_MASS * (surface[0] - v[0])
+        force[1] += DRIVE_GAIN * PART_MASS * (surface[1] - v[1])
 
     mag = math.hypot(force[0], force[1])
     if mag > traction and mag > 0:
@@ -389,11 +405,7 @@ def run_viewer():
                 time.sleep(dt)
 
 
-def _arg(flag, default):
-    return type(default)(sys.argv[sys.argv.index(flag) + 1]) if flag in sys.argv else default
-
-
 if "--view" in sys.argv:
     run_viewer()
 else:
-    run_headless(seconds=_arg("--seconds", 6.0), frames=_arg("--frames", 6))
+    run_headless(seconds=_argv("--seconds", 6.0), frames=_argv("--frames", 6))
