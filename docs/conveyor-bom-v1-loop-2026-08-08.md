@@ -58,9 +58,22 @@ Measured spans after the change: **joint A (into a corner's side) 12.0 mm, joint
 a straight's end) 13.5 mm** — both proven to transfer in sim.
 
 **No grub screw on the driven roller.** A Ø3.2 hole through a Ø10 roller's 3.5 mm wall
-leaves nothing. The D-flat is the key, which is what a D-shaft is for, and 0.005 N·m is
-well within what a printed D-bore holds. This is a tolerance question the bench settles,
-not the sim.
+leaves nothing. The D-flat is the key, which is what a D-shaft is for — and the numbers
+say it is not close:
+
+| case | force on the flat | bearing stress | margin vs 40 MPa |
+|---|---|---|---|
+| running torque | 5.0 N | 0.28 MPa | **143×** |
+| N20 **stall** (1.0–1.5 kg·cm) | 98–147 N | 5.5–8.2 MPa | **5–7×** |
+
+A Ø3 shaft with a 2.5 mm across-flat gives a 2.24 mm chord × 8 mm engagement = 17.9 mm²
+of bearing area. Stall is the design case — a jammed part applies the motor's full output,
+20–30× the running load — and the margin still holds. Printed axis-vertical, the flat
+bears in-plane on the layers, so there is no interlayer penalty either.
+
+Bores are modelled at **nominal +0.15 mm on radius**, matching the offset CableCell
+measured on this machine (`CableCell/cad/README.md`: printed holes come out undersize).
+Expect Ø3.3 modelled → ~Ø3.1 printed, a light slip fit.
 
 ---
 
