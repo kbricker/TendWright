@@ -187,6 +187,7 @@ SCENES = {
     "bracket": [(P("bracket_straight_motor"), BRACKET)],
     "motor_mount": [(P("bracket_straight_motor"), BRACKET), (P("cs_motor"), (120, 118, 112))],
     "bracket_corner": [(P("bracket_corner_infeed"), BRACKET)],
+    "coupon": [(P("coupon_bracket_end"), BRACKET), (P("roller_driven"), ROLLER)],
 }
 
 VIEWS = {
@@ -194,6 +195,7 @@ VIEWS = {
     "roller_idler": (-0.55, 0.75, -0.38),
     "bracket": (-0.10, 1.0, -0.22),
     "motor_mount": (-0.62, -0.55, -0.40),
+    "coupon": (-0.55, -0.70, -0.42),
 }
 
 SIZES = {
@@ -203,6 +205,7 @@ SIZES = {
     "roller_idler": (800, 620),
     "bracket": (1200, 480),
     "motor_mount": (1000, 760),
+    "coupon": (1000, 760),
 }
 
 want = sys.argv[1:] or list(SCENES)

@@ -386,6 +386,18 @@ export(make_slider_bed(straight_len), "slider_bed_straight")
 export(make_guide_rail(), "guide_rail")
 export(make_motor_body(), "ref_motor")
 
+# ---- fit coupon: the discharge end only, so the fit check is a 20-minute print
+# rather than a whole module. Carries every feature the fit depends on — the
+# boss bore, the motor saddle, the take-up slot and the module face.
+step("coupon: discharge end of the motor-side bracket")
+_coupon_len = 45.0
+_cb = make_bracket(straight_len, motor_side=True)
+_cb = _cb.common(Part.makeBox(_coupon_len, wall + saddle_wall * 2 + motor_body_w + 4,
+                              bracket_h * 2,
+                              Vector(straight_len - _coupon_len, -(saddle_wall * 2 + motor_body_w + 4),
+                                     -bracket_h / 2.0)))
+export(_cb, "coupon_bracket_end")
+
 
 # ---- assemblies, for rendering -------------------------------------------
 # The motor always goes on the local y=0 plate. open_face cuts the OTHER plate

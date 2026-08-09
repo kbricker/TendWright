@@ -32,6 +32,13 @@ guide rail: L-section
 export: guide_rail
 motor: GA12-N20 reference envelope
 export: ref_motor
+coupon: discharge end of the motor-side bracket
+bracket: len=120.0 t=3.0 motor_side=True
+bracket: infeed take-up slot
+bracket: motor saddle + boss clearance at the driven nose
+bracket: saddle clamp screw
+bracket: cross-member mounting holes
+export: coupon_bracket_end
 assembly: len=120.0 t=3.0 open_face=False
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
