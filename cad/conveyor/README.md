@@ -6,7 +6,7 @@ v0 is **two straight modules + one corner, three motors, an open line.** It exis
 two things nobody knew: that a part survives the handoff gap between independently driven
 modules, and that it corners. Both are proven in simulation; nothing has been printed yet.
 
-Shopping list and costs live in [`docs/conveyor-bom-v1-loop-2026-08-08.md`](../../docs/conveyor-bom-v1-loop-2026-08-08.md).
+Shopping list and costs live in [`docs/conveyor/conveyor-bom-v1-loop-2026-08-08.md`](../../docs/conveyor/conveyor-bom-v1-loop-2026-08-08.md).
 This file is how to make and assemble the thing.
 
 ---
@@ -153,30 +153,16 @@ See #843.
 
 ## Wiring
 
-**Two supplies, one ground.** This is the classic first-integration failure.
+TB6612FNG ×2 for v0, ×4 for v1. Two supplies, one ground — the classic first-integration failure.
 
-```
-  12 V PSU ──┬── VM  (motor rail)          TB6612FNG ×2 (v0) / ×4 (v1)
-             │
-             └── GND ─┬─────────────────────────────┐
-                      │                             │
-  USB 5 V ── Pico 2 ──┴── 3V3 ── VCC (logic)        │   ← SAME ground
-                          │                          │
-                          ├── PWMA / AIN1 / AIN2 ────┤
-                          ├── PWMB / BIN1 / BIN2 ────┤
-                          └── STBY ──────────────────┘
-
-  each driver channel ── 2-core ── one N20 motor
-```
-
-- **The 12 V motor rail and the Pico's 5 V USB rail are separate supplies that must share a
-  common ground.** The TB6612FNG has a split VM (motor, 12 V) / VCC (logic, 3.3 V). Get this
-  wrong and it either does nothing or misbehaves in ways that look like a firmware bug.
-- **Not the DRV8833** — it tops out at 10.8 V and cannot drive 12 V motors at all.
-- **Pico 2, not Pico.** 8 motors × (PWM + IN1 + IN2) + STBY = 25 of a Pico's 26 GPIO,
-  leaving nothing for a sensor. The RP2350 has 12 PWM slices (24 channels) against the
-  RP2040's 8 (16).
-- Use **JST-XH pairs or screw terminals** at each motor so a module can be unplugged.
+- **12 V PSU** → driver `VM` (motor rail)
+- **Pico 2 3V3** → driver `VCC` (logic rail)
+- **PSU ground and Pico ground tied together** — the TB6612FNG splits VM from VCC, and it only works if they share a return. Get this wrong and it either does nothing or misbehaves in ways that look exactly like a firmware bug.
+- Per driver: `PWMA/AIN1/AIN2` and `PWMB/BIN1/BIN2` from Pico GPIO, plus a shared `STBY` (held high to enable).
+- Each driver channel → 2-core → one N20 motor.
+- **Not the DRV8833** — tops out at 10.8 V and cannot drive 12 V motors at all.
+- **Pico 2, not Pico.** 8 motors × (PWM + IN1 + IN2) + STBY = 25 of a Pico's 26 GPIO, leaving nothing for a sensor. The RP2350 has 12 PWM slices (24 channels) against the RP2040's 8 (16).
+- **JST-XH pairs or screw terminals** at each motor so a module can be unplugged.
 - Size the PSU from **measured** stall current, not the datasheet.
 
 ### Firmware notes
