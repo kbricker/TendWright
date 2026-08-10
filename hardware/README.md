@@ -5,6 +5,10 @@
 - `mockbay/` — the mock CNC bay: parametric nest fixture (OpenSCAD +
   STL) with the KW12-3 part-present switch (plan #619); measure-first
   notes in `mockbay/README.md`.
+- `conveyor/` — mini modular conveyor motor bridge (plan #835): Pico 2
+  MicroPython firmware (`conveyor/firmware/`) + host `ConveyorDriver` +
+  `hardware.conveyor.run` bring-up CLI. `hardware.conveyor.selftest`
+  exercises the command protocol with no hardware attached.
 - `pico/` — Pico bridge: MicroPython firmware (`pico/firmware/`) + host
   `NestReader` (the PicoCell sensor backend) + `hardware.pico.watch`.
 - `so101-print/` — vendored SO-101 follower print STLs

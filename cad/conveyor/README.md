@@ -167,10 +167,14 @@ TB6612FNG ×2 for v0, ×4 for v1. Two supplies, one ground — the classic first
 
 ### Firmware notes
 
+Built — see [`hardware/conveyor/`](../../hardware/conveyor/README.md) for the protocol, pin map
+and bring-up CLI. `uv run python -m hardware.conveyor.selftest` checks it without a Pico.
+
 - Commands are **absolute, not deltas** — `set duty=X`, never `increase speed`. That makes
   every command idempotent, so a duplicate is harmless.
-- Duty is clamped **0–100 % at the firmware boundary**, not on the host. Out-of-range is
-  rejected and reported, never silently saturated.
+- Duty is validated **0–100 % at the firmware boundary**, not on the host, and out-of-range is
+  **rejected** — never clamped. Silently saturating 150 to 100 turns a host bug into a
+  conveyor that merely runs slower than someone expected.
 - **Command timeout that coasts every motor.** A motor left driven after the host goes away
   is the one genuinely unsafe state.
 - **Stop-all on init** so a reset never inherits a spinning motor.

@@ -62,4 +62,11 @@ run*.csv
 # must be committed - home.json was untracked for days for want of this
 # distinction, and nothing regenerates it.
 _*.py
+# ...but _*.py also matches __init__.py, which silently un-tracks the
+# package marker of every NEW package. The existing ones survive only
+# because they were tracked before this rule landed, and the breakage is
+# invisible locally: the file is right there on disk, so imports work for
+# you and fail for a fresh clone. Same shape as the home.json case above.
+!__init__.py
+!__main__.py
 docs/reviews/
