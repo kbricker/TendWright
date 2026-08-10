@@ -12,6 +12,8 @@
   "outer_width": 61.0,
   "carry_z": 30.0,
   "nose_z": 25.0,
+  "return_run_z": 19.0,
+  "return_guide_top": 18.5,
   "straight": {
     "len": 120.0,
     "drive_ax": 6.0,

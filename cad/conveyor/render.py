@@ -164,24 +164,27 @@ P = lambda n: os.path.join(PARTS, n + ".stl")
 BRACKET = (208, 206, 198)
 ROLLER = (196, 132, 74)
 BED = (74, 126, 178)
+RETURN = (108, 152, 120)
 BELT = (58, 58, 62)
 SOLO = (196, 194, 186)
 
 SCENES = {
     "straight": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-                 (P("cs_bed"), BED), (P("cs_belt"), BELT), (P("cs_motor"), (120, 118, 112))],
+                 (P("cs_bed"), BED), (P("cs_return"), RETURN),
+                 (P("cs_belt"), BELT), (P("cs_motor"), (120, 118, 112))],
     "corner": [(P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-               (P("cc_bed"), BED), (P("cc_belt"), BELT)],
+               (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT)],
     "L": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-          (P("cs_bed"), BED), (P("cs_belt"), BELT),
+          (P("cs_bed"), BED), (P("cs_return"), RETURN), (P("cs_belt"), BELT),
           (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-          (P("cc_bed"), BED), (P("cc_belt"), BELT)],
+          (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT)],
     "v0": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-           (P("cs_bed"), BED), (P("cs_belt"), BELT),
+           (P("cs_bed"), BED), (P("cs_return"), RETURN), (P("cs_belt"), BELT),
            (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-           (P("cc_bed"), BED), (P("cc_belt"), BELT),
+           (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT),
            (P("s2_brackets"), BRACKET), (P("s2_rollers"), ROLLER),
-           (P("s2_bed"), BED), (P("s2_belt"), BELT)],
+           (P("s2_bed"), BED), (P("s2_return"), RETURN), (P("s2_belt"), BELT)],
+    "return_guide": [(P("return_guide_straight"), RETURN)],
     "roller_driven": [(P("roller_driven"), ROLLER)],
     "roller_idler": [(P("roller_idler"), ROLLER)],
     "bracket": [(P("bracket_straight_motor"), BRACKET)],

@@ -28,6 +28,10 @@ roller: Ø10 driven (D-bore)
 export: roller_driven
 slider bed: plate + lead-in chamfers, len=120.0
 export: slider_bed_straight
+return guide: crowned bar, len=120.0
+export: return_guide_straight
+return guide: crowned bar, len=70.0
+export: return_guide_corner
 guide rail: L-section
 export: guide_rail
 motor: GA12-N20 reference envelope
@@ -52,6 +56,7 @@ bracket: cross-member mounting holes
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=120.0
+return guide: crowned bar, len=120.0
 export: assembly_straight
 assembly: len=70.0 t=2.0 open_face=True
 bracket: len=70.0 t=2.0 motor_side=True
@@ -67,6 +72,7 @@ bracket: cut down to z=30.0 (open transfer face)
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=70.0
+return guide: crowned bar, len=70.0
 export: assembly_corner
 components: cs
 bracket: len=120.0 t=3.0 motor_side=True
@@ -86,6 +92,8 @@ motor: GA12-N20 reference envelope
 export: cs_motor
 slider bed: plate + lead-in chamfers, len=120.0
 export: cs_bed
+return guide: crowned bar, len=120.0
+export: cs_return
 export: cs_belt
 components: cc
 bracket: len=70.0 t=2.0 motor_side=True
@@ -106,6 +114,8 @@ motor: GA12-N20 reference envelope
 export: cc_motor
 slider bed: plate + lead-in chamfers, len=70.0
 export: cc_bed
+return guide: crowned bar, len=70.0
+export: cc_return
 export: cc_belt
 components: s2
 bracket: len=120.0 t=3.0 motor_side=True
@@ -125,6 +135,8 @@ motor: GA12-N20 reference envelope
 export: s2_motor
 slider bed: plate + lead-in chamfers, len=120.0
 export: s2_bed
+return guide: crowned bar, len=120.0
+export: s2_return
 export: s2_belt
 assembly: v0 line = straight + corner + straight
 assembly: len=120.0 t=3.0 open_face=False
@@ -140,6 +152,7 @@ bracket: cross-member mounting holes
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=120.0
+return guide: crowned bar, len=120.0
 assembly: len=70.0 t=2.0 open_face=True
 bracket: len=70.0 t=2.0 motor_side=True
 bracket: infeed take-up slot
@@ -154,6 +167,7 @@ bracket: cut down to z=30.0 (open transfer face)
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=70.0
+return guide: crowned bar, len=70.0
 assembly: len=120.0 t=3.0 open_face=False
 bracket: len=120.0 t=3.0 motor_side=True
 bracket: infeed take-up slot
@@ -167,6 +181,7 @@ bracket: cross-member mounting holes
 roller: Ø10 idler (plain bore)
 roller: Ø10 driven (D-bore)
 slider bed: plate + lead-in chamfers, len=120.0
+return guide: crowned bar, len=120.0
 export: assembly_L
 export: assembly_v0
 belt (neutral axis, D/t=10.0): straight=250.6 mm -> print cyl mean dia 79.8 | corner=150.6 mm -> 47.9

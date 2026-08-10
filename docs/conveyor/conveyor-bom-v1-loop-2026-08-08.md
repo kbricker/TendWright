@@ -49,7 +49,7 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 | Rollers Ø10, driven (Ø3 D-bore) | 8 | PLA+ |
 | Slider beds | 8 | PLA+ |
 | Tensioner blocks | 16 | PETG |
-| Return guides | 8 | PLA+ |
+| Return guides | 8 | PLA+ (crowned bar, sits 0.5 mm below the taut return run) |
 | Corner guide rails | 4 | PLA+ |
 | Frame connectors | 8 | PETG |
 

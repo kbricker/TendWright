@@ -357,7 +357,9 @@ def run_headless(seconds=6.0, frames=6):
         open(path, "wb").write(blob)
 
     steps = int(seconds / model.opt.timestep)
-    shot_every = steps // frames
+    # --frames 0 means "run it, don't draw it" — the trajectory is the result,
+    # the PNGs are a convenience. Guard the divide rather than the caller.
+    shot_every = steps // frames if frames > 0 else steps + 1
     shot = 0
     track = []
     for i in range(steps):

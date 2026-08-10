@@ -99,6 +99,11 @@ motor_body_len  = 24.0    # gearbox + can, outboard of the plate
 motor_can_d     = 11.5    # steel can, rounded — the part the saddle grips
 saddle_wall     = 2.5
 saddle_clear    = 0.4
+
+# Return guide sits this far BELOW the taut lower run. It exists to catch sag,
+# not to bear on a correctly tensioned belt — zero clearance would add drag to
+# every module for nothing.
+return_clear    = 0.5
 m2_clear        = 2.2
 
 m3_clear        = 3.2
@@ -288,6 +293,44 @@ def make_slider_bed(module_len, t=None):
     return bed
 
 
+# -------------------------------------------------------------- return guide
+def return_run_z():
+    # Outer (downward-facing) surface of the TAUT lower run. The belt wraps the
+    # underside of both noses at nose_z - nose_dia/2, and its own thickness hangs
+    # below that. Derived, not typed: it moves with nose_dia and belt_thickness,
+    # both of which have already changed once in this build.
+    return nose_z - nose_dia / 2.0 - belt_thickness
+
+
+def make_return_guide(module_len, t=None):
+    # A crowned bar under the return run. It is NOT a tensioner and must not
+    # preload the belt — it sits return_clear BELOW the taut line so a correctly
+    # tensioned belt never touches it, and only a sagging one lands on it. Set it
+    # flush and every module would fight its own return run for no reason.
+    t = wall if t is None else t
+    step("return guide: crowned bar, len=%.1f" % module_len)
+    ax0, nose_x = roller_axis_x(module_len)
+    # Stop a nose diameter clear of each axis so the bar never intrudes into the
+    # arc where the belt is wrapping — that is the one place a support becomes a
+    # jam. Between the noses there is nothing but belt, so full inner width is
+    # free and gives the bar both plates to register against, like the slider bed.
+    x0 = ax0 + nose_dia
+    span = (nose_x - nose_dia) - x0
+    top = return_run_z() - return_clear
+    bar = Part.makeBox(span, inner_width, wall, Vector(x0, t, top - wall))
+    try:
+        # Crown the two long top edges: the belt should meet a rounded rub strip,
+        # not a square corner dragged along its width.
+        edges = [e for e in bar.Edges
+                 if abs(e.CenterOfMass.z - top) < 1e-6 and
+                 abs(e.CenterOfMass.x - (x0 + span / 2.0)) < 1e-6]
+        if edges:
+            bar = bar.makeChamfer(1.2, edges)
+    except Exception as exc:
+        step("return guide: chamfer skipped (%s)" % exc)
+    return bar
+
+
 # The separate motor mount plate is gone. Driving a nose roller puts the motor
 # on the side plate's outer face, so the N20 pattern is cut into make_bracket
 # directly — one fewer printed part, and one fewer stack-up between the shaft
@@ -383,6 +426,8 @@ export(make_bracket(corner_len, t=mating_wall, top_z=carry_z), "bracket_corner_i
 export(make_roller(), "roller_idler")
 export(make_roller(driven=True), "roller_driven")
 export(make_slider_bed(straight_len), "slider_bed_straight")
+export(make_return_guide(straight_len), "return_guide_straight")
+export(make_return_guide(corner_len, t=mating_wall), "return_guide_corner")
 export(make_guide_rail(), "guide_rail")
 export(make_motor_body(), "ref_motor")
 
@@ -414,7 +459,8 @@ def assemble(module_len, t=None, with_belt=True, open_face=False):
                           ).translated(Vector(0, inner_width + t, 0)),
              make_roller().translated(Vector(ax0, ry, nose_z)),
              make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)),
-             make_slider_bed(module_len, t)]
+             make_slider_bed(module_len, t),
+             make_return_guide(module_len, t)]
 
     if with_belt:
         parts.append(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0)))
@@ -455,6 +501,7 @@ def export_components(module_len, tag, t=None, rot=0.0, offset=None, open_face=F
 
     export(place(make_motor_body().translated(Vector(nose_x, 0, nose_z))), tag + "_motor")
     export(place(make_slider_bed(module_len, t)), tag + "_bed")
+    export(place(make_return_guide(module_len, t)), tag + "_return")
     export(place(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0))), tag + "_belt")
 
 
@@ -513,6 +560,10 @@ geom = {
     "bracket_h": bracket_h, "wall": wall, "mating_wall": mating_wall,
     "inner_width": inner_width, "outer_width": outer_width,
     "carry_z": carry_z, "nose_z": nose_z,
+    # Taut lower run, and the guide that catches it if it sags. The sim reads
+    # carry_z; these are here so a return-run question never gets re-derived.
+    "return_run_z": return_run_z(),
+    "return_guide_top": return_run_z() - return_clear,
     # rail_top is the top of each side plate, [local y=0 side, local y=max side].
     # The corner's y=max plate is its infeed face and is cut to the carry plane
     # so a part can cross onto it; everything else stays full height as a rail.

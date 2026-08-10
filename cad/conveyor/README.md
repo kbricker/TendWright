@@ -78,6 +78,8 @@ Plus guide rails and frame connectors.
 | `roller_driven.stl` | 3 | 8 | PLA+ | **axis vertical**, brim |
 | `roller_idler.stl` | 3 | 8 | PLA+ | **axis vertical**, brim |
 | `slider_bed_straight.stl` | 3 | 8 | PLA+ | flat, smooth side up |
+| `return_guide_straight.stl` | 2 | 4 | PLA+ | flat, crowned side up |
+| `return_guide_corner.stl` | 1 | 4 | PLA+ | flat, crowned side up |
 | `guide_rail.stl` | 1 | 4 | PLA+ | flat |
 | TPU belt cylinders | 3 | 8 | **TPU 95A** | upright |
 
@@ -134,18 +136,25 @@ See #843.
    roller's D-bore. Tighten the M2 clamp screw onto the can.
    *There is no face-mount pattern* — the motor is held on its 10 × 12 body, so any
    GA12-N20-class motor fits regardless of vendor.
-3. **Slider bed** between the plates, under the carry run. Optionally face it with UHMW or
+3. **Return guide** between the plates, under the *lower* run, crowned edge up. It sits
+   **0.5 mm below the taut return line** — a correctly tensioned belt never touches it and
+   it only catches sag. Do not shim it up to contact: that adds drag to every module in the
+   system to solve a problem the tensioner already solved. It stops a nose diameter short of
+   each axis so it can never intrude on the arc where the belt is wrapping.
+4. **Slider bed** between the plates, under the carry run. Optionally face it with UHMW or
    PTFE tape: published practice puts a PU belt on UHMW at µ 0.03–0.06 against 0.15–0.30 on
    steel, and printed PLA sits nearer the steel end. Cuts belt drag 5–10×. Unnecessary at
    v0's 10–16× torque margin; worth it at eight motors on one supply.
-4. **Belt over the rollers**, then take up slack by sliding the infeed nose outward and
+5. **Belt over the rollers**, then take up slack by sliding the infeed nose outward and
    locking the tensioner blocks. The slot runs inboard from the tensioned position, so the
    fully-tensioned axis is the outer limit — the design span is what you actually get.
-5. **Butt the modules** at a 1.5 mm frame gap using the frame connectors. The corner's
+   The belt loop encircles the slider bed but passes *above* the return guide, which hangs
+   outside the loop — so the guide can go in before or after the belt, the bed cannot.
+6. **Butt the modules** at a 1.5 mm frame gap using the frame connectors. The corner's
    infeed side plate is cut flush with the carry plane; **that face must stay clear** —
    a full-height plate stands 4 mm proud of its own belt and is a kerb across the exact
    face the part has to cross.
-6. **Guide rail** on the corner's far side. It backs up the design; it does not make it
+7. **Guide rail** on the corner's far side. It backs up the design; it does not make it
    work. The part settles into its lane by belt traction and never reaches the rail at any
    speed or friction tested.
 
