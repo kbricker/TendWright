@@ -5,10 +5,13 @@ and exposes the latest debounced nest state. This is the sensor half of
 orchestrator.cell.PicoCell.
 
 Port resolution: --port/argument wins; else (Linux) a udev alias
-/dev/tty-pico if present (see the hardware plan's udev-rule note); else
-the single serial device with the Raspberry Pi USB VID (0x2E8A). Note
-that VID matches any RP2-family CDC board — on a bench with several USB
-serial devices, set up the udev alias.
+/dev/tty-pico if present; else the serial device with the Raspberry Pi
+USB VID (0x2E8A) — and if more than one board answers to that VID, the
+one whose output looks like THIS firmware (plan #848).
+
+The VID matches any RP2-family CDC board, so "the single 0x2E8A device"
+stopped identifying anything once the conveyor bridge (#835) put a second
+Pico on the bench permanently.
 """
 
 from __future__ import annotations
@@ -26,6 +29,39 @@ from hardware.errors import BenchError
 PICO_VID = 0x2E8A  # Raspberry Pi (MicroPython CDC)
 BAUD = 115200  # nominal; USB-CDC ignores it
 UDEV_ALIAS = "/dev/tty-pico"
+FIRMWARE_ID = "tendwright-pico"
+PROBE_SECONDS = 1.5
+
+
+def looks_like_nest_bridge(doc: dict) -> bool:
+    # Identified by its STREAM, not only its hello. The firmware emits a
+    # nest sample every 50 ms and re-emits hello only every ~5 s, so waiting
+    # for the hello would make a probe 100x slower than it needs to be for
+    # no extra certainty — no other board on this bench sends {"nest": ...}.
+    return doc.get("hello") == FIRMWARE_ID or "nest" in doc
+
+
+def _probe(port: str) -> bool:
+    # Read-only. The conveyor bridge answers a ping, but this one never reads
+    # stdin, so probing has to be passive — which is also why it must stay
+    # passive here: writing to a board we have not identified yet is how you
+    # send a motor command to a sensor, or worse, the reverse.
+    try:
+        with serial.Serial(port, BAUD, timeout=0.2) as ser:
+            deadline = time.monotonic() + PROBE_SECONDS
+            while time.monotonic() < deadline:
+                line = ser.readline()
+                if not line:
+                    continue
+                try:
+                    doc = json.loads(line.decode("ascii", "replace"))
+                except json.JSONDecodeError:
+                    continue  # partial line at connect time
+                if isinstance(doc, dict) and looks_like_nest_bridge(doc):
+                    return True
+    except (serial.SerialException, OSError):
+        return False
+    return False
 
 
 def resolve_pico_port(port: str | None) -> str:
@@ -34,15 +70,29 @@ def resolve_pico_port(port: str | None) -> str:
     if sys.platform.startswith("linux") and os.path.exists(UDEV_ALIAS):
         return UDEV_ALIAS
     picos = [p.device for p in list_ports.comports() if p.vid == PICO_VID]
-    if len(picos) == 1:
-        return picos[0]
     if not picos:
         raise BenchError(
             "no Pico found (USB VID 0x2E8A)",
             "plug the Pico in; if MicroPython isn't flashed yet see "
             "hardware/mockbay/README.md",
         )
-    raise BenchError(f"multiple Picos found: {', '.join(sorted(picos))}",
+    if len(picos) == 1:
+        # Fast path: one candidate needs no probe. If it turns out to be some
+        # other RP2 board, NestReader says so within stale_after — a clearer
+        # failure than a 1.5 s probe that reports "no nest bridge found" while
+        # the only board attached is sitting right there.
+        return picos[0]
+    found = [p for p in sorted(picos) if _probe(p)]
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise BenchError(
+            f"found {len(picos)} RP2 board(s), none running the nest bridge "
+            f"({', '.join(sorted(picos))})",
+            "is hardware/pico/firmware/main.py flashed as main.py? the "
+            "conveyor bridge answers to a different hello",
+        )
+    raise BenchError(f"multiple nest bridges found: {', '.join(found)}",
                      "pick one explicitly (port argument / --port)")
 
 

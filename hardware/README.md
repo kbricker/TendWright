@@ -11,6 +11,8 @@
   exercises the command protocol with no hardware attached.
 - `pico/` — Pico bridge: MicroPython firmware (`pico/firmware/`) + host
   `NestReader` (the PicoCell sensor backend) + `hardware.pico.watch`.
+  `hardware.pico.selftest` covers port resolution with no board attached —
+  the two-Pico case (#848) is unreachable at a desk otherwise.
 - `so101-print/` — vendored SO-101 follower print STLs
   (TheRobotStudio/SO-ARM100, Apache-2.0) + bench mounts.
 - P6 (plan #610) adds the real drivers here: GRBL serial driver, arm
