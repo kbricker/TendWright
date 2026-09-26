@@ -22,7 +22,7 @@ Build and assembly instructions: [`cad/conveyor/README.md`](../../cad/conveyor/R
 | Out of Darts | $6.99 | $70 | Days, US | 300/600/1000/2000 RPM, QC'd for full-auto Nerf |
 | Pololu #3041 (100:1) | $26.45 | $265 | Days, US | Published curves; 4× the price buys nothing here |
 
-**Recommended split:** 4 ServoCity 638122 now (v0 needs 3, US stock; Out of Darts sold out on 2026-09-25) + 10 GA12-N20 from AliExpress for the loop. The slow order lands about when v0 is proven.
+**Recommended split:** 4 ServoCity 638122 now (v0 needs 3, US stock; Out of Darts sold out on 2026-09-25). The loop's motors are more of the same ServoCity motor, with its enclosure and input board, bought once v0 works. They ship from US stock, so there is no lead time to get ahead of, and one motor everywhere keeps every module matched.
 
 ### Spec to order: 12 V · ~300 RPM · 3 mm D-shaft · single-ended
 

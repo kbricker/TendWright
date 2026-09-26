@@ -27,9 +27,7 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | 3 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063684](https://www.harfington.com/products/p-1063684) | 1 | $10.54 | in stock |
 | M2 / M3 / M4 socket-head screws with nuts | any assortment with M2 × 8, M3 × 16, M4 × 20 | 1 kit | ~$15–25 | *unverified* |
 | Nitrile O-ring assortment, metric | any kit, search `metric nitrile o-ring assortment` | 1 kit | ~$10–15 | *unverified* |
-| **Loop (#840):** GA12-N20 12 V 300 RPM, "with wire" | AliExpress, search `GA12-N20 12V 300RPM` | 10 | ~$2–3.50 ea | *unverified*, 1–4 wk |
-
-Total: about $265 before shipping, screws and O-rings, plus ~$30 for the loop motors.
+Total: about $265 before shipping, screws and O-rings. The ServoCity part ($69.88) was ordered 2026-09-25.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
   - Set a low current limit for the first power-up, so a wiring mistake trips the limit instead of burning out a driver or the Pico.
@@ -58,5 +56,6 @@ Total: about $265 before shipping, screws and O-rings, plus ~$30 for the loop mo
 
 ## Later, with the loop
 
+- About 5 more ServoCity sets (motor + enclosure + input board), the same parts as v0 so every module matches in mount and speed. They are in stock in the US with no long lead, so they wait until v0 works. The AliExpress motors are dropped.
 - Perfboard.
 - UHMW or PTFE tape for the slider beds.
