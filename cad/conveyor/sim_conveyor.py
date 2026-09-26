@@ -77,9 +77,8 @@ PART = (32.0, 32.0, 16.0)
 PART_MASS = 0.030
 
 # Regularised Coulomb. Below u0 the force is linear in slip, so the explicit
-# step cannot add more speed than the slip it is cancelling: µ g dt / u0 < 1
-# at the µ and dt used here.
-U0 = 0.01
+# step cannot add more speed than the slip it is cancelling. The bound used
+# here is µ g dt / u0 ≤ 0.5 at the highest µ the sweep commands.
 
 
 def m(v):
@@ -127,6 +126,11 @@ CURVE_SPEED = _argv("--curve-speed", STRAIGHT_SPEED)
 MU_BELT = _argv("--mu", 0.9)
 MU_CURVE = _argv("--mu-curve", 0.35)
 ENTRY_OFFSET = _argv("--offset", 0.0)
+# The U0 study did not converge: 0.01, 0.003 and 0.001 disagree by more than
+# 0.5° of yaw. The fallback is the smallest, and dt is what keeps
+# 1.2·g·dt/U0 under 0.5, 1.2 being the sweep's highest belt friction.
+U0 = _argv("--u0", 0.001)
+DT = _argv("--dt", 0.00004)
 
 
 def _stl_faces(path):
@@ -166,8 +170,9 @@ def visual_file(name):
     # past that; a 0.15 mm weld keeps the shape and stays under the limit.
     # Collision does not use these files.
     src = os.path.join(PARTS, name + ".stl")
-    if name in _VIS_PATH:
-        return _VIS_PATH[name]
+    cached = _VIS_PATH.get(name)
+    if cached and os.path.exists(cached):
+        return cached
     if _stl_faces(src) <= 180000:
         _VIS_PATH[name] = src
         return src
@@ -192,22 +197,28 @@ def mesh_assets():
     return "\n    ".join(out)
 
 
-def cone_vertices(theta_deg):
-    # Two circles, 32 points each. Their convex hull is the frustum: the apex
-    # is not on the roller, and a hull that included it would fill the lane.
+def cone_frame(theta_deg):
     th = math.radians(theta_deg)
     alpha = math.radians(CURVE["alpha_deg"])
     ca, sa = math.cos(alpha), math.sin(alpha)
-    ux, uy, uz = math.cos(th) * ca, math.sin(th) * ca, -sa
+    u = (math.cos(th) * ca, math.sin(th) * ca, -sa)
     e_th = (-math.sin(th), math.cos(th), 0.0)
     e_up = (sa * math.cos(th), sa * math.sin(th), ca)
+    return u, e_th, e_up, ca, alpha
+
+
+def frustum_vertices(theta_deg, s_lo, s_hi):
+    # Two circles. The hull is the slice of the cone between them. The apex
+    # stays out of it, or the hull would fill the lane.
+    u, e_th, e_up, _, alpha = cone_frame(theta_deg)
     cx, cy = CURVE["centre"]
     z_top = CURVE["z_top"]
-    r0, r1 = CURVE["cone_r"]
     verts = []
-    for s in (r0 * ca, r1 * ca):
+    for s in (s_lo, s_hi):
         rad = s * math.tan(alpha)
-        ox, oy, oz = cx + s * ux, cy + s * uy, z_top + s * uz
+        ox = cx + s * u[0]
+        oy = cy + s * u[1]
+        oz = z_top + s * u[2]
         for i in range(32):
             a = 2.0 * math.pi * i / 32.0
             c, s_ = math.cos(a), math.sin(a)
@@ -219,11 +230,48 @@ def cone_vertices(theta_deg):
     return verts
 
 
+def n_frusta():
+    # The crown is a straight line of length r_out − r_in. Pieces no longer
+    # than 4 mm, because one contact on a full-length crown can land anywhere
+    # and the part then rocks about the two points it happens to get.
+    length = CURVE["cone_r"][1] - CURVE["cone_r"][0]
+    return int(math.ceil(length / 4.0 - 1e-9))
+
+
+def frustum_ranges():
+    alpha = math.radians(CURVE["alpha_deg"])
+    ca = math.cos(alpha)
+    r0, r1 = CURVE["cone_r"]
+    s0, s1 = r0 * ca, r1 * ca
+    n = n_frusta()
+    return [(s0 + (s1 - s0) * k / n, s0 + (s1 - s0) * (k + 1) / n) for k in range(n)]
+
+
+def along_crown(theta_deg, p):
+    # Millimetres from the small-end crown, along the top line.
+    u, _, e_up, ca, alpha = cone_frame(theta_deg)
+    s0 = CURVE["cone_r"][0] * ca
+    tan_a = math.tan(alpha)
+    d = tuple(u[i] + tan_a * e_up[i] for i in range(3))
+    sec = 1.0 / ca
+    ux, uy, uz = d[0] / sec, d[1] / sec, d[2] / sec
+    rad0 = s0 * tan_a
+    cx, cy = CURVE["centre"]
+    p0 = (
+        cx + s0 * u[0] + rad0 * e_up[0],
+        cy + s0 * u[1] + rad0 * e_up[1],
+        CURVE["z_top"] + s0 * u[2] + rad0 * e_up[2],
+    )
+    return (p[0] - p0[0]) * ux + (p[1] - p0[1]) * uy + (p[2] - p0[2]) * uz
+
+
 def cone_assets():
     lines = []
     for i, th in enumerate(CURVE["theta_deg"]):
-        flat = " ".join("%.6f %.6f %.6f" % (m(x), m(y), m(z)) for x, y, z in cone_vertices(th))
-        lines.append('<mesh name="cone%d" vertex="%s"/>' % (i, flat))
+        for k, (s_lo, s_hi) in enumerate(frustum_ranges()):
+            flat = " ".join("%.6f %.6f %.6f" % (m(x), m(y), m(z))
+                            for x, y, z in frustum_vertices(th, s_lo, s_hi))
+            lines.append('<mesh name="cone%d_%d" vertex="%s"/>' % (i, k, flat))
     return "\n    ".join(lines)
 
 
@@ -243,12 +291,18 @@ def straight_body(tag, rot, ox, oy, visuals):
     fric = 'friction="0.04 0.005 0.0001"'
     g = [visual_geom(n, c) for n, c in visuals]
 
+    # Same reason as the cone slices. A nose is a line contact, and one
+    # reported point on a 50 mm cylinder is not a support.
+    n_ax = int(math.ceil(belt_width / 5.0 - 1e-9))
+    seg = belt_width / n_ax
     for name, ax in (("infeed", a0), ("driven", a1)):
-        cx, cy = p(ax, ymid)
-        g.append('<geom name="%s_%s" type="cylinder" size="%g %g" pos="%g %g %g" '
-                 'euler="%s" rgba="%s" %s/>'
-                 % (tag, name, m(nose_r), m(belt_width / 2.0),
-                    m(cx), m(cy), m(nose_z), euler, rgba(BELT_C, 0.0), fric))
+        for k in range(n_ax):
+            y_c = y0 + (k + 0.5) * seg
+            cx, cy = p(ax, y_c)
+            g.append('<geom name="%s_%s%d" type="cylinder" size="%g %g" pos="%g %g %g" '
+                     'euler="%s" rgba="%s" %s/>'
+                     % (tag, name, k, m(nose_r), m(seg / 2.0),
+                        m(cx), m(cy), m(nose_z), euler, rgba(BELT_C, 0.0), fric))
 
     cx, cy = p((a0 + a1) / 2.0, ymid)
     half_len, half_wid = (a1 - a0) / 2.0, belt_width / 2.0
@@ -289,8 +343,9 @@ def curve_body():
     fric = 'friction="0.04 0.005 0.0001"'
     g = [visual_geom(n, c) for n, c in VISUALS if n.startswith("cv_")]
     for i in range(CURVE["n"]):
-        g.append('<geom name="c_roll%d" type="mesh" mesh="cone%d" rgba="%s" %s/>'
-                 % (i, i, rgba(ROLLER_C, 0.0), fric))
+        for k in range(n_frusta()):
+            g.append('<geom name="c_roll%d_%d" type="mesh" mesh="cone%d_%d" rgba="%s" %s/>'
+                     % (i, k, i, k, rgba(ROLLER_C, 0.0), fric))
 
     # Only the wall above the carry plane can meet the part. Boxes tile the
     # arc at 5°, tangent to it, and stop on the entry and exit faces so a box
@@ -341,7 +396,7 @@ def build_xml():
     return """
 <mujoco model="mini_conveyor">
   <compiler angle="degree" autolimits="true"/>
-  <option timestep="0.0005" integrator="implicitfast" cone="elliptic">
+  <option timestep="{dt}" integrator="implicitfast" cone="elliptic">
     <flag multiccd="enable"/>
   </option>
   <visual>
@@ -379,6 +434,7 @@ def build_xml():
         meshes=mesh_assets(),
         cones=cone_assets(),
         bodies="\n\n    ".join(bodies),
+        dt=DT,
         px=m(40.0), py=m(lane_centre()), pz=m(part_z),
         hx=m(PART[0] / 2.0), hy=m(PART[1] / 2.0), hz=m(PART[2] / 2.0),
         pm=PART_MASS, pc=rgba(PART_C))
@@ -389,20 +445,16 @@ def gid(model, name):
 
 
 _MODEL = None
+_MODEL_DT = None
 
 
 def compiled_model():
     # Speed and friction are applied in Python, so one compile serves every
-    # run. Rebuilding the cone meshes 36 times is most of the sweep.
-    global _MODEL
-    if _MODEL is None:
+    # run at this timestep. --dt changes the option, so it compiles again.
+    global _MODEL, _MODEL_DT
+    if _MODEL is None or _MODEL_DT != DT:
         _MODEL = mujoco.MjModel.from_xml_string(build_xml())
-        # The weld is only a way past the loader's face cap. The model has
-        # already copied the vertices.
-        for name in ("cv_rollers", "cv_orings"):
-            path = os.path.join(OUT, "_vis_%s.stl" % name)
-            if os.path.exists(path):
-                os.remove(path)
+        _MODEL_DT = DT
     return _MODEL
 
 
@@ -413,12 +465,18 @@ def setup(straight_speed, curve_speed, mu_belt, mu_curve):
     part_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "part")
 
     # geom id -> (kind, extra, mu). extra is the travel direction for a straight.
+    # Slices share a name prefix; each one is its own drive geom.
     drive = {}
-    for tag, vel in (("s1", (straight_speed, 0.0)), ("s2", (0.0, straight_speed))):
-        for name in ("belt", "infeed", "driven"):
-            drive[gid(model, "%s_%s" % (tag, name))] = ("straight", vel, mu_belt)
-    for i in range(CURVE["n"]):
-        drive[gid(model, "c_roll%d" % i)] = ("curve", curve_speed, mu_curve)
+    for i in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
+        if not name:
+            continue
+        if name == "s1_belt" or name.startswith("s1_infeed") or name.startswith("s1_driven"):
+            drive[i] = ("straight", (straight_speed, 0.0), mu_belt)
+        elif name == "s2_belt" or name.startswith("s2_infeed") or name.startswith("s2_driven"):
+            drive[i] = ("straight", (0.0, straight_speed), mu_belt)
+        elif name.startswith("c_roll"):
+            drive[i] = ("curve", curve_speed, mu_curve)
 
     rails = set()
     for tag in ("s1", "s2"):
@@ -548,6 +606,83 @@ def crossed(samples, index, threshold):
     return None
 
 
+def path_tangent_deg(x, y):
+    # Heading of the centreline at this COM. On the curve it is the tangent
+    # of the left turn; the straights are the two axes that tangent joins.
+    entry = CURVE["entry_face_x"]
+    exit_y = CURVE["exit_face_y"]
+    if x < entry:
+        return 0.0
+    if y > exit_y:
+        return 90.0
+    th = math.atan2(y - CURVE["centre"][1], x - CURVE["centre"][0])
+    return math.degrees(math.atan2(math.cos(th), -math.sin(th)))
+
+
+def yaw_error_deg(yaw, tangent):
+    return (yaw - tangent + 180.0) % 360.0 - 180.0
+
+
+def polar_deg(x, y):
+    return math.degrees(math.atan2(y - CURVE["centre"][1], x - CURVE["centre"][0]))
+
+
+def place_of(x, y):
+    # Where a dip or a tilt belongs. The transfers are the first and last
+    # 20 mm of the arc, plus the frame gap on each side of it.
+    entry = CURVE["entry_face_x"]
+    exit_y = CURVE["exit_face_y"]
+    s2_in = S2["offset"][1]
+    arc = math.degrees(20.0 / CURVE["r_c"])
+    th = polar_deg(x, y)
+    if x < entry - PART[0] / 2.0:
+        return "on s1"
+    if y > s2_in + 20.0:
+        return "on s2"
+    if x < entry or th < -90.0 + arc:
+        return "entry transfer"
+    if th > -arc or y > exit_y:
+        return "exit transfer"
+    return "on the cones"
+
+
+def at_polar(samples, target):
+    prev = None
+    for s in samples:
+        th = polar_deg(s[1], s[2])
+        if prev is not None and prev[0] < target <= th:
+            span = th - prev[0]
+            w = 0.0 if span == 0 else (target - prev[0]) / span
+            a, b = prev[1], s
+            yaw = mix_angle(a[4], b[4], w)
+            x = a[1] + w * (b[1] - a[1])
+            y = a[2] + w * (b[2] - a[2])
+            return yaw_error_deg(yaw, path_tangent_deg(x, y))
+        prev = (th, s)
+    return None
+
+
+def station_errors(samples):
+    # Yaw minus the path tangent. Positive means the part is ahead of the turn.
+    entry_face = CURVE["entry_face_x"]
+    exit_face = CURVE["exit_face_y"]
+    exit_y = S2["offset"][1] + 40.0
+    out = {}
+    hit = crossed(samples, 1, entry_face)
+    if hit:
+        out["entry_face"] = yaw_error_deg(hit[3], path_tangent_deg(hit[1], hit[2]))
+    mid = at_polar(samples, -45.0)
+    if mid is not None:
+        out["mid_curve"] = mid
+    hit = crossed(samples, 2, exit_face)
+    if hit:
+        out["exit_face"] = yaw_error_deg(hit[3], path_tangent_deg(hit[1], hit[2]))
+    hit = crossed(samples, 2, exit_y)
+    if hit:
+        out["exit_station"] = yaw_error_deg(hit[3], path_tangent_deg(hit[1], hit[2]))
+    return out
+
+
 def evaluate(samples, contacts, speed, limit):
     entry_x = CURVE["entry_face_x"] - 30.0
     exit_y = S2["offset"][1] + 40.0
@@ -558,8 +693,10 @@ def evaluate(samples, contacts, speed, limit):
     after = [s for s in samples if rest is not None and s[0] > (on_s1[-1][0] if on_s1 else 0.6)]
     if exit_ is not None:
         after = [s for s in after if s[0] <= exit_[0] + 1e-9]
-    dip = (rest - min(s[3] for s in after)) if rest is not None and after else None
-    tilt = max(s[5] for s in samples) if samples else None
+    dip_at = min(after, key=lambda s: s[3]) if after else None
+    tilt_at = max(samples, key=lambda s: s[5]) if samples else None
+    dip = (rest - dip_at[3]) if rest is not None and dip_at is not None else None
+    tilt = tilt_at[5] if tilt_at is not None else None
     reached = exit_ is not None
     entry_off = offset_mm(entry[1], entry[2]) if entry else None
     exit_off = offset_mm(exit_[1], exit_[2]) if exit_ else None
@@ -589,10 +726,41 @@ def evaluate(samples, contacts, speed, limit):
         "t_limit": limit,
         "pass": not reasons,
         "reasons": reasons,
+        "yaw_error_deg": station_errors(samples),
+        "dip_where": None if dip_at is None else place_of(dip_at[1], dip_at[2]),
+        "tilt_where": None if tilt_at is None else place_of(tilt_at[1], tilt_at[2]),
     }
 
 
-def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, limit=None):
+def cone_support(model, data, part_gid, part_bid, rest_z):
+    # Contacts with the sliced crowns, grouped by roller, measured along the
+    # top line. This is the check that the split is a support and not two points.
+    groups = {}
+    for i in range(data.ncon):
+        c = data.contact[i]
+        if part_gid not in (c.geom1, c.geom2):
+            continue
+        other = int(c.geom2 if c.geom1 == part_gid else c.geom1)
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, other)
+        if not name or not name.startswith("c_roll"):
+            continue
+        roller = int(name.split("_")[1][4:])
+        p = (c.pos[0] / MM, c.pos[1] / MM, c.pos[2] / MM)
+        groups.setdefault(roller, []).append(along_crown(CURVE["theta_deg"][roller], p))
+    x, y, z, _, tilt = pose(data, part_bid)
+    rollers = []
+    for r, xs in sorted(groups.items()):
+        rollers.append({"roller": r, "n": len(xs), "span_mm": max(xs) - min(xs)})
+    return {
+        "n_contacts": sum(r["n"] for r in rollers),
+        "rollers": rollers,
+        "tilt_deg": tilt,
+        "dz_mm": None if rest_z is None else z - rest_z,
+        "x": x, "y": y, "z": z,
+    }
+
+
+def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, limit=None, prove=False):
     # Headless on purpose. Nothing here puts the part back on the belt.
     model, data, drive, rails, part_gid, part_bid = setup(
         straight_speed, curve_speed, mu_belt, mu_curve)
@@ -607,6 +775,7 @@ def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, l
     contacts = []
     seen = set()
     shots = []
+    proof = None
     renderer = None
     if frames > 0:
         renderer = mujoco.Renderer(model, 900, 1400)
@@ -643,12 +812,16 @@ def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, l
             renderer.update_scene(data, cam)
             shots.append(renderer.render().copy())
         x, y, z, yaw, tilt = pose(data, part_bid)
+        if prove and proof is None and x >= CURVE["entry_face_x"] and polar_deg(x, y) >= -45.0:
+            on_s1 = [s for s in samples if 0.3 <= s[0] <= 0.6 and s[1] < CURVE["entry_face_x"]]
+            rest = sum(s[3] for s in on_s1) / len(on_s1) if on_s1 else None
+            proof = cone_support(model, data, part_gid, part_bid, rest)
         if y >= exit_y and x > CURVE["entry_face_x"]:
             if not samples or abs(samples[-1][0] - data.time) > 1e-9:
                 samples.append((data.time, x, y, z, yaw, tilt))
             break
     metrics = evaluate(samples, contacts, straight_speed, limit)
-    return samples, metrics, shots
+    return samples, metrics, shots, proof
 
 
 def fmt(v, spec):
@@ -668,7 +841,24 @@ def print_metrics(metrics):
     if metrics["rail_contacts"]:
         for c in metrics["rail_contacts"][:12]:
             print("  rail t=%.3f %s" % (c["t"], c["geom"]))
+    ye = metrics.get("yaw_error_deg") or {}
+    if ye:
+        print("yaw error deg  entry %s  mid %s  exit-face %s  station %s"
+              % (fmt(ye.get("entry_face"), "%.2f"), fmt(ye.get("mid_curve"), "%.2f"),
+                 fmt(ye.get("exit_face"), "%.2f"), fmt(ye.get("exit_station"), "%.2f")))
+    if metrics.get("dip_where") or metrics.get("tilt_where"):
+        print("dip at %s   tilt at %s" % (metrics.get("dip_where"), metrics.get("tilt_where")))
     print("PASS" if metrics["pass"] else "FAIL: " + ", ".join(metrics["reasons"]))
+
+
+def print_proof(proof):
+    if not proof:
+        print("contact proof: the part never sat fully on the cones")
+        return
+    print("contact proof  n=%d  tilt %.3f deg  dz %s mm"
+          % (proof["n_contacts"], proof["tilt_deg"], fmt(proof["dz_mm"], "%.3f")))
+    for r in proof["rollers"]:
+        print("  roller %d  contacts %d  span %.1f mm" % (r["roller"], r["n"], r["span_mm"]))
 
 
 def write_png(path, rgbimg):
@@ -707,9 +897,10 @@ def run_nominal():
     print_spans()
     print("nominal  speed %.3f  curve %.3f  mu %.2f / %.2f  offset %.1f mm  limit %.2f s"
           % (STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, ENTRY_OFFSET, limit))
-    samples, metrics, shots = simulate(
+    samples, metrics, shots, proof = simulate(
         STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, ENTRY_OFFSET,
-        frames=frames, limit=limit)
+        frames=frames, limit=limit, prove=True)
+    print_proof(proof)
     for s in samples:
         print("  t=%5.2f  x=%7.1f  y=%7.1f  z=%6.2f  yaw=%6.1f  tilt=%5.2f  off=%6.2f"
               % (s[0], s[1], s[2], s[3], s[4], s[5], offset_mm(s[1], s[2])))
@@ -739,7 +930,7 @@ def run_sweep():
     for offset in offsets:
         for speed in speeds:
             for mu_b, mu_c in mus:
-                _, metrics, _ = simulate(speed, speed, mu_b, mu_c, offset, frames=0)
+                _, metrics, _, _ = simulate(speed, speed, mu_b, mu_c, offset, frames=0)
                 row = {
                     "speed": speed,
                     "mu": mu_b,
@@ -755,6 +946,9 @@ def run_sweep():
                     "t_exit": rnd(metrics["t_exit"], 3),
                     "t_limit": rnd(metrics["t_limit"], 3),
                     "pass": metrics["pass"],
+                    "yaw_error_deg": {k: rnd(v, 3) for k, v in metrics["yaw_error_deg"].items()},
+                    "dip_where": metrics["dip_where"],
+                    "tilt_where": metrics["tilt_where"],
                 }
                 runs.append(row)
                 all_pass = all_pass and metrics["pass"]
