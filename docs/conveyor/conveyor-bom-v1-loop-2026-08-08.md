@@ -120,7 +120,7 @@ From `geometry.json` → `hardware`, which lists the v0 line (2 straights, 1 cur
 | M4 nut | 2 | 2 | | 16 |
 | Ø4 rod, 73.0 mm, idler | 1 | | | 4 |
 | Ø4 rod, 51.3 mm, driven stub | 1 | | | 4 |
-| Ø3 rod, 70.4 mm, cone idler | | 5 | | 20 |
+| Ø3 rod, 70.0 mm, cone idler | | 5 | | 20 |
 | Ø3 rod, 24.2 mm, cone driven stub | | 1 | | 4 |
 | Nitrile O-ring, the calipered kit size | | 5 | | 20 |
 
