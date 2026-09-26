@@ -1,11 +1,13 @@
 # Mini modular conveyor — BOM
 
-**v1 loop: 8 modules** (4 straight + 4 corner). Plans #835 (v0 rig) · #840 (this loop).
+**v1 loop: 8 modules** (4 straights + 4 tapered-roller curves). Plans #835 (v0 rig) · #840 (this loop).
 Dimensions come from `cad/conveyor/parts/geometry.json` — regenerate it, never retype it.
 Build and assembly instructions: [`cad/conveyor/README.md`](../../cad/conveyor/README.md).
 
-**Update 2026-09-25:**
-- The corner is now a tapered-roller curve (plan #835). The corner belt, corner guide rails and 70 mm corner module below are superseded until the curve's CAD lands.
+**Update 2026-09-26:**
+- The corner is a tapered-roller curve (plan #835), and its CAD has landed. The belt corner's rows are gone. That design stays in git history at `7c560e0`.
+- The straights now have tie bars, jack-screw tensioners and printed joiners, and every motor mounts through ServoCity's N20 enclosure.
+- The curve's cones print in TPU (Kyle, 2026-09-26). In sim, PLA cones slicker than the belt left parts 5–14° short of square.
 - Current sources, prices and stock: [conveyor-order-2026-09-25.md](conveyor-order-2026-09-25.md).
 
 ## 1 · Motors — where they actually come from
@@ -27,41 +29,48 @@ Build and assembly instructions: [`cad/conveyor/README.md`](../../cad/conveyor/R
 ### Spec to order: 12 V · ~300 RPM · 3 mm D-shaft · single-ended
 
 - OFD's "300 RPM" is at 11.1 V (3S) → ~325 RPM at 12 V. AliExpress quotes at 12 V. Both in range.
-- **Buy the fast one, not the torquey one.** Torque needed is 0.05 kg·cm — ≥20× margin at any ratio, so torque is not the selector. *Stall* torque is, because a jammed part puts all of it through the printed D-bore: 1.3 kg·cm → 11.4 MPa, **3.5× margin**. A 250:1 (3.0 kg·cm) drops to 1.5× — too tight.
-- Belt speed at Ø10 rollers: 300 RPM → **157 mm/s**, down to ~30 mm/s at 20 % duty. PWM only throttles downward.
-- Shaft length varies **9–10 mm** by vendor. The bore is 8 mm deep with 5 mm engagement, so either fits without bottoming out.
-- **Mounts by clamping the 10 × 12 mm body** — no face pattern, no bolt circle. Any GA12-N20-class motor fits regardless of vendor.
+- **Buy the fast one, not the torquey one.** Torque needed is 0.05 kg·cm — ≥20× margin at any ratio, so torque is not the selector. *Stall* torque is, because a jammed part puts all of it through the printed D-bore. The bought motor's 1.2 kg·cm stall loads the D-flat to about 14 MPa, **about 3× margin** in PLA+. A 250:1 (3.0 kg·cm) would drop that to about 1×.
+- The belt moves at its neutral axis, Ø11 on a Ø10 roller. The bought 270 RPM motor gives **about 155 mm/s**, down to ~31 mm/s at 20 % duty. PWM only throttles downward.
+- Shaft length varies **9–10 mm** by vendor. The driven roller reaches the shaft through a spigot in the side plate. Its D-bore is 10 mm deep and the shaft engages 6.3 mm (`build.log`), so either length fits without bottoming out.
+- **Mounts through ServoCity's N20 enclosure:** two M4 ears bolt into captive nuts on the side plate or on the curve's pad. The enclosure also covers the open gearbox. The printed body clamp is gone.
 - Buy 2 spares. The gearboxes are the weak point.
 
 ## 2 · Geometry costed against
 
-- Belt width **50 mm**, carry surface at z = 30 mm
-- Straight module **120 mm**, corner module **70 mm**, outer width **61 mm**
+- Belt width **50 mm**. The belt's top, where the part rides, is at z = 31 mm, and the cone tops sit level with it.
+- Straight module **120 × 61 mm**. Curve: **six tapered rollers**, Ø6 → Ø16, under a lane 30–80 mm from the curve centre.
 - Rollers **Ø10 at both ends**, discharge one driven
-- Loop footprint **~260 × 260 mm**; ~1.6 m of belt total
-- Transfer spans: **12.0 mm** into a corner's side, **13.5 mm** into a straight's end
+- Loop footprint about **311 mm square** between the curves' outer walls: curve centres 123 mm apart, walls out to r 94 mm. Each curve's motor stands out at its corner. #840 lays the loop out.
+- Belt only on the straights: 4 × 250.6 mm.
+- Transfer spans onto and off every curve: **10.5 / 13.0 / 15.5 mm** at the lane's inner edge, centreline and outer edge.
 
-## 3 · Printed parts — 76 pieces, ~460 g
+## 3 · Printed parts — 80 pieces, ~860 g solid
 
-Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner blocks · 1 return guide. Plus 4 corner guide rails and 8 frame connectors.
+Per straight ×4: 2 side plates · 2 rollers · 1 slider bed · 1 return guide · 2 tie bars · 2 tensioner blocks. Per curve ×4: 1 frame · 6 cone rollers · 1 keeper. Plus 8 joiners, one per joint.
 
 | Part | Qty | Material |
 |---|---|---|
-| Side brackets, motor side | 8 | PETG |
-| Side brackets, plain | 8 | PETG |
-| Rollers Ø10, idler (plain Ø4 bore) | 8 | PLA+ |
-| Rollers Ø10, driven (Ø3 D-bore) | 8 | PLA+ |
-| Slider beds | 8 | PLA+ |
-| Tensioner blocks | 16 | PETG |
-| Return guides | 8 | PLA+ (crowned bar, sits 0.5 mm below the taut return run) |
-| Corner guide rails | 4 | PLA+ |
-| Frame connectors | 8 | PETG |
+| Side plates, motor side | 4 | PETG |
+| Side plates, plain | 4 | PETG |
+| Rollers Ø10, idler (plain Ø4 bore) | 4 | PLA+ |
+| Rollers Ø10, driven (D-bore through a spigot) | 4 | PLA+ |
+| Slider beds | 4 | PLA+ |
+| Return guides | 4 | PLA+ (flat bar, sits 0.5 mm below the taut return run) |
+| Tie bars | 8 | PETG |
+| Tensioner blocks | 8 | PETG |
+| Curve frames | 4 | PETG |
+| Curve keepers | 4 | PETG |
+| Cone rollers, idler | 20 | TPU 95A |
+| Cone rollers, driven | 4 | TPU 95A |
+| Joiners | 8 | PETG |
 
-- PETG where it's loaded, PLA+ where the fit matters. Tree supports on.
-- ~460 g — half a spool. PLA+ and PETG assumed on hand.
-- **No separate motor mount.** Driving a nose roller puts the motor on the side plate's outer face.
-- **No grub screw** on the driven roller — Ø3.2 through a 3.5 mm wall leaves nothing. The D-flat is the key: 17.9 mm² of bearing area, 143× margin running, 3.5× at stall.
-- Bores modelled at **nominal +0.15 mm on radius** (printed holes come out undersize on this machine). Ø3.3 modelled → ~Ø3.1 printed.
+- PETG where it's loaded, PLA+ where the fit matters, and TPU wherever the part rides. Tree supports on.
+- About 860 g if printed solid (from the STL volumes): ~535 g PETG, ~170 g PLA+ and ~160 g TPU. Sparse infill brings that down. PLA+ and PETG assumed on hand.
+- **No printed motor mount.** ServoCity's N20 enclosure bolts to the side plate's outer face, or to the curve's pad.
+- **No grub screw** on the driven roller — Ø3.2 through a 3.5 mm wall leaves nothing.
+  - The D-flat is the key: about 14 mm² of flat over the 6.3 mm engagement. That is roughly 70× margin running and 3× at stall in PLA+.
+  - The curve's driven cone is TPU, which is more likely to slip than strip at a jam. The coupon checks that it grips when running.
+- Bores modelled at **nominal +0.15 mm on radius** (printed holes come out undersize on this machine). Ø3.3 modelled → ~Ø3.1 printed. The TPU cones' plain bores are opened further, for a running fit on the Ø3 rod; the coupon confirms it.
 - Optionally face the slider beds with **UHMW or PTFE tape** — PU on UHMW runs µ 0.03–0.06 vs 0.15–0.30 on steel, and printed PLA sits nearer steel. Cuts belt drag 5–10×. Unnecessary at v0's margin; worth it at 8 motors on one supply.
 
 ## 4 · Belt — printed TPU loops
@@ -71,20 +80,19 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 | Belt | Mean Ø | Height | Wall | TPU |
 |---|---|---|---|---|
 | Straight ×4 | 79.8 mm | 50 mm | 1.0 mm | ~15 g ea |
-| Corner ×4 | 47.9 mm | 50 mm | 1.0 mm | ~9 g ea |
 
-- **Filament: TPU 95A** — roughly skateboard-wheel hardness. Bambu *TPU 95A HF* has an A1 profile. 400–500 % elongation at break is what lets it wrap a Ø10 roller and spring back instead of creasing. 85A is more rubbery and much harder to print.
+- **Filament: TPU 95A** — roughly skateboard-wheel hardness. The ordered YOUSU 95A has no Bambu-tuned profile, so print it with Bambu Studio's generic TPU profile, slower. 400–500 % elongation at break is what lets it wrap a Ø10 roller and spring back instead of creasing. 85A is more rubbery and much harder to print.
 - **Wall is 1.0 mm, set by the roller.** Belt practice wants pulley-Ø ÷ thickness ≥ 10; Ø10 rollers put 1.5 mm at 6.7. It wouldn't crack, but a stiff belt lifts off a small nose roller — the exact geometry the nose exists to protect. 1.0 mm gives **D/t = 10.0** and prints as 2–3 perimeters at 0.4 mm.
-- Diameters are **computed, not estimated** — belt path 250.6 / 150.6 mm, measured at the **neutral axis** (roller Ø + wall), the only length that stays constant as the belt wraps. Measuring at the roller surface undersizes every loop by π × wall.
+- Diameters are **computed, not estimated** — belt path 250.6 mm, measured at the **neutral axis** (roller Ø + wall), the only length that stays constant as the belt wraps. Measuring at the roller surface undersizes every loop by π × wall.
 - **TPU must not go through an AMS** — flexible filament buckles in a long PTFE path. Kyle's A1 runs an external spool with a short direct feed, which is what this wants.
-- ~100 g total. One spool covers it several times.
-- *Fallback:* PU/PVC belting by the metre, spliced. Cheaper, but the splice is a hand skill and 8 loops is 8 chances to get it wrong.
+- ~60 g for the four belts, plus ~160 g for the curves' cones (a solid upper bound). One 1 kg spool covers both.
+- *Fallback:* PU/PVC belting by the metre, spliced. Cheaper, but the splice is a hand skill and 4 loops is 4 chances to get it wrong.
 
 ## 5 · Electronics
 
 | Item | Qty | Notes |
 |---|---|---|
-| GA12-N20 gearmotor, 12 V ~300 RPM | 8 (+2) | §1 |
+| ServoCity 638122 N20 gearmotor, 12 V 270 RPM | 8 (+1) | §1. v0 bought 4 |
 | TB6612FNG dual driver breakout | 4 | 2 ch each, **4.5–13.5 V** |
 | Raspberry Pi **Pico 2 W** (RP2350) | 1 | On hand: Freenove kit from #717.1. See below |
 | Bench supply, 0–30 V / 10 A, current limit, output switch | 1 | WANPTEK TPS-C3010, set to 12 V. Its current display gives the *measured* stall current |
@@ -99,20 +107,35 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 
 ## 6 · Mechanical hardware
 
-- 4 mm steel rod, 1 m — idler and stub axles, ~70 mm each
-- M3 × 16 bolts + nyloc nuts, 60 — frame
-- M4 × 20 bolts + nuts, 20 — tensioners
-- M2 × 8 bolts, 10 — motor body clamps
-- **No bearings.** At Ø10 the bearing OD *is* the roller. Rollers run as plain bearings on the axle; load is belt tension only.
+From `geometry.json` → `hardware`, which lists the v0 line (2 straights, 1 curve, 2 joiners). Scaled here to the loop: 4 straights, 4 curves, 8 joiners.
+
+| Item | Per straight | Per curve | Per joiner | Loop |
+|---|---|---|---|---|
+| M3 × 8, tie bars | 4 | | | 16 |
+| M3 × 16, tensioner jacks | 2 | | | 8 |
+| M3 × 10, curve keeper | | 2 | | 8 |
+| M3 × 12, joiners | | | 4 | 32 |
+| M4 × 8, motor ears | 2 | 2 | | 16 |
+| M3 nut | 8 | 2 | 4 | 72 |
+| M4 nut | 2 | 2 | | 16 |
+| Ø4 rod, 73.0 mm, idler | 1 | | | 4 |
+| Ø4 rod, 51.3 mm, driven stub | 1 | | | 4 |
+| Ø3 rod, 70.4 mm, cone idler | | 5 | | 20 |
+| Ø3 rod, 24.2 mm, cone driven stub | | 1 | | 4 |
+| Nitrile O-ring, the calipered kit size | | 5 | | 20 |
+
+- Rod: the Ø4 cuts total 0.5 m, two of the 300 mm rods. The Ø3 cuts total 1.5 m, six of the twelve.
+- Neither the screw kit's nor the O-ring kit's per-size counts are listed. Before the loop, check the screw kit covers 32 M3 × 12 and 72 M3 nuts, and the O-ring kit holds 20 of the chosen size.
+- **No bearings.** At Ø10 the bearing OD *is* the roller. Rollers and cones run as plain bearings on their rods, loaded only by belt tension, O-ring tension and the part.
 
 ## 7 · Cost
 
-Live prices and the total are in the [order list](conveyor-order-2026-09-25.md): about $229 for v0 as of 2026-09-25. The loop adds about 5 more ServoCity motor sets. The estimate this section used to carry (~$110–145) was costed before Out of Darts sold out and before the bench supply replaced the 12 V brick.
+Live prices and the total are in the [order list](conveyor-order-2026-09-25.md): about $225 for v0 as of 2026-09-25. The loop adds about 5 more ServoCity motor sets. The estimate this section used to carry (~$110–145) was costed before Out of Darts sold out and before the bench supply replaced the 12 V brick.
 
 ## 8 · Verified vs estimated
 
-**Verified:** TB6612FNG 4.5–13.5 V, 1.2 A cont / 3.2 A peak · DRV8833 caps at 10.8 V · RP2040 8 PWM slices, RP2350 12 · A1 build volume 256³ mm · OFD $6.99, 3 mm D-shaft, 34 × 12 × 10 mm, <1 A stall, 3S · Pololu #3041 $26.45 · belt paths and cylinder diameters from `build.log`.
+**Verified:** TB6612FNG 4.5–13.5 V, 1.2 A cont / 3.2 A peak · DRV8833 caps at 10.8 V · RP2040 8 PWM slices, RP2350 12 · A1 build volume 256³ mm · OFD $6.99, 3 mm D-shaft, 34 × 12 × 10 mm, <1 A stall, 3S · Pololu #3041 $26.45 · belt paths and cylinder diameters from `build.log` · hardware counts and cut lengths from `geometry.json` · part volumes from the STLs.
 
-**Estimated:** N20 stall current (measure it — it sizes the PSU) · µ ≈ 0.35 belt-on-PLA-bed, pessimistic · all filament weights · AliExpress prices and lead times · whether TPU feeds cleanly on the A1's external spool.
+**Estimated:** N20 stall current (measure it — it sizes the PSU) · µ ≈ 0.35 belt-on-PLA-bed, pessimistic · all filament weights · the TPU cones' bore fit · AliExpress prices and lead times · whether TPU feeds cleanly on the A1's external spool.
 
-**Measure before bulk-buying:** print one roller and one bracket, caliper the Ø4.4 axle bore and Ø3.3 D-bore, then commit to rod and fasteners.
+**Measure before bulk-buying:** print the three coupons (README, plate 1), caliper them and check the fits, then commit to rod and fasteners.
