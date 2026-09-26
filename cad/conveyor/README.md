@@ -179,31 +179,37 @@ The outer span is the long one. A part entered on the outer edge has 15.5 mm of 
 
 ## Assembly
 
-The belt goes on from one side, with one plate off. Nothing in the loop except the rollers and the bed. Tie bars and the return guide are below it. Tensioners and the motor are outboard of the plates.
+The belt still goes on from the open side, with the plain plate off. Nothing in the loop except the rollers and the bed. The joiners go in before that bed, and before the cones. Their screws stand vertically under the lane: once the bed and the belt are on, no hex key reaches the tie-side screws, and with the cones in, the pad-side clearance screw meets the end cone (cone 2 at J1, cone 5 at J2).
 
-### A straight
+Separating two joined modules means taking that straight's plain plate, belt and bed back out first. That is the cost of this joiner. A later loop should not copy a joint whose screws are buried under the belt.
 
-1. **Captive nuts, then the motor enclosure, on the left plate.** Slide the tie-bar nuts in from the end of each upright before the plate goes on, flats against the channel walls. Two M3 nuts go into the jack boss before the block is on: the block-side nut along the screw from the open face, the head-side nut down the slot in the top. M4 nuts go into the straight ear bosses from the inboard face. The enclosure bolts on through those ears.
-2. **Rollers, bed, and both tie bars on that plate.** The bed's tongues drop into the grooves from the open side. One plate then holds the bed in X and Z. The tie bars bolt through the plate and set the width.
-3. **Belt, from the open side,** over both rollers and the bed as one loop.
-4. **Return guide, under the return run,** into its own grooves. It is outside the loop, so it can follow the belt. It still has to be in before the second plate, because that plate closes the groove.
-5. **Driven stub, then the second plate.** The stub drops into the roller's far bore and stops 0.5 mm short of the D-bore step. The plain plate's bore is blind, with the floor in a boss on the outer face, so the stub cannot walk out through the plate and cannot walk into the D-bore either.
-6. **Tensioners.** Block on the rail, jack screw through the two nuts, taken up until the idler rod is against the outer end of the slot.
+### Frame, motor plates, joiners
 
-### The curve
+1. **Curve frame.** Pad nuts slide in from both joint faces. M4 ear nuts drop in from the top of the pad. Keeper nuts drop in from the top of the outer wall.
+2. **Each straight's motor plate, then its tie bars.** Tie-bar nuts in from the end of each upright first, flats against the channel walls. Jack nuts into the boss: the block-side nut along the screw, the head-side nut down the top slot. M4 nuts into the ear bosses from the inboard face. Bolt the tie bars through the motor plate only. Then the motor, M4s from the outboard side. The plain plate stays off.
+3. **Both joiners.** One on s1's discharge tie bar and the curve's entry pad, one on the curve's exit pad and s2's infeed tie bar. Four M3s down through each plate, into the nuts already in the tie bar and the pad. The cones are not in yet, and neither is the bed.
 
-The motor stays off until the driven cone is seated. A rod cannot go in first: once it is seated it spans both walls and passes through its roller.
+### Cones, ring before the rod
 
-1. **Idler cones, from above.** A cone plus its spool is 60.69 mm along the axle and 60.39 mm across. The walls are 63.00 mm apart, so it drops in with 2.61 mm to spare, and it stays 0.420 mm clear of the frame on the way down.
-2. **Idler rods, from outside the outer wall.** Each Ø3 rod slides through that wall, through the cone, and onto the blind-hole floor in the inner wall. The hole clears the rod by 0.150 mm. The square end stays 0.2 mm inside where the keeper will sit.
-3. **Driven cone, spigot first, before the motor is on.** The short Ø3 stub is already in the small-end bore, and that end sits on the blind-hole floor. The spigot goes out through the outer wall and the pad. Push the cone outward until the stub clears the inner wall — 4.03 mm — then slide it back so the stub seats. The wall is relieved to the spool diameter (radius 5.57 mm) so the spool can make that move; the cone is free for 4.78 mm, a margin of 0.75 mm, and the outer pad still has the Ø8 bore the spigot runs in.
-4. **O-rings** over the spools, groove A, B, A, B, A.
-5. **Keeper.** The M3 nuts drop in from the top of the outer wall. The keeper goes over the outer rod ends, and the screws find those nuts. The keeper is what stops the idler rods walking out.
-6. **Motor.** The M4 nuts drop in from the top of the pad, then the motor bolts on through the ears.
+A closed ring has to encircle the spool, and once the rod runs through the cone and both walls the ring cannot get there. Each ring goes onto its cone before that cone's rod.
 
-### The joints
+The free half of a ring is a loop of radius 8.72 mm. Left beside the spool it meets the frame, toward the wall or in the lane. Held up, above the walls, it clears them by 1.66 mm. Hold that loop up while the cone goes in, then carry it across to the next cone.
 
-A joiner on s1's discharge tie bar and the curve's entry pad. The same part on the curve's exit pad and s2's infeed tie bar. Slide the pad nuts in from the joint face before the modules come together; the tie-bar joiner nuts are already in from below. Screws go down into those nuts. That sets the frame gap and lines the lanes up. Bolt the joints after both modules are assembled; the joiner is the last part, not a fixture the modules are built on.
+1. **Cone 1.** Loop ring 1–2 onto groove A. Drop the cone in (60.69 mm along the axle, 60.39 mm across, walls 63.00 mm apart, 2.61 mm to spare). With both rings seated the drop clearance is still 0.420 mm. Slide the Ø3 rod in from outside the outer wall; the hole clears it by 0.150 mm. The free loop waits, held up, for cone 2.
+2. **Cone 2.** Pass it through ring 1–2 so groove A is in that ring, and loop ring 2–3 onto groove B. Drop in. Rod. Hold ring 2–3's free loop up.
+3. **Driven cone.** Pass it through ring 2–3 (groove B) and loop ring 3–4 onto groove A before it goes in. The stub is already in the small-end bore. Spigot first, out through the outer wall: push until the stub clears the inner wall (4.03 mm), then back so the stub seats. With both rings on, the clearance at that 4.03 mm push is 0.150 mm. The relief is the ring's crown plus 0.4 mm, radius 5.97 mm — the bare spool was not the widest thing on the cone — and the cone is free for 4.78 mm, a margin of 0.75 mm. The outer pad keeps the Ø8 spigot bore. Hold ring 3–4's free loop up.
+4. **Cone 4.** Through ring 3–4 onto groove A, and ring 4–5 onto groove B. Drop in. Rod.
+5. **Cone 5.** Through ring 4–5 onto groove B, and ring 5–6 onto groove A. Drop in. Rod.
+6. **Cone 6.** Through ring 5–6 onto groove A. Drop in. Rod.
+
+**Keeper**, then the **curve motor**. The keeper screws come in from outside the outer wall, over the rod ends. The M4s come in from outboard of the pad. The motor stays off until the driven cone is seated.
+
+### Each straight, after its joiner
+
+1. **Bed, both rollers, the idler rod, then the belt** from the open side, over the rollers and the bed as one loop. The bed's tongues drop into the motor plate's grooves.
+2. **Return guide**, under the return run, into its own grooves. It has to be in before the plain plate, because that plate closes the groove.
+3. **Driven stub, then the plain plate.** The stub drops into the roller's far bore and stops 0.5 mm short of the D-bore step. The plain plate's bore is blind. Its two tie screws come in from the outboard face.
+4. **Tensioners.** Block on each rail, jack screw through the two nuts, taken up until the idler rod is against the outer end of the slot. The hex key comes in along the screw from the head, outboard of the plate.
 
 ---
 

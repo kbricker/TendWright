@@ -1015,6 +1015,8 @@ def main():
         interfere(station, label, skip_belt=moving, moving_only=moving)
         check_screws(station, screw_specs(shift, s2_off), jacks_only=moving)
 
+    check_assembly_order(world, screw_specs(0.0, s2_off))
+
     # ---------------------------------------------------------------- export
     # Print files are the solids in this assembly, moved onto the bed. The
     # plates are chiral, and the two tensioner blocks are mirrors, so each
@@ -2066,11 +2068,13 @@ def make_curve_frame():
             vadd(A, vmul(u, s_hole_bottom)), u))
         if (i + 1) == curve_driven:
             # Spigot-first: the stub is already in the small end, and the cone
-            # is pushed outward until that stub clears the inner wall. The
-            # spool is wider than the spigot, so this relief is the spool
-            # diameter. The outer pad keeps the Ø8 bore the spigot runs in.
+            # is pushed outward until that stub clears the inner wall. Groove B
+            # is already carrying its ring, whose crown is a cord radius outside
+            # the pitch circle — 0.4 mm outside the flange — so the relief is
+            # that crown plus the 0.4 mm the bare spool had. The outer pad
+            # keeps the Ø8 bore the spigot runs in.
             need = r_iw1_s - s_hole_bottom
-            relief_r = R_spool_B + 0.4
+            relief_r = D_B / 2.0 + oring_cs / 2.0 + 0.4
             relief_far = s_spool_end + need + 0.8
             require(relief_far <= s_face - 2.0,
                     "driven spool relief leaves no spigot bore (ends %.2f, pad face %.2f)"
@@ -2389,6 +2393,221 @@ def check_curve_assembly(frame, cone_id, cone_dr):
     require(margin > 0.3, "driven cone cannot travel far enough for the stub to clear (margin %.2f mm)"
             % margin)
 
+    # The ring is on the spool before the cone is trapped between the walls.
+    # A cord in the groove stays inside the spool's ends, so the drop and the
+    # outward push still fit. The free half of the ring is a loop: outboard it
+    # meets the wall, in the lane it does not.
+    check_rings_on_cones(frame, cone_id, cone_dr)
+
+
+def _half_ring(theta, s_g, D):
+    # Half a turn of cord on the pitch circle. That is the part looped onto
+    # the spool before the cone goes in; the free half is not in this solid.
+    u, _e_th, e_up = axis_frame(theta)
+    center = vadd(A, vmul(u, s_g))
+    top = vadd(center, vmul(e_up, D / 2.0))
+    circ = Part.makeCircle(oring_cs / 2.0, top, _e_th)
+    face = Part.Face(Part.Wire([circ]))
+    return face.revolve(center, u, 180.0)
+
+
+def _cord_loop(attach, u_dir, v_dir, radius):
+    # A circle of cord. Angle 0 is `attach`; the rest hangs along u_dir / v_dir.
+    u = vnorm(u_dir)
+    v = vnorm(v_dir)
+    cr = oring_cs / 2.0
+    center = vadd(attach, vmul(u, radius))
+    n = 16
+    pts = []
+    for i in range(n):
+        ang = 2.0 * math.pi * i / n
+        pts.append(vadd(center, vadd(vmul(u, -radius * math.cos(ang)),
+                                      vmul(v, radius * math.sin(ang)))))
+    segs = []
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        segs.append(Part.makeCylinder(cr, max(vsub(b, a).Length, 0.05), a, vsub(b, a)))
+    return Part.makeCompound(segs)
+
+
+def _free_loop_radius(D):
+    # Centerline left after half a turn sits on the spool.
+    seated = math.pi * D / 2.0
+    free = math.pi * (oring_id + oring_cs) - seated
+    return free / (2.0 * math.pi)
+
+
+def _loop_clearance(loop, frame):
+    return loop.distToShape(frame)[0]
+
+
+def check_rings_on_cones(frame, cone_id, cone_dr):
+    # Cone 2 carries both grooves. That is the fullest idler that has to drop.
+    th = thetas[1]
+    cone = place_cone(cone_id, th)
+    with_rings = cone.fuse(_half_ring(th, s_gA, D_A)).fuse(_half_ring(th, s_gB, D_B))
+    lift = (bracket_h + 5.0) - with_rings.BoundBox.ZMin
+    worst = None
+    for i in range(11):
+        sample = with_rings.copy()
+        sample.translate(Vector(0, 0, lift * (10 - i) / 10.0))
+        dist = sample.distToShape(frame)[0]
+        worst = dist if worst is None else min(worst, dist)
+    step("idler cone with both rings on, drop clearance %.3f mm" % worst)
+    require(worst > 0.2, "rings on the idler cone do not drop in (%.3f mm)" % worst)
+
+    th_d = thetas[curve_driven - 1]
+    driven = place_cone(cone_dr, th_d).fuse(curve_stub_rod(th_d))
+    driven = driven.fuse(_half_ring(th_d, s_gA, D_A)).fuse(_half_ring(th_d, s_gB, D_B))
+    need = r_iw1_s - s_hole_bottom
+    moved = driven.copy()
+    moved.translate(vmul(axis_u(th_d), need))
+    at_need = moved.distToShape(frame)[0]
+    step("driven cone with both rings on, clearance at %.2f mm outward %.3f mm"
+         % (need, at_need))
+    require(at_need > 0.05, "rings on the driven cone block the outward push (%.3f mm)" % at_need)
+
+    # Groove B is the one nearer the outer wall. The free half of the cord is
+    # a loop about 17 mm across. Beside the spool it meets the frame; held up,
+    # above the walls, it does not, which is how it is carried to the next cone.
+    u, e_th, e_up = axis_frame(th)
+    center = vadd(A, vmul(u, s_gB))
+    radial = vnorm(Vector(u.x, u.y, 0.0))
+    R = _free_loop_radius(D_B)
+    side = vadd(center, vmul(e_up, D_B / 2.0))
+    toward_wall = _cord_loop(vadd(center, vmul(radial, D_B / 2.0)), radial, Vector(0, 0, -1), R)
+    in_lane = _cord_loop(vadd(center, vmul(e_th, D_B / 2.0)), e_th, Vector(0, 0, -1), R)
+    held_up = _cord_loop(side, e_up, e_th, R)
+    wall_d = _loop_clearance(toward_wall, frame)
+    lane_d = _loop_clearance(in_lane, frame)
+    up_d = _loop_clearance(held_up, frame)
+    step("oring free loop radius %.2f mm  toward the wall %.3f mm  in the lane %.3f mm  held up %.3f mm"
+         % (R, wall_d, lane_d, up_d))
+    require(up_d > 0.5, "the free loop snags the frame even held above the walls (%.3f mm)" % up_d)
+
+
+def _hex_tool(spec):
+    # Straight hex key, from the head outward. M3 is 2.5 mm across flats, M4 is 3.
+    # Half a millimetre of slack on the diameter, 60 mm of key, starting just
+    # clear of the head so the head itself is not a hit.
+    key = 2.5 if spec["size"] == "M3" else 3.0
+    head_h = m3_head_h if spec["size"] == "M3" else 4.0
+    outward = vmul(vnorm(spec["dir"]), -1.0)
+    start = vadd(spec["p0"], vmul(outward, head_h + 0.3))
+    return Part.makeCylinder((key + 0.5) / 2.0, 60.0, start, outward)
+
+
+def _nearest(tool, parts):
+    nearest = None
+    hit = None
+    for name, shape in parts:
+        if not bb_hit(tool, shape):
+            continue
+        dist = tool.distToShape(shape)[0]
+        if nearest is None or dist < nearest:
+            nearest = dist
+            hit = name
+    return nearest, hit
+
+
+def check_assembly_order(world, specs):
+    # The README order, as the build that has to be possible. A screw's hex
+    # key is checked against whatever that step has already put on the table.
+    by = {}
+    for name, shape in world:
+        by.setdefault(name, []).append(shape)
+
+    def grab(names):
+        out = []
+        for name in names:
+            for shape in by.get(name, ()):
+                out.append((name, shape))
+        return out
+
+    steps = [
+        ("curve frame, pad nuts, ear nuts, keeper nuts", ["frame"], []),
+        ("s1 motor plate and tie bars",
+         ["s1_plate_motor", "s1_tie_in", "s1_tie_out"],
+         ["s1 tie in motor", "s1 tie out motor"]),
+        ("s1 motor", ["s1_motor"], ["s1 m4 lower", "s1 m4 upper"]),
+        ("s2 motor plate and tie bars",
+         ["s2_plate_motor", "s2_tie_in", "s2_tie_out"],
+         ["s2 tie in motor", "s2 tie out motor"]),
+        ("s2 motor", ["s2_motor"], ["s2 m4 lower", "s2 m4 upper"]),
+        ("joiners", ["joiner_1", "joiner_2"],
+         ["j1 tie-loc", "j1 tie-clr", "j1 pad-loc", "j1 pad-clr",
+          "j2 tie-loc", "j2 tie-clr", "j2 pad-loc", "j2 pad-clr"]),
+    ]
+    for i in range(curve_n):
+        n = i + 1
+        groove_here = []
+        if n > 1:
+            prev = "A" if n % 2 == 0 else "B"
+            groove_here.append("ring %d-%d groove %s" % (n - 1, n, prev))
+        if n < curve_n:
+            this = "A" if n % 2 == 1 else "B"
+            groove_here.append("ring %d-%d groove %s" % (n, n + 1, this))
+        parts = ["cone_%d" % n]
+        if n < curve_n:
+            parts.append("oringR_%d" % n)
+        parts.append("stub" if n == curve_driven else "crod_%d" % n)
+        how = "spigot-first, stub already in the bore" if n == curve_driven else "drop in, then the rod"
+        steps.append(("cone %d: %s; %s" % (n, ", ".join(groove_here), how), parts, []))
+    steps.extend([
+        ("keeper", ["keeper"], ["keeper entry", "keeper exit"]),
+        ("curve motor", ["curve_motor"], ["curve m4 lower", "curve m4 upper"]),
+        ("s1 bed, rollers, belt",
+         ["s1_roller_idler", "s1_roller_driven", "s1_rod", "s1_bed", "s1_belt"], []),
+        ("s1 return guide, driven stub, plain plate",
+         ["s1_guide", "s1_driven_stub", "s1_plate_plain"],
+         ["s1 tie in plain", "s1 tie out plain"]),
+        ("s1 tensioners",
+         ["s1_block_near", "s1_block_far"],
+         ["s1 jack motor", "s1 jack plain"]),
+        ("s2 bed, rollers, belt",
+         ["s2_roller_idler", "s2_roller_driven", "s2_rod", "s2_bed", "s2_belt"], []),
+        ("s2 return guide, driven stub, plain plate",
+         ["s2_guide", "s2_driven_stub", "s2_plate_plain"],
+         ["s2 tie in plain", "s2 tie out plain"]),
+        ("s2 tensioners",
+         ["s2_block_near", "s2_block_far"],
+         ["s2 jack motor", "s2 jack plain"]),
+    ])
+
+    spec_by = {}
+    for spec in specs:
+        spec_by[spec["label"]] = spec
+    # What the joiner screws would meet if the cones were already in. The bed
+    # is not the only lid: the pad screws stand under the end cones.
+    cones = grab(["cone_%d" % n for n in range(1, curve_n + 1)])
+    for label in ("j1 tie-loc", "j1 tie-clr", "j1 pad-loc", "j1 pad-clr",
+                  "j2 tie-loc", "j2 tie-clr", "j2 pad-loc", "j2 pad-clr"):
+        dist, hit = _nearest(_hex_tool(spec_by[label]), cones)
+        if dist is None:
+            step("tool %-16s  with cones in  clear" % label)
+        else:
+            step("tool %-16s  with cones in  %.2f mm to %s" % (label, dist, hit))
+
+    installed = []
+    seen = set()
+    blocked = []
+    for index, (title, part_names, screw_labels) in enumerate(steps, 1):
+        step("assembly %d  %s" % (index, title))
+        installed.extend(grab(part_names))
+        for label in screw_labels:
+            seen.add(label)
+            spec = spec_by[label]
+            dist, hit = _nearest(_hex_tool(spec), installed)
+            if dist is None:
+                step("tool %-16s  %s  clear" % (label, spec["size"]))
+            else:
+                step("tool %-16s  %s  %.2f mm to %s" % (label, spec["size"], dist, hit))
+                if dist <= 0.05:
+                    blocked.append("%s meets %s (%.2f mm)" % (label, hit, dist))
+    missing = [spec["label"] for spec in specs if spec["label"] not in seen]
+    require(not missing, "no tool check for %s" % ", ".join(missing))
+    require(not blocked, "hex key blocked: %s" % "; ".join(blocked))
+
 
 def check_rod_volume(shape, length, diameter, name):
     # A shortened stand-in has the wrong volume. The published cut is the solid.
@@ -2499,10 +2718,12 @@ def _module_dir(dx, dy, dz, rot, double_mirror):
     return Vector(dx, dy, dz)
 
 
-def _spec(name, p0, direction, length, dia, nut_near, nut_far, size, where, nuts, spans=None):
+def _spec(name, p0, direction, length, dia, nut_near, nut_far, size, where, nuts, spans=None,
+         label=None):
     return {"name": name, "p0": p0, "dir": direction, "length": length, "dia": dia,
             "nut_near": nut_near, "nut_far": nut_far, "size": size, "where": where,
-            "nuts": nuts, "spans": spans or ((nut_near, nut_far),)}
+            "nuts": nuts, "spans": spans or ((nut_near, nut_far),),
+            "label": label or name}
 
 
 def joiner_screw_defs(origin_xy, ax, ay, tag):
@@ -2525,9 +2746,9 @@ def joiner_screw_defs(origin_xy, ax, ay, tag):
 def screw_specs(shift, s2_off):
     specs = []
     tip0 = nose_edge + block_front
-    modules = ((0.0, None), (90.0, s2_off))
-    for rot, offset in modules:
-        for mirrored in (False, True):
+    modules = (("s1", 0.0, None), ("s2", 90.0, s2_off))
+    for tag, rot, offset in modules:
+        for mirrored, side in ((False, "motor"), (True, "plain")):
             p0x = tip0 + shift + m3_jack_len
             p0 = _module_point(p0x, -block_out / 2.0, nose_z, rot, offset, mirrored)
             d = _module_dir(-1.0, 0.0, 0.0, rot, mirrored)
@@ -2535,44 +2756,53 @@ def screw_specs(shift, s2_off):
             specs.append(_spec("jack", p0, d, m3_jack_len, 3.0,
                                 p0x - a1, p0x - a0,
                                 "M3", "tensioner jacks", 2,
-                                spans=((p0x - a1, p0x - a0), (p0x - b1, p0x - b0))))
-        for x in (x_tie_in, x_tie_out):
-            for mirrored in (False, True):
+                                spans=((p0x - a1, p0x - a0), (p0x - b1, p0x - b0)),
+                                label="%s jack %s" % (tag, side)))
+        for end, x in (("in", x_tie_in), ("out", x_tie_out)):
+            for mirrored, side in ((False, "motor"), (True, "plain")):
                 p0 = _module_point(x, 0.0, tie_bolt_z, rot, offset, mirrored)
                 d = _module_dir(0.0, 1.0, 0.0, rot, mirrored)
                 specs.append(_spec("tie", p0, d, m3_tie_len, 3.0,
                                     wall + nut_land, wall + nut_land + m3_nut_depth,
-                                    "M3", "tie bars", 1))
-        for sign in (-1.0, 1.0):
+                                    "M3", "tie bars", 1,
+                                    label="%s tie %s %s" % (tag, end, side)))
+        for sign, which in ((-1.0, "lower"), (1.0, "upper")):
             p0 = _module_point(nose_x, -encl_ear_t, nose_z + sign * encl_ear_pitch,
                                rot, offset, False)
             d = _module_dir(0.0, 1.0, 0.0, rot, False)
             near = (boss_y1 - m4_nut_depth) - (-encl_ear_t)
             far = boss_y1 - (-encl_ear_t)
             specs.append(_spec("m4", p0, d, m4_ear_len, 4.0, near, far,
-                                "M4", "motor ears", 1))
-    for sign in (-1.0, 1.0):
+                                "M4", "motor ears", 1,
+                                label="%s m4 %s" % (tag, which)))
+    for sign, which in ((-1.0, "lower"), (1.0, "upper")):
         p0 = vadd(vadd(A, vmul(u_drv, s_face + encl_ear_t)),
                   vmul(e_th_drv, sign * encl_ear_pitch))
         near = encl_ear_t + nut_land
         specs.append(_spec("cv_m4", p0, vmul(u_drv, -1.0), m4_ear_len, 4.0,
-                            near, near + m4_nut_depth, "M4", "motor ears", 1))
-    for ang in (0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[4] + thetas[5])):
+                            near, near + m4_nut_depth, "M4", "motor ears", 1,
+                            label="curve m4 %s" % which))
+    for ang, which in ((0.5 * (thetas[0] + thetas[1]), "entry"),
+                       (0.5 * (thetas[4] + thetas[5]), "exit")):
         th = math.radians(ang)
         er = Vector(math.cos(th), math.sin(th), 0.0)
         z = 0.5 * (wall + 1.0 + 10.0)
         p0 = Vector(cx + er.x * (r_ow1 + keeper_t), cy + er.y * (r_ow1 + keeper_t), z)
         near = keeper_t + outer_wall_t
         specs.append(_spec("keeper", p0, vmul(er, -1.0), m3_keep_len, 3.0,
-                            near, near + m3_nut_depth, "M3", "curve keeper", 1))
+                            near, near + m3_nut_depth, "M3", "curve keeper", 1,
+                            label="keeper %s" % which))
     o1 = xform_point(x_tie_out, y_loc_pre, z_j, 0.0, None)
     o2 = xform_point(x_tie_in, y_loc_pre, z_j, 90.0, s2_off)
+    hole_names = ("tie-loc", "tie-clr", "pad-loc", "pad-clr")
     for origin, ax, ay, tag in (
             (o1, Vector(1, 0, 0), Vector(0, 1, 0), "j1"),
             (o2, Vector(0, -1, 0), Vector(-1, 0, 0), "j2")):
-        for _tag, p, near, far in joiner_screw_defs(origin, ax, ay, tag):
+        for hole, (_tag, p, near, far) in zip(
+                hole_names, joiner_screw_defs(origin, ax, ay, tag)):
             specs.append(_spec(tag, p, Vector(0, 0, -1), m3_join_len, 3.0,
-                                near, far, "M3", "joiners", 1))
+                                near, far, "M3", "joiners", 1,
+                                label="%s %s" % (tag, hole)))
     return specs
 
 

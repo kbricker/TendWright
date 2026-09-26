@@ -62,7 +62,7 @@ motor enclosure: reference, ears along z
 motor enclosure: reference, ears along x
 curve frame
 curve frame: base, walls, pad, axle holes
-driven spool relief radius 5.57 mm out to s 94.37 (pad face 98.09)
+driven spool relief radius 5.97 mm out to s 94.37 (pad face 98.09)
 keep-out x 105.00..123.00 y 60.00..94.00 z 4.00..46.00
 curve joint pads at z=10.0
 keeper
@@ -85,6 +85,9 @@ idler drop-in clearance 0.420 mm
 idler rod from outside the outer wall, clearance 0.150 mm
 driven cone seated, stub on the blind floor; 0.15 mm off the floor the clearance is 0.150 mm
 driven stub clears the inner wall after 4.03 mm outward; free travel 4.78 mm; margin 0.75 mm
+idler cone with both rings on, drop clearance 0.420 mm
+driven cone with both rings on, clearance at 4.03 mm outward 0.150 mm
+oring free loop radius 8.72 mm  toward the wall 0.000 mm  in the lane 0.000 mm  held up 1.658 mm
 o-rings
 oring 1-2 groove A zmax 28.464
 oring 2-3 groove B zmax 27.695
@@ -207,9 +210,63 @@ screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
+tool j1 tie-loc        with cones in  clear
+tool j1 tie-clr        with cones in  clear
+tool j1 pad-loc        with cones in  0.35 mm to cone_2
+tool j1 pad-clr        with cones in  0.00 mm to cone_2
+tool j2 tie-loc        with cones in  clear
+tool j2 tie-clr        with cones in  clear
+tool j2 pad-loc        with cones in  0.35 mm to cone_5
+tool j2 pad-clr        with cones in  0.00 mm to cone_5
+assembly 1  curve frame, pad nuts, ear nuts, keeper nuts
+assembly 2  s1 motor plate and tie bars
+tool s1 tie in motor   M3  3.31 mm to s1_plate_motor
+tool s1 tie out motor  M3  3.31 mm to s1_plate_motor
+assembly 3  s1 motor
+tool s1 m4 lower       M4  2.25 mm to s1_motor
+tool s1 m4 upper       M4  2.25 mm to s1_motor
+assembly 4  s2 motor plate and tie bars
+tool s2 tie in motor   M3  3.31 mm to s2_plate_motor
+tool s2 tie out motor  M3  3.31 mm to s2_plate_motor
+assembly 5  s2 motor
+tool s2 m4 lower       M4  2.25 mm to s2_motor
+tool s2 m4 upper       M4  2.25 mm to s2_motor
+assembly 6  joiners
+tool j1 tie-loc        M3  clear
+tool j1 tie-clr        M3  clear
+tool j1 pad-loc        M3  6.35 mm to frame
+tool j1 pad-clr        M3  6.35 mm to frame
+tool j2 tie-loc        M3  clear
+tool j2 tie-clr        M3  clear
+tool j2 pad-loc        M3  6.35 mm to frame
+tool j2 pad-clr        M3  6.35 mm to frame
+assembly 7  cone 1: ring 1-2 groove A; drop in, then the rod
+assembly 8  cone 2: ring 1-2 groove A, ring 2-3 groove B; drop in, then the rod
+assembly 9  cone 3: ring 2-3 groove B, ring 3-4 groove A; spigot-first, stub already in the bore
+assembly 10  cone 4: ring 3-4 groove A, ring 4-5 groove B; drop in, then the rod
+assembly 11  cone 5: ring 4-5 groove B, ring 5-6 groove A; drop in, then the rod
+assembly 12  cone 6: ring 5-6 groove A; drop in, then the rod
+assembly 13  keeper
+tool keeper entry      M3  clear
+tool keeper exit       M3  clear
+assembly 14  curve motor
+tool curve m4 lower    M4  2.25 mm to curve_motor
+tool curve m4 upper    M4  2.25 mm to curve_motor
+assembly 15  s1 bed, rollers, belt
+assembly 16  s1 return guide, driven stub, plain plate
+tool s1 tie in plain   M3  3.31 mm to s1_plate_plain
+tool s1 tie out plain  M3  3.31 mm to s1_plate_plain
+assembly 17  s1 tensioners
+tool s1 jack motor     M3  1.50 mm to s1_plate_motor
+tool s1 jack plain     M3  1.50 mm to s1_plate_plain
+assembly 18  s2 bed, rollers, belt
+assembly 19  s2 return guide, driven stub, plain plate
+tool s2 tie in plain   M3  3.31 mm to s2_plate_plain
+tool s2 tie out plain  M3  3.31 mm to s2_plate_plain
+assembly 20  s2 tensioners
+tool s2 jack motor     M3  1.50 mm to s2_plate_motor
+tool s2 jack plain     M3  1.50 mm to s2_plate_plain
 --- export ---
-retired tensioner_block.stl
-retired tensioner_block.step
 print bracket_straight_motor  s1_plate_motor  sym 0.0000 mm^3
 print bracket_straight_motor  s2_plate_motor  sym 0.0000 mm^3
 print bracket_straight_motor solid 1  z 0.0000 .. 46.500
