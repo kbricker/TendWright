@@ -497,13 +497,12 @@ def build_xml(visuals):
 
     <body name="part" pos="{px} {py} {pz}">
       <freejoint name="partfree"/>
-      <!-- The pair takes the larger friction, so this stays under every µ the
-           sweep commands and the drive geom is the one that acts. condim 3:
-           the slices already make a torsional moment, and a torsional
-           coefficient would count it twice. -->
+      <!-- The pair takes the larger sliding friction. The part is 0 so the
+           drive geom's value is the pair exactly, including a commanded 0.
+           condim 3: the slices already make a torsional moment. -->
       <geom name="partgeom" type="box" size="{hx} {hy} {hz}" mass="{pm}"
             contype="{pt}" conaffinity="{pa}" condim="3"
-            rgba="{pc}" friction="0.05 0.005 0.0001"/>
+            rgba="{pc}" friction="0.0 0.005 0.0001"/>
     </body>
   </worldbody>
 </mujoco>
@@ -743,6 +742,11 @@ def prove_drive(model, drives, part_bid, announce):
 
 
 def _set_friction(model, mu_belt, mu_curve):
+    if mu_belt < 0.0 or mu_curve < 0.0:
+        raise SystemExit(
+            "usage: --mu and --mu-curve must be >= 0 (got %.3f / %.3f)"
+            % (mu_belt, mu_curve))
+    cone_name = None
     for i in range(model.ngeom):
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i) or ""
         mu = None
@@ -752,8 +756,24 @@ def _set_friction(model, mu_belt, mu_curve):
             mu = mu_belt
         elif name.startswith("c_roll"):
             mu = mu_curve
+            if cone_name is None:
+                cone_name = name
         if mu is not None:
             model.geom_friction[i, 0] = mu
+    return cone_name
+
+
+def _pair_mu(model, drive_name):
+    # MuJoCo uses the larger sliding coefficient of the two geoms.
+    part = float(model.geom_friction[gid(model, "partgeom"), 0])
+    drive = float(model.geom_friction[gid(model, drive_name), 0])
+    return max(part, drive)
+
+
+def _log_mu(model, cone_name):
+    belt = _pair_mu(model, "s1_belt")
+    cone = _pair_mu(model, cone_name)
+    print("effective mu  s1_belt %g  %s %g" % (belt, cone_name, cone), flush=True)
 
 
 def _rails(model):
@@ -771,7 +791,9 @@ def _rails(model):
 
 def setup(straight_speed, curve_speed, mu_belt, mu_curve, visuals=False, announce=False):
     model = compiled_model(visuals)
-    _set_friction(model, mu_belt, mu_curve)
+    cone_name = _set_friction(model, mu_belt, mu_curve)
+    if announce:
+        _log_mu(model, cone_name)
     data = mujoco.MjData(model)
     part_gid = gid(model, "partgeom")
     part_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "part")
@@ -1263,16 +1285,24 @@ def _row(offset, speed, mu_b, mu_c, metrics):
         "t_exit": rnd(metrics["t_exit"], 3),
         "t_limit": rnd(metrics["t_limit"], 3),
         "pass": metrics["pass"],
+        "reasons": metrics["reasons"],
         "yaw_error_deg": {k: rnd(v, 3) for k, v in metrics["yaw_error_deg"].items()},
         "dip_where": metrics["dip_where"],
         "tilt_where": metrics["tilt_where"],
     }
 
 
+def _requested_seconds():
+    if "--seconds" not in sys.argv:
+        return None
+    return _argv("--seconds", 1.0)
+
+
 def _sweep_case(case):
     offset, speed, mu_b, mu_c = case
     _, metrics, _, _ = simulate(
-        speed, speed, mu_b, mu_c, offset, frames=0, visuals=False, announce_drive=False)
+        speed, speed, mu_b, mu_c, offset, frames=0, limit=_requested_seconds(),
+        visuals=False, announce_drive=False)
     return _row(offset, speed, mu_b, mu_c, metrics)
 
 
@@ -1285,8 +1315,10 @@ def run_sweep():
     cases = [(offset, speed, mu_b, mu_c)
              for offset in offsets for speed in speeds for mu_b, mu_c in mus]
     jobs = _argv("--jobs", max(1, (os.cpu_count() or 2) - 1))
-    print("sweep  %d runs  jobs %d  dt %.4g s  noslip %d"
-          % (len(cases), jobs, DT, int(NOSLIP)), flush=True)
+    cap = _requested_seconds()
+    print("sweep  %d runs  jobs %d  dt %.4g s  noslip %d  seconds %s"
+          % (len(cases), jobs, DT, int(NOSLIP),
+             "path" if cap is None else "%.2f" % cap), flush=True)
     # One announced check, at a speed the matrix actually runs. Workers check
     # again at their own speed and only print if that check fails.
     setup(0.155, 0.155, 0.9, 0.9, visuals=False, announce=True)
@@ -1310,7 +1342,7 @@ def run_sweep():
                  fmt(row["dip_mm"], "%.2f"),
                  fmt(row["max_tilt_deg"], "%.2f"),
                  len(row["rail_contacts"]),
-                 "PASS" if row["pass"] else "FAIL"))
+                 "PASS" if row["pass"] else "FAIL: " + ", ".join(row["reasons"])))
     by_offset = {}
     for offset in offsets:
         group = [r for r in runs if r["offset_mm"] == offset and r["exit_offset_mm"] is not None]
@@ -1369,6 +1401,9 @@ def run_viewer():
 
 if __name__ == "__main__":
     if "--view" in sys.argv:
+        if "--seconds" in sys.argv:
+            print("usage: --view runs until the window closes and does not take --seconds")
+            sys.exit(2)
         print_spans()
         run_viewer()
     elif "--sweep" in sys.argv:

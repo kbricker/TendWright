@@ -55,13 +55,14 @@ return guide: len=120.0
 cone rollers
 cone roller: idler
 cone roller: driven
-roller 1 entry lip 0.0408 mm, shaved flush
-roller 6 exit lip 0.0408 mm, shaved flush
+roller 1 entry lip 0.0408 mm, inside the frame gap
+roller 6 exit lip 0.0408 mm, inside the frame gap
 enclosures
 motor enclosure: reference, ears along z
 motor enclosure: reference, ears along x
 curve frame
 curve frame: base, walls, pad, axle holes
+driven spool relief radius 5.57 mm out to s 94.37 (pad face 98.09)
 keep-out x 105.00..123.00 y 60.00..94.00 z 4.00..46.00
 curve joint pads at z=10.0
 keeper
@@ -79,6 +80,11 @@ roller 3 distance to frame 0.420 mm
 roller 4 distance to frame 0.420 mm
 roller 5 distance to frame 0.420 mm
 roller 6 distance to frame 0.420 mm
+idler cone 60.69 mm axial, 60.39 mm across, walls 63.00 mm apart, drop margin 2.61 mm
+idler drop-in clearance 0.420 mm
+idler rod from outside the outer wall, clearance 0.150 mm
+driven cone seated, stub on the blind floor; 0.15 mm off the floor the clearance is 0.150 mm
+driven stub clears the inner wall after 4.03 mm outward; free travel 4.78 mm; margin 0.75 mm
 o-rings
 oring 1-2 groove A zmax 28.464
 oring 2-3 groove B zmax 27.695
@@ -202,29 +208,67 @@ screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
 --- export ---
+retired tensioner_block.stl
+retired tensioner_block.step
+print bracket_straight_motor  s1_plate_motor  sym 0.0000 mm^3
+print bracket_straight_motor  s2_plate_motor  sym 0.0000 mm^3
 print bracket_straight_motor solid 1  z 0.0000 .. 46.500
 export: bracket_straight_motor
+print bracket_straight_plain  s1_plate_plain  sym 0.0000 mm^3
+print bracket_straight_plain  s2_plate_plain  sym 0.0000 mm^3
 print bracket_straight_plain solid 1  z 0.0000 .. 35.000
 export: bracket_straight_plain
+print roller_idler  s1_roller_idler  sym 0.0000 mm^3
+print roller_idler  s2_roller_idler  sym 0.0000 mm^3
 print roller_idler solid 1  z -0.0000 .. 53.000
 export: roller_idler
+print roller_driven  s1_roller_driven  sym 0.0000 mm^3
+print roller_driven  s2_roller_driven  sym 0.0000 mm^3
 print roller_driven solid 1  z -0.0000 .. 56.500
 export: roller_driven
+print roller_cone_idler  cone_1  sym 0.0000 mm^3
+print roller_cone_idler  cone_2  sym 0.0000 mm^3
+print roller_cone_idler  cone_4  sym 0.0000 mm^3
+print roller_cone_idler  cone_5  sym 0.0000 mm^3
+print roller_cone_idler  cone_6  sym 0.0000 mm^3
 print roller_cone_idler solid 1  z -0.0000 .. 60.694
 export: roller_cone_idler
+print roller_cone_driven  cone_3  sym 0.0000 mm^3
 print roller_cone_driven solid 1  z -0.0000 .. 68.740
 export: roller_cone_driven
+print slider_bed_straight  s1_bed  sym 0.0000 mm^3
+print slider_bed_straight  s2_bed  sym 0.0000 mm^3
 print slider_bed_straight solid 1  z -0.0000 .. 3.000
 export: slider_bed_straight
+print return_guide_straight  s1_guide  sym 0.0000 mm^3
+print return_guide_straight  s2_guide  sym 0.0000 mm^3
 print return_guide_straight solid 1  z 0.0000 .. 3.000
 export: return_guide_straight
+print tie_bar  s1_tie_in  sym 0.0000 mm^3
+print tie_bar  s1_tie_out  sym 0.0000 mm^3
+print tie_bar  s2_tie_in  sym 0.0000 mm^3
+print tie_bar  s2_tie_out  sym 0.0000 mm^3
 print tie_bar solid 1  z 0.0000 .. 8.000
 export: tie_bar
-print tensioner_block solid 1  z 0.0000 .. 18.000
-export: tensioner_block
+print tensioner_block_left  s1_block_near  sym 0.0000 mm^3
+print tensioner_block_left  s2_block_near  sym 0.0000 mm^3
+print tensioner_block_right  s1_block_far  sym 0.0000 mm^3
+print tensioner_block_right  s2_block_far  sym 0.0000 mm^3
+print tensioner_block_left solid 1  z 0.0000 .. 18.000
+export: tensioner_block_left
+print tensioner_block_right solid 1  z 0.0000 .. 18.000
+export: tensioner_block_right
 joiner
+print joiner  joiner_1  sym 0.0000 mm^3
+print joiner  joiner_2  sym 0.0000 mm^3
 print joiner solid 1  z 0.0000 .. 3.000
 export: joiner
+print curve_frame  frame  sym 0.0000 mm^3
+print curve_frame solid 1  z 0.0000 .. 35.000
+export: curve_frame
+print curve_keeper  keeper  sym 0.0000 mm^3
+print curve_keeper solid 1  z 0.0000 .. 20.803
+export: curve_keeper
 export: ref_motor
 coupon: discharge end of the motor plate
 print coupon_bracket_end solid 1  z 0.0000 .. 46.500
@@ -235,10 +279,6 @@ print coupon_infeed_end solid 2  z 0.0000 .. 18.000
 export: coupon_infeed_end
 export: tensioner_plate
 export: tensioner_block_seated
-print curve_frame solid 1  z 0.0000 .. 35.000
-export: curve_frame
-print curve_keeper solid 1  z 0.0000 .. 20.803
-export: curve_keeper
 coupon_curve: sector -66.571 .. -29.296 deg (pad cover 13.719)
 export: coupon_curve_view
 print coupon_curve solid 1  z 0.0000 .. 35.000

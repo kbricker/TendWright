@@ -29,7 +29,7 @@ Sim flags:
 - `--mu` — belt friction, TPU on the part. Default 0.9.
 - `--mu-curve` — cone friction, TPU on the part. Default 0.9.
 - `--offset` — entry offset, mm, toward the inside of the turn. Default 0. Parts load within 4 mm of the lane centre.
-- `--seconds` — replaces the acceptance time limit. A cap that misses the exit is a failure.
+- `--seconds` — replaces the acceptance time limit, on the nominal run and on every sweep row. A cap that misses the exit is a failure. `--view` does not take it; the viewer runs until the window closes.
 - `--frames` — nominal-run PNGs in `renders/sim/`. Default 6. `--sweep` draws none.
 - `--sweep` — the acceptance matrix. Writes `renders/sim/sweep.json`. Exit 0 only if every run passes its gates. The spreads are written with the rows and do not decide the exit code.
 - `--view` — interactive viewer. The only mode that puts the part back on the belt.
@@ -54,7 +54,7 @@ A coupon is twenty minutes. A wrong bore in the full set is a day. Print these, 
 |---|---|---|---|
 | `coupon_bracket_end.stl` | `roller_driven.stl`, `roller_idler.stl` | PETG plate, PLA+ rollers | enclosure ears on the motor plate, and the roller bores |
 | `coupon_curve.stl` | `roller_cone_driven.stl`, `roller_cone_idler.stl`, one O-ring on groove A | PETG sector, TPU 95A cones | both ear holes and their nut pockets (the nuts drop in from the top), a cone that turns freely, and the O-ring in groove A |
-| `coupon_infeed_end.stl` | one `tensioner_block.stl` | PETG | the block must slide on the rail, and the jack boss must take two M3 nuts, one along the screw and one from the top |
+| `coupon_infeed_end.stl` | one `tensioner_block_left.stl` | PETG | the block must slide on the rail, and the jack boss must take two M3 nuts, one along the screw and one from the top |
 
 The infeed coupon is the plate and the block side by side on the bed, with a gap, so the slide can actually be tried. Nested on the rail, the block would print in mid-air.
 
@@ -89,7 +89,8 @@ v1 counts belong to #840. PETG where the part is loaded and shares holes with th
 | `slider_bed_straight.stl` | 2 | PLA+ | belt face up |
 | `return_guide_straight.stl` | 2 | PLA+ | belt face up |
 | `tie_bar.stl` | 4 | PETG | joiner-nut pockets up |
-| `tensioner_block.stl` | 4 | PETG | underside down |
+| `tensioner_block_left.stl` | 2 | PETG | underside down, motor plate |
+| `tensioner_block_right.stl` | 2 | PETG | underside down, plain plate |
 | `joiner.stl` | 2 | PETG | flat, holes vertical |
 | `curve_frame.stl` | 1 | PETG | base down |
 | `curve_keeper.stl` | 1 | PETG | as exported, base down |
@@ -105,7 +106,7 @@ The D-flat is the only thing transmitting drive torque. Axis-vertical, the layer
 
 ### Why the cones print big end down
 
-The spool and the driven spigot sit outboard of the big end. On the bed, that end is the base and the cone narrows as it rises, so the taper is not an overhang. The D-flat still bears in the plane of the layers. The STL is already in that orientation; the placed rollers in the assembly are shaved flush to the frame faces, and the print file is the unshaved one.
+The spool and the driven spigot sit outboard of the big end. On the bed, that end is the base and the cone narrows as it rises, so the taper is not an overhang. The D-flat still bears in the plane of the layers. The STL is the placed cone, in that orientation. The axle tilt leaves a lip of a few hundredths of a millimetre past each end face; it stays inside the frame gap.
 
 ### Bed and return guide
 
@@ -114,7 +115,7 @@ Both are held by a closed groove in each plate. The tongue is captured in X and 
 ### Tie bars, tensioners, joiners
 
 - Two tie bars per straight, one within 25 mm of each end. They set the plates at `inner_width` and keep the module square. M3 through the plate into a captive nut in the upright. Slide that nut in from the end of the upright before the plate goes on. The channel is the nut across flats, 5.8 mm, so the flats bear on the walls and the nut cannot spin while the screw is turned. 1.2 mm of the bar stays between the nut and the plate, so the plates cannot pull apart and let the bed tongues out of their grooves. The top face is the joint plane the joiner sits on. Print them pockets-up so the joiner nuts drop in.
-- A tensioner block on each plate's outer face, at the infeed. It slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. A web between the nuts takes the screw's reaction: the block-side nut slides in along the screw, and the head-side nut drops in from the top. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span. The 8 mm travel shortens the belt path by 16 mm, which is the slack for sliding the loop on from the open side. The bed stops short of the flange at full slack, so with the belt tensioned the carry is unsupported for 14.7 mm behind the infeed nose.
+- A tensioner block on each plate's outer face, at the infeed. The motor-plate block and the plain-plate block are mirrors — the rail groove and the bore are not symmetric — so they print as `tensioner_block_left.stl` and `tensioner_block_right.stl`, two of each. Each slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. A web between the nuts takes the screw's reaction: the block-side nut slides in along the screw, and the head-side nut drops in from the top. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span. The 8 mm travel shortens the belt path by 16 mm, which is the slack for sliding the loop on from the open side. The bed stops short of the flange at full slack, so with the belt tensioned the carry is unsupported for 14.7 mm behind the infeed nose.
 - One joiner part for both joints. The two end tie bars mirror about the module centre, so the same plate sets the 1.5 mm frame gap at J1 (s1 → curve) and J2 (curve → s2). M3 down into the nuts. The tie-bar nuts drop in from below, and the pad nuts slide in from the joint face before the straight module is set against the curve, so nothing hangs under the table. There is no straight-to-straight joint in v0.
 
 ---
@@ -191,7 +192,14 @@ The belt goes on from one side, with one plate off. Nothing in the loop except t
 
 ### The curve
 
-Rods first, then the rollers on them, then the O-rings over the spools (groove A, B, A, B, A). The M4 ear nuts drop in from the top of the pad, then the motor goes on the outer wall. The keeper nuts drop in from the top of the outer wall before the keeper goes over the outer rod ends; the keeper screws then find those nuts. The keeper is what stops the idler rods walking out. The driven stub is the short Ø3 rod.
+The motor stays off until the driven cone is seated. A rod cannot go in first: once it is seated it spans both walls and passes through its roller.
+
+1. **Idler cones, from above.** A cone plus its spool is 60.69 mm along the axle and 60.39 mm across. The walls are 63.00 mm apart, so it drops in with 2.61 mm to spare, and it stays 0.420 mm clear of the frame on the way down.
+2. **Idler rods, from outside the outer wall.** Each Ø3 rod slides through that wall, through the cone, and onto the blind-hole floor in the inner wall. The hole clears the rod by 0.150 mm. The square end stays 0.2 mm inside where the keeper will sit.
+3. **Driven cone, spigot first, before the motor is on.** The short Ø3 stub is already in the small-end bore, and that end sits on the blind-hole floor. The spigot goes out through the outer wall and the pad. Push the cone outward until the stub clears the inner wall — 4.03 mm — then slide it back so the stub seats. The wall is relieved to the spool diameter (radius 5.57 mm) so the spool can make that move; the cone is free for 4.78 mm, a margin of 0.75 mm, and the outer pad still has the Ø8 bore the spigot runs in.
+4. **O-rings** over the spools, groove A, B, A, B, A.
+5. **Keeper.** The M3 nuts drop in from the top of the outer wall. The keeper goes over the outer rod ends, and the screws find those nuts. The keeper is what stops the idler rods walking out.
+6. **Motor.** The M4 nuts drop in from the top of the pad, then the motor bolts on through the ears.
 
 ### The joints
 
@@ -222,7 +230,7 @@ Firmware is in [`hardware/conveyor/`](../../hardware/conveyor/README.md). `uv ru
 
 ## The sim
 
-The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part is set to 0.05 so the drive's value is the one that acts. Rails and walls are 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
+The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part's sliding friction is 0, so the pair is the drive geom's value exactly, including a commanded 0. Rails and walls keep 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
 
 The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.2 s on 15 workers.
 

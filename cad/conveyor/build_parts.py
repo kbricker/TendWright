@@ -819,30 +819,24 @@ def main():
     for i, th in enumerate(thetas):
         src = cone_dr if (i + 1) == curve_driven else cone_id
         placed.append(place_cone(src, th))
-    # The axis sits α off the face, so the top line — what a part rides — is
-    # tangent to the plane. The axle also tilts down, and that puts the cone's
-    # lower flank about 0.04 mm past a vertical plane through the apex. Shave
-    # the end rollers flush. The axes stay where the pitch formula put them.
-    entry_cut = Part.makeBox(400, 800, 160, Vector(cx - 400, cy - 400, -40))
-    exit_cut = Part.makeBox(800, 400, 160, Vector(cx - 200, cy, -40))
+    # The axis sits α off the face, so the top line is tangent to the plane.
+    # The axle tilt puts the lower flank a few hundredths past that plane.
+    # The lip stays in the 1.5 mm frame gap. It is part of the printed cone;
+    # cutting it off would make the placed solid a different part.
     for i, sol in enumerate(placed):
         bb = sol.BoundBox
-        if bb.XMin < cx - 1e-6:
-            step("roller %d entry lip %.4f mm, shaved flush" % (i + 1, cx - bb.XMin))
-            sol = sol.cut(entry_cut)
-        if bb.YMax > cy + 1e-6:
-            step("roller %d exit lip %.4f mm, shaved flush" % (i + 1, bb.YMax - cy))
-            sol = sol.cut(exit_cut)
-        placed[i] = sol
-        bb = sol.BoundBox
+        if bb.XMin < cx:
+            step("roller %d entry lip %.4f mm, inside the frame gap" % (i + 1, cx - bb.XMin))
+        if bb.YMax > cy:
+            step("roller %d exit lip %.4f mm, inside the frame gap" % (i + 1, bb.YMax - cy))
         require(bb.ZMax <= z_top + 0.02,
                 "roller %d rises to z=%.3f, z_top=%.3f" % (i + 1, bb.ZMax, z_top))
         require(bb.ZMax >= z_top - 0.05,
                 "roller %d top is z=%.3f, expected the carry plane" % (i + 1, bb.ZMax))
-        require(bb.XMin >= cx - 1e-4,
-                "roller %d crosses the entry plane (x=%.4f)" % (i + 1, bb.XMin))
-        require(bb.YMax <= cy + 1e-4,
-                "roller %d crosses the exit plane (y=%.4f)" % (i + 1, bb.YMax))
+        require(bb.XMin >= cx - 0.1,
+                "roller %d crosses the entry plane by %.4f mm" % (i + 1, cx - bb.XMin))
+        require(bb.YMax <= cy + 0.1,
+                "roller %d crosses the exit plane by %.4f mm" % (i + 1, bb.YMax - cy))
 
     step("enclosures")
     encl_straight = make_motor_enclosure("z")
@@ -893,6 +887,8 @@ def main():
         d = sol.distToShape(frame)[0]
         step("roller %d distance to frame %.3f mm" % (i + 1, d))
         require(d > 0.05, "roller %d intersects the frame (dist %.4f)" % (i + 1, d))
+
+    check_curve_assembly(frame, cone_id, cone_dr)
 
     step("o-rings")
     links = []
@@ -1020,41 +1016,179 @@ def main():
         check_screws(station, screw_specs(shift, s2_off), jacks_only=moving)
 
     # ---------------------------------------------------------------- export
+    # Print files are the solids in this assembly, moved onto the bed. The
+    # plates are chiral, and the two tensioner blocks are mirrors, so each
+    # of those is its own file.
     step("--- export ---")
-    export_print(br_motor, "bracket_straight_motor")
-    export_print(br_plain, "bracket_straight_plain")
-    export_print(roller_to_print(rol_id), "roller_idler")
-    export_print(roller_to_print(rol_dr), "roller_driven")
-    export_print(to_print(cone_id), "roller_cone_idler")
-    export_print(to_print(cone_dr), "roller_cone_driven")
-    export_print(drop_to_bed(bed), "slider_bed_straight")
-    export_print(drop_to_bed(ret), "return_guide_straight")
-    export_print(print_tie(tie_in), "tie_bar")
-    export_print(drop_to_bed(block), "tensioner_block")
-    export_print(drop_to_bed(make_joiner()), "joiner")
-    export(encl_straight, "ref_motor")
+    placed_by = {}
+    for _name, _shape in world:
+        placed_by.setdefault(_name, _shape)
+    s1_place = identity_place
+    s2_place = module_place(90.0, s2_off)
+    retire_print("tensioner_block")
+
+    motor = placed_by["s1_plate_motor"]
+    motor_print, undo_motor, motor_shift = pose_drop(motor)
+    check_print("bracket_straight_motor", motor_print, undo_motor, [
+        ("s1_plate_motor", s1_place, motor),
+        ("s2_plate_motor", s2_place, placed_by["s2_plate_motor"]),
+    ])
+    export_print(motor_print, "bracket_straight_motor")
+    plain_p = placed_by["s1_plate_plain"]
+    plain_print, undo_plain, _plain_shift = pose_drop(plain_p)
+    check_print("bracket_straight_plain", plain_print, undo_plain, [
+        ("s1_plate_plain", s1_place, plain_p),
+        ("s2_plate_plain", s2_place, placed_by["s2_plate_plain"]),
+    ])
+    export_print(plain_print, "bracket_straight_plain")
+
+    # Axis vertical, spigot on top, so the D-flat's load stays in the layers.
+    rid = placed_by["s1_roller_idler"]
+    rid_print, undo_rid, _rid_shift = pose_spin_drop(rid, Vector(1, 0, 0), 90.0)
+    bb = rid_print.BoundBox
+    require(bb.ZLength > bb.XLength and bb.ZLength > bb.YLength,
+            "idler roller print is not standing on its axis")
+    check_print("roller_idler", rid_print, undo_rid, [
+        ("s1_roller_idler", s1_place, rid),
+        ("s2_roller_idler", s2_place, placed_by["s2_roller_idler"]),
+    ])
+    export_print(rid_print, "roller_idler")
+    rdr = placed_by["s1_roller_driven"]
+    tip = max(rdr.Vertexes, key=lambda vtx: vtx.Point.y).Point
+    rdr_print, undo_rdr, rdr_shift = pose_spin_drop(rdr, Vector(1, 0, 0), 90.0)
+    bb = rdr_print.BoundBox
+    require(bb.ZLength > bb.XLength and bb.ZLength > bb.YLength,
+            "driven roller print is not standing on its axis")
+    tip_s = Part.Vertex(tip)
+    tip_s.rotate(Vector(0, 0, 0), Vector(1, 0, 0), 90.0)
+    tip_s.translate(rdr_shift)
+    require(tip_s.Point.z >= bb.ZMax - 0.5,
+            "driven roller print does not put the spigot on top")
+    check_print("roller_driven", rdr_print, undo_rdr, [
+        ("s1_roller_driven", s1_place, rdr),
+        ("s2_roller_driven", s2_place, placed_by["s2_roller_driven"]),
+    ])
+    export_print(rdr_print, "roller_driven")
+
+    # Big end, spool and spigot rotate onto the bed. The cone narrows upward.
+    cid_print, undo_cid, _cid_shift = pose_spin_drop(
+        cone_id, Vector(0, 1, 0), 90.0, must_drop_below=-1.0)
+    cdr_print, undo_cdr, _cdr_shift = pose_spin_drop(
+        cone_dr, Vector(0, 1, 0), 90.0, must_drop_below=-1.0)
+    idler_cones = []
+    for i, th in enumerate(thetas):
+        if (i + 1) == curve_driven:
+            continue
+        idler_cones.append((
+            "cone_%d" % (i + 1),
+            (lambda theta: (lambda shape: place_cone(shape, theta)))(th),
+            placed_by["cone_%d" % (i + 1)]))
+    check_print("roller_cone_idler", cid_print, undo_cid, idler_cones)
+    export_print(cid_print, "roller_cone_idler")
+    drv_theta = thetas[curve_driven - 1]
+    check_print("roller_cone_driven", cdr_print, undo_cdr, [
+        ("cone_%d" % curve_driven,
+         lambda shape: place_cone(shape, drv_theta),
+         placed_by["cone_%d" % curve_driven]),
+    ])
+    export_print(cdr_print, "roller_cone_driven")
+
+    bed_s1 = placed_by["s1_bed"]
+    bed_print, undo_bed, _bed_shift = pose_drop(bed_s1)
+    check_print("slider_bed_straight", bed_print, undo_bed, [
+        ("s1_bed", s1_place, bed_s1),
+        ("s2_bed", s2_place, placed_by["s2_bed"]),
+    ])
+    export_print(bed_print, "slider_bed_straight")
+    ret_s1 = placed_by["s1_guide"]
+    ret_print, undo_ret, _ret_shift = pose_drop(ret_s1)
+    check_print("return_guide_straight", ret_print, undo_ret, [
+        ("s1_guide", s1_place, ret_s1),
+        ("s2_guide", s2_place, placed_by["s2_guide"]),
+    ])
+    export_print(ret_print, "return_guide_straight")
+
+    # Joiner-nut pockets open downward in use. Flip so they open upward.
+    tie = placed_by["s1_tie_in"]
+    tie_print, undo_tie, _tie_shift = pose_spin_drop(tie, Vector(1, 0, 0), 180.0)
+    shift_out = translate_place(Vector(x_tie_out - x_tie_in, 0, 0))
+    check_print("tie_bar", tie_print, undo_tie, [
+        ("s1_tie_in", s1_place, tie),
+        ("s1_tie_out", shift_out, placed_by["s1_tie_out"]),
+        ("s2_tie_in", s2_place, placed_by["s2_tie_in"]),
+        ("s2_tie_out", then_place(shift_out, s2_place), placed_by["s2_tie_out"]),
+    ])
+    export_print(tie_print, "tie_bar")
+
+    block_left = placed_by["s1_block_near"]
+    block_right = placed_by["s1_block_far"]
+    left_print, undo_left, _left_shift = pose_drop(block_left)
+    right_print, undo_right, _right_shift = pose_drop(block_right)
+    check_print("tensioner_block_left", left_print, undo_left, [
+        ("s1_block_near", s1_place, block_left),
+        ("s2_block_near", s2_place, placed_by["s2_block_near"]),
+    ])
+    check_print("tensioner_block_right", right_print, undo_right, [
+        ("s1_block_far", s1_place, block_right),
+        ("s2_block_far", s2_place, placed_by["s2_block_far"]),
+    ])
+    export_print(left_print, "tensioner_block_left")
+    export_print(right_print, "tensioner_block_right")
+
+    blank = make_joiner()
+    join_print, undo_join, _join_shift = pose_drop(blank)
+
+    def place_j1(shape):
+        x, y, _ = xform_point(x_tie_out, y_loc_pre, z_j, 0.0, None)
+        return apply_frame(shape, Vector(x, y, z_j + join_standoff),
+                            Vector(1, 0, 0), Vector(0, 1, 0), Vector(0, 0, 1))
+
+    def place_j2(shape):
+        x, y, _ = xform_point(x_tie_in, y_loc_pre, z_j, 90.0, s2_off)
+        return apply_frame(shape, Vector(x, y, z_j + join_standoff),
+                            Vector(0, -1, 0), Vector(-1, 0, 0), Vector(0, 0, 1))
+
+    check_print("joiner", join_print, undo_join, [
+        ("joiner_1", place_j1, placed_by["joiner_1"]),
+        ("joiner_2", place_j2, placed_by["joiner_2"]),
+    ])
+    export_print(join_print, "joiner")
+
+    frame_print, undo_frame, _frame_shift = pose_drop(placed_by["frame"])
+    check_print("curve_frame", frame_print, undo_frame, [
+        ("frame", s1_place, placed_by["frame"]),
+    ])
+    export_print(frame_print, "curve_frame")
+    keep_print, undo_keep, _keep_shift = pose_drop(placed_by["keeper"])
+    check_print("curve_keeper", keep_print, undo_keep, [
+        ("keeper", s1_place, placed_by["keeper"]),
+    ])
+    export_print(keep_print, "curve_keeper")
+
+    # Same shift as the motor plate, so the enclosure still sits on the ears.
+    ref = mirror_left(encl_straight)
+    ref.translate(motor_shift)
+    export(ref, "ref_motor")
 
     step("coupon: discharge end of the motor plate")
-    coupon = br_motor.common(Part.makeBox(
+    coupon = mirror_left(br_motor.common(Part.makeBox(
         coupon_len, boss_y1 + 8.0, tab_z1 + 10.0,
-        Vector(straight_len - coupon_len, -2.0, -2.0)))
+        Vector(straight_len - coupon_len, -2.0, -2.0))))
+    coupon.translate(motor_shift)
     export_print(coupon, "coupon_bracket_end")
     step("coupon: infeed end, with the tensioner seat")
-    coupon_in = br_motor.common(Part.makeBox(
+    coupon_in = mirror_left(br_motor.common(Part.makeBox(
         30.0, block_out + wall + 6.0, bracket_h + 4.0,
-        Vector(0.0, -(block_out + 2.0), -1.0)))
+        Vector(0.0, -(block_out + 2.0), -1.0))))
     # Print file: the block sits on the bed beside the plate. Nested on the
     # rail it would hang 13 mm up, and the slide fit could not be tried.
-    plate_print = drop_to_bed(coupon_in)
-    blk_print = drop_to_bed(block)
+    plate_print, _undo_plate, _plate_shift = pose_drop(coupon_in)
+    blk_print = left_print.copy()
     blk_print.translate(Vector(plate_print.BoundBox.XMax + 4.0, 0.0, 0.0))
     export_print(Part.makeCompound([plate_print, blk_print]), "coupon_infeed_end")
     # Close-up stays in the assembled pose. These two are not print files.
     export(coupon_in, "tensioner_plate")
-    export(block, "tensioner_block_seated")
-
-    export_print(drop_to_bed(frame), "curve_frame")
-    export_print(drop_to_bed(keeper), "curve_keeper")
+    export(block_left, "tensioner_block_seated")
 
     # The pitch-half sector clips the ear toward roller 2. Open that side until
     # both ear holes and their nut pockets sit inside the coupon.
@@ -1627,14 +1761,6 @@ def joiner_screws(origin_xy, ax, ay, tag):
     return out
 
 
-def print_tie(shape):
-    # Joiner-nut pockets open downward in use. Flip so they open upward on the
-    # printer; the plate-nut pockets stay as horizontal holes.
-    p = shape.copy()
-    p.rotate(Vector(0, 0, 0), Vector(1, 0, 0), 180.0)
-    return drop_to_bed(p)
-
-
 def check_holes():
     def near(a, b, msg):
         d = math.hypot(a[0] - b[0], a[1] - b[1])
@@ -1886,17 +2012,6 @@ def place_cone(shape, theta_deg):
     return s
 
 
-def to_print(shape):
-    # +X (toward the big end) rotates about Y onto −Z, then the part is sat
-    # on the bed. The spool and the driven spigot are outboard of the big end,
-    # so they become the base and the cone narrows as it rises.
-    p = shape.copy()
-    p.rotate(Vector(0, 0, 0), Vector(0, 1, 0), 90.0)
-    require(p.BoundBox.ZMin < -1.0, "print rotation did not put the big end down")
-    p.translate(Vector(0, 0, -p.BoundBox.ZMin))
-    return p
-
-
 # --------------------------------------------------------------- curve frame
 def annular_sector(r0, r1, z0, z1, a0_deg, a1_deg):
     h = z1 - z0
@@ -1950,9 +2065,26 @@ def make_curve_frame():
             axle_hole_d / 2.0, (r_iw1_s + 0.6) - s_hole_bottom,
             vadd(A, vmul(u, s_hole_bottom)), u))
         if (i + 1) == curve_driven:
+            # Spigot-first: the stub is already in the small end, and the cone
+            # is pushed outward until that stub clears the inner wall. The
+            # spool is wider than the spigot, so this relief is the spool
+            # diameter. The outer pad keeps the Ø8 bore the spigot runs in.
+            need = r_iw1_s - s_hole_bottom
+            relief_r = R_spool_B + 0.4
+            relief_far = s_spool_end + need + 0.8
+            require(relief_far <= s_face - 2.0,
+                    "driven spool relief leaves no spigot bore (ends %.2f, pad face %.2f)"
+                    % (relief_far, s_face))
+            require(relief_r < encl_ear_pitch - m4_clear / 2.0 - 1.0,
+                    "driven spool relief meets an ear bolt")
             frame = frame.cut(Part.makeCylinder(
-                spigot_hole_d / 2.0, (s_face + 1.0) - (r_ow0_s - 1.0),
+                relief_r, relief_far - (r_ow0_s - 1.0),
                 vadd(A, vmul(u, r_ow0_s - 1.0)), u))
+            frame = frame.cut(Part.makeCylinder(
+                spigot_hole_d / 2.0, (s_face + 1.0) - (relief_far - 0.2),
+                vadd(A, vmul(u, relief_far - 0.2)), u))
+            step("driven spool relief radius %.2f mm out to s %.2f (pad face %.2f)"
+                 % (relief_r, relief_far, s_face))
         else:
             frame = frame.cut(Part.makeCylinder(
                 axle_hole_d / 2.0, (r_ow1_s + 0.6) - (r_ow0_s - 0.4),
@@ -2192,6 +2324,70 @@ def curve_idler_rod(theta):
 
 def curve_stub_rod(theta):
     return curve_rod(theta, s_hole_bottom, s_hole_bottom + stub_len, curve_axle_d)
+
+
+def check_curve_assembly(frame, cone_id, cone_dr):
+    # Idlers drop in from above: the cone plus its spool has to fit between
+    # the walls, and only then does the rod slide in from outside.
+    length = s_spool_end - s_a
+    plan_gap = r_ow0 - r_iw1
+    horizontal = length * ca
+    drop_margin = plan_gap - horizontal
+    step("idler cone %.2f mm axial, %.2f mm across, walls %.2f mm apart, drop margin %.2f mm"
+         % (length, horizontal, plan_gap, drop_margin))
+    require(drop_margin >= 0.5, "idler cone does not drop in between the walls")
+    cone = place_cone(cone_id, thetas[1])
+    lift = (bracket_h + 5.0) - cone.BoundBox.ZMin
+    worst = None
+    for i in range(11):
+        sample = cone.copy()
+        sample.translate(Vector(0, 0, lift * (10 - i) / 10.0))
+        dist = sample.distToShape(frame)[0]
+        worst = dist if worst is None else min(worst, dist)
+    step("idler drop-in clearance %.3f mm" % worst)
+    require(worst > 0.2, "idler cone hits the frame on the way in (%.3f mm)" % worst)
+    rod = curve_rod(thetas[1], s_hole_bottom + 0.3, r_ow1_s + 2.0, curve_axle_d)
+    rod_clear = rod.distToShape(frame)[0]
+    step("idler rod from outside the outer wall, clearance %.3f mm" % rod_clear)
+    require(rod_clear > 0.05, "idler rod cannot slide in from outside (%.3f mm)" % rod_clear)
+
+    # Driven cone, before the motor is on: stub already in the small-end bore,
+    # spigot outward through the wall, pushed until the stub tip clears the
+    # inner wall, then back so the stub seats.
+    th = thetas[curve_driven - 1]
+    u = axis_u(th)
+    unit = place_cone(cone_dr, th).fuse(curve_stub_rod(th))
+    need = r_iw1_s - s_hole_bottom
+    # The stub end is the blind-hole floor. That contact is the seat. Clearance
+    # is read just off the floor, where only the hole wall is close.
+    seat_air = 0.15
+
+    def clearance_at(dist):
+        moved = unit.copy()
+        moved.translate(vmul(u, dist))
+        return moved.distToShape(frame)[0]
+
+    off_floor = clearance_at(seat_air)
+    step("driven cone seated, stub on the blind floor; %.2f mm off the floor the clearance is %.3f mm"
+         % (seat_air, off_floor))
+    require(off_floor > 0.05, "driven cone is not clear of the frame when seated")
+
+    lo, hi = seat_air, need + 6.0
+    if clearance_at(hi) >= 0.05:
+        free = hi
+    else:
+        for _ in range(30):
+            mid = 0.5 * (lo + hi)
+            if clearance_at(mid) >= 0.05:
+                lo = mid
+            else:
+                hi = mid
+        free = lo
+    margin = free - need
+    step("driven stub clears the inner wall after %.2f mm outward; free travel %.2f mm; margin %.2f mm"
+         % (need, free, margin))
+    require(margin > 0.3, "driven cone cannot travel far enough for the stub to clear (margin %.2f mm)"
+            % margin)
 
 
 def check_rod_volume(shape, length, diameter, name):
@@ -2646,16 +2842,100 @@ def hardware_block(s2_off, straight_stub):
     }
 
 
-def roller_to_print(shape):
-    # Axis +Y stands up, spigot on top, so the D-flat's load stays in the
-    # plane of the layers and the bore is not a hole against the bed.
-    p = shape.copy()
-    p.rotate(Vector(0, 0, 0), Vector(1, 0, 0), -90.0)
-    p = drop_to_bed(p)
-    bb = p.BoundBox
-    require(bb.ZLength > bb.XLength and bb.ZLength > bb.YLength,
-            "roller print is not standing on its axis")
-    return p
+def _solid_volume(shape):
+    try:
+        if len(shape.Solids) == 0:
+            return 0.0
+        return abs(shape.Volume)
+    except Exception:
+        return 0.0
+
+
+def sym_diff(a, b):
+    # Volume in one solid and not the other. Empty means the print is the
+    # placed part under a rigid motion.
+    try:
+        left = a.copy().cut(b)
+        right = b.copy().cut(a)
+    except Exception as exc:
+        step("symdiff boolean failed (%s)" % exc)
+        return 1.0
+    return _solid_volume(left) + _solid_volume(right)
+
+
+def pose_drop(shape):
+    bb = shape.BoundBox
+    shift = Vector(-bb.XMin, -bb.YMin, -bb.ZMin)
+    out = shape.copy()
+    out.translate(shift)
+
+    def undo(printed):
+        s = printed.copy()
+        s.translate(Vector(-shift.x, -shift.y, -shift.z))
+        return s
+
+    return out, undo, shift
+
+
+def pose_spin_drop(shape, axis, angle, must_drop_below=None):
+    spun = shape.copy()
+    spun.rotate(Vector(0, 0, 0), axis, angle)
+    if must_drop_below is not None:
+        require(spun.BoundBox.ZMin < must_drop_below,
+                "print rotation did not put the big end down")
+    dropped, undo_drop, shift = pose_drop(spun)
+
+    def undo(printed):
+        s = undo_drop(printed)
+        s.rotate(Vector(0, 0, 0), axis, -angle)
+        return s
+
+    return dropped, undo, shift
+
+
+def identity_place(shape):
+    return shape.copy()
+
+
+def module_place(rot, offset):
+    def place(shape):
+        s = shape.copy()
+        if rot:
+            s.rotate(Vector(0, 0, 0), Vector(0, 0, 1), rot)
+        if offset is not None:
+            s.translate(offset)
+        return s
+    return place
+
+
+def then_place(inner, outer):
+    def place(shape):
+        return outer(inner(shape))
+    return place
+
+
+def translate_place(delta):
+    def place(shape):
+        s = shape.copy()
+        s.translate(delta)
+        return s
+    return place
+
+
+def check_print(file_name, printed, undo, instances):
+    for label, place, placed in instances:
+        diff = sym_diff(place(undo(printed)), placed)
+        step("print %s  %s  sym %.4f mm^3" % (file_name, label, diff))
+        require(diff < 1.0e-3,
+                "%s does not match %s (sym %.4f mm^3)" % (file_name, label, diff))
+
+
+def retire_print(name):
+    for ext in (".stl", ".step"):
+        path = os.path.join(OUT, name + ext)
+        if os.path.exists(path):
+            os.remove(path)
+            step("retired %s%s" % (name, ext))
 
 
 def export_print(shape, name):

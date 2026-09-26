@@ -15,6 +15,7 @@
       "t_exit": 6.903,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.136,
         "mid_curve": -0.267,
@@ -39,6 +40,7 @@
       "t_exit": 6.903,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.1,
         "mid_curve": -0.323,
@@ -63,6 +65,7 @@
       "t_exit": 6.914,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.044,
         "mid_curve": 0.045,
@@ -87,6 +90,7 @@
       "t_exit": 6.9,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.42,
         "mid_curve": -1.432,
@@ -111,6 +115,7 @@
       "t_exit": 6.912,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.447,
         "mid_curve": 0.547,
@@ -135,6 +140,7 @@
       "t_exit": 2.597,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.561,
         "mid_curve": -1.322,
@@ -159,6 +165,7 @@
       "t_exit": 2.606,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.842,
         "mid_curve": -1.067,
@@ -183,6 +190,7 @@
       "t_exit": 2.61,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.837,
         "mid_curve": -0.277,
@@ -207,6 +215,7 @@
       "t_exit": 2.605,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.574,
         "mid_curve": -1.949,
@@ -231,6 +240,7 @@
       "t_exit": 2.597,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.566,
         "mid_curve": 0.511,
@@ -255,6 +265,7 @@
       "t_exit": 1.351,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.635,
         "mid_curve": -2.193,
@@ -279,6 +290,7 @@
       "t_exit": 1.357,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.939,
         "mid_curve": -1.063,
@@ -303,6 +315,7 @@
       "t_exit": 1.356,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.632,
         "mid_curve": -1.583,
@@ -327,6 +340,7 @@
       "t_exit": 1.359,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.617,
         "mid_curve": -1.657,
@@ -351,6 +365,7 @@
       "t_exit": 1.356,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.567,
         "mid_curve": 0.045,
@@ -375,6 +390,7 @@
       "t_exit": 6.905,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.655,
         "mid_curve": -1.09,
@@ -399,6 +415,7 @@
       "t_exit": 6.907,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.245,
         "mid_curve": -0.264,
@@ -423,6 +440,7 @@
       "t_exit": 6.898,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.738,
         "mid_curve": -1.339,
@@ -447,6 +465,7 @@
       "t_exit": 6.904,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.327,
         "mid_curve": -2.272,
@@ -471,6 +490,7 @@
       "t_exit": 6.909,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.062,
         "mid_curve": -0.226,
@@ -495,6 +515,7 @@
       "t_exit": 2.596,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.891,
         "mid_curve": -1.757,
@@ -519,6 +540,7 @@
       "t_exit": 2.603,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.258,
         "mid_curve": -1.659,
@@ -543,6 +565,7 @@
       "t_exit": 2.617,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.396,
         "mid_curve": 0.087,
@@ -567,6 +590,7 @@
       "t_exit": 2.607,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.885,
         "mid_curve": -2.35,
@@ -591,6 +615,7 @@
       "t_exit": 2.606,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.873,
         "mid_curve": 0.992,
@@ -615,6 +640,7 @@
       "t_exit": 1.359,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.373,
         "mid_curve": -1.276,
@@ -639,6 +665,7 @@
       "t_exit": 1.359,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.451,
         "mid_curve": -0.873,
@@ -663,6 +690,7 @@
       "t_exit": 1.359,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.404,
         "mid_curve": -0.187,
@@ -687,6 +715,7 @@
       "t_exit": 1.359,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.79,
         "mid_curve": -2.43,
@@ -711,6 +740,7 @@
       "t_exit": 1.356,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.647,
         "mid_curve": -0.274,
@@ -735,6 +765,7 @@
       "t_exit": 6.909,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.361,
         "mid_curve": -1.408,
@@ -759,6 +790,7 @@
       "t_exit": 6.902,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.801,
         "mid_curve": -1.006,
@@ -783,6 +815,7 @@
       "t_exit": 6.911,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.428,
         "mid_curve": -0.494,
@@ -807,6 +840,7 @@
       "t_exit": 6.9,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.675,
         "mid_curve": -2.319,
@@ -831,6 +865,7 @@
       "t_exit": 6.932,
       "t_limit": 11.47,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 3.23,
         "mid_curve": 0.542,
@@ -855,6 +890,7 @@
       "t_exit": 2.607,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.358,
         "mid_curve": -0.995,
@@ -879,6 +915,7 @@
       "t_exit": 2.605,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.656,
         "mid_curve": -2.362,
@@ -903,6 +940,7 @@
       "t_exit": 2.617,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.84,
         "mid_curve": 0.035,
@@ -927,6 +965,7 @@
       "t_exit": 2.612,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.457,
         "mid_curve": -1.201,
@@ -951,6 +990,7 @@
       "t_exit": 2.608,
       "t_limit": 4.926,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.787,
         "mid_curve": 0.797,
@@ -975,6 +1015,7 @@
       "t_exit": 1.365,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.565,
         "mid_curve": 0.446,
@@ -999,6 +1040,7 @@
       "t_exit": 1.356,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 2.099,
         "mid_curve": -1.401,
@@ -1023,6 +1065,7 @@
       "t_exit": 1.361,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 3.285,
         "mid_curve": 1.251,
@@ -1047,6 +1090,7 @@
       "t_exit": 1.357,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 1.425,
         "mid_curve": -2.898,
@@ -1071,6 +1115,7 @@
       "t_exit": 1.365,
       "t_limit": 3.026,
       "pass": true,
+      "reasons": [],
       "yaw_error_deg": {
         "entry_face": 3.504,
         "mid_curve": 1.054,
