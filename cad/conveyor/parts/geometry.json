@@ -7,13 +7,13 @@
   "side_gap": 1.0,
   "bracket_h": 35.0,
   "wall": 3.0,
-  "mating_wall": 2.0,
   "inner_width": 55.0,
   "outer_width": 61.0,
   "carry_z": 30.0,
   "nose_z": 25.0,
   "return_run_z": 19.0,
   "return_guide_top": 18.5,
+  "frame_gap": 1.5,
   "straight": {
     "len": 120.0,
     "drive_ax": 6.0,
@@ -22,32 +22,100 @@
     "outer_width": 61.0,
     "rail_top": [
       35.0,
-      35.0
+      46.5
     ],
     "belt_len": 250.55751918948772,
     "print_cyl_dia": 79.75493541569878
   },
-  "corner": {
-    "len": 70.0,
-    "drive_ax": 6.0,
-    "nose_ax": 64.0,
-    "t": 2.0,
-    "outer_width": 59.0,
-    "rail_top": [
-      35.0,
-      30.0
+  "motor_shaft_len": 9.299999999999999,
+  "shaft_engagement": 6.299999999999999,
+  "motor_side": "left",
+  "motor_tab": {
+    "x0": 108.5,
+    "x1": 119.5,
+    "y0": 56.4,
+    "y1": 61.0,
+    "z0": 35.0,
+    "z1": 46.5
+  },
+  "s1": {
+    "rot": 0,
+    "offset": [
+      0,
+      0
+    ]
+  },
+  "s2": {
+    "rot": 90,
+    "offset": [
+      207.0,
+      87.0
+    ]
+  },
+  "curve": {
+    "centre": [
+      121.5,
+      85.5
     ],
-    "belt_len": 150.55751918948772,
-    "print_cyl_dia": 47.923946797319715,
-    "offset_x": 180.5
+    "z_top": 31.0,
+    "r_in": 30.0,
+    "r_out": 80.0,
+    "r_c": 55.0,
+    "k": 0.2,
+    "alpha_deg": 5.739170477266787,
+    "n": 6,
+    "pitch_deg": 15.704331809093285,
+    "theta_deg": [
+      -84.26082952273322,
+      -68.55649771363993,
+      -52.85216590454665,
+      -37.14783409545336,
+      -21.44350228636008,
+      -5.739170477266796
+    ],
+    "cone_r": [
+      29.0,
+      81.0
+    ],
+    "driven": 3,
+    "inner_wall": [
+      23.0,
+      28.0
+    ],
+    "outer_wall": [
+      91.0,
+      94.0
+    ],
+    "wall_top": 35.0,
+    "entry_face_x": 121.5,
+    "exit_face_y": 85.5,
+    "grooves": {
+      "A": {
+        "r": 83.5,
+        "c": 22.586981040481827,
+        "D": 9.820681271537584
+      },
+      "B": {
+        "r": 87.5,
+        "c": 23.66899210828934,
+        "D": 9.131851631850761
+      }
+    },
+    "rod_cut_mm": {
+      "idler": 70.35768488340406,
+      "stub": 24.238765925130103
+    }
   },
-  "straight2": {
-    "offset_x": 181.5,
-    "offset_y": 71.5
-  },
-  "frame_gap": 1.5,
-  "motor_shaft_len": 9.0,
-  "shaft_engagement": 5.0,
-  "joint_a_side_entry": 12.0,
-  "joint_b_end_entry": 13.5
+  "spans": {
+    "entry": {
+      "inner": 10.5,
+      "centre": 13.0,
+      "outer": 15.5
+    },
+    "exit": {
+      "inner": 10.5,
+      "centre": 13.0,
+      "outer": 15.5
+    }
+  }
 }

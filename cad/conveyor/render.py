@@ -72,9 +72,12 @@ def render(items, out, size=(1200, 780), forward=(-0.42, 1.0, -0.46), margin=0.0
     f, r, u = basis(forward)
 
     meshes = []
-    for path, colour in items:
+    for item in items:
+        path, colour = item[0], item[1]
+        offset = item[2] if len(item) > 2 else (0.0, 0.0, 0.0)
         tris = read_stl(path)
         if len(tris):
+            tris = tris + np.asarray(offset, dtype=np.float64)
             meshes.append((tris, np.array(colour, dtype=np.float64)))
     if not meshes:
         return
@@ -166,49 +169,63 @@ ROLLER = (196, 132, 74)
 BED = (74, 126, 178)
 RETURN = (108, 152, 120)
 BELT = (58, 58, 62)
+MOTOR = (118, 120, 124)
+ORING = (42, 40, 38)
+KEEPER = (186, 148, 96)
 SOLO = (196, 194, 186)
 
+STRAIGHT = lambda pfx: [
+    (P(pfx + "_brackets"), BRACKET), (P(pfx + "_rollers"), ROLLER),
+    (P(pfx + "_bed"), BED), (P(pfx + "_return"), RETURN),
+    (P(pfx + "_belt"), BELT), (P(pfx + "_motor"), MOTOR),
+]
+CURVE = [
+    (P("cv_frame"), BRACKET), (P("cv_rollers"), ROLLER),
+    (P("cv_orings"), ORING), (P("cv_keeper"), KEEPER), (P("cv_motor"), MOTOR),
+]
+
 SCENES = {
-    "straight": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-                 (P("cs_bed"), BED), (P("cs_return"), RETURN),
-                 (P("cs_belt"), BELT), (P("cs_motor"), (120, 118, 112))],
-    "corner": [(P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-               (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT)],
-    "L": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-          (P("cs_bed"), BED), (P("cs_return"), RETURN), (P("cs_belt"), BELT),
-          (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-          (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT)],
-    "v0": [(P("cs_brackets"), BRACKET), (P("cs_rollers"), ROLLER),
-           (P("cs_bed"), BED), (P("cs_return"), RETURN), (P("cs_belt"), BELT),
-           (P("cc_brackets"), BRACKET), (P("cc_rollers"), ROLLER),
-           (P("cc_bed"), BED), (P("cc_return"), RETURN), (P("cc_belt"), BELT),
-           (P("s2_brackets"), BRACKET), (P("s2_rollers"), ROLLER),
-           (P("s2_bed"), BED), (P("s2_return"), RETURN), (P("s2_belt"), BELT)],
+    "straight": STRAIGHT("cs"),
+    "curve": CURVE,
+    "v0": STRAIGHT("cs") + CURVE + STRAIGHT("s2"),
+    "motor_mount": [(P("bracket_straight_motor"), BRACKET), (P("ref_motor"), MOTOR)],
+    "coupon": [(P("coupon_bracket_end"), BRACKET), (P("ref_motor"), MOTOR)],
+    "coupon_curve": [(P("coupon_curve"), BRACKET)],
+    # Print orientation, big end down. The idler is shifted so the two fit in one frame.
+    "roller_cone": [(P("roller_cone_driven"), ROLLER),
+                    (P("roller_cone_idler"), ROLLER, (42.0, 0.0, 0.0))],
     "return_guide": [(P("return_guide_straight"), RETURN)],
     "roller_driven": [(P("roller_driven"), ROLLER)],
     "roller_idler": [(P("roller_idler"), ROLLER)],
     "bracket": [(P("bracket_straight_motor"), BRACKET)],
-    "motor_mount": [(P("bracket_straight_motor"), BRACKET), (P("cs_motor"), (120, 118, 112))],
-    "bracket_corner": [(P("bracket_corner_infeed"), BRACKET)],
-    "coupon": [(P("coupon_bracket_end"), BRACKET), (P("roller_driven"), ROLLER)],
 }
 
 VIEWS = {
+    # Motor is on +Y after the mirror, so the camera sits on that side.
+    "straight": (-0.35, -0.85, -0.40),
+    "curve": (0.25, -0.85, -0.50),
+    "v0": (-0.15, -0.55, -0.70),
+    # From below the outboard face, so the lower ear is not hidden by the body.
+    "motor_mount": (0.72, 0.45, 0.40),
+    "coupon": (0.78, 0.35, 0.42),
+    "coupon_curve": (0.15, -0.40, -0.88),
+    "roller_cone": (-0.45, 0.55, -0.70),
     "roller_driven": (-0.55, 0.75, -0.38),
     "roller_idler": (-0.55, 0.75, -0.38),
-    "bracket": (-0.10, 1.0, -0.22),
-    "motor_mount": (-0.62, -0.55, -0.40),
-    "coupon": (-0.55, -0.70, -0.42),
+    "bracket": (0.15, 0.95, -0.28),
 }
 
 SIZES = {
-    "L": (1400, 720),
-    "v0": (1400, 900),
+    "straight": (1200, 780),
+    "curve": (1200, 1000),
+    "v0": (1600, 1100),
+    "motor_mount": (1100, 860),
+    "coupon": (1100, 860),
+    "coupon_curve": (1200, 1000),
+    "roller_cone": (1200, 780),
     "roller_driven": (800, 620),
     "roller_idler": (800, 620),
-    "bracket": (1200, 480),
-    "motor_mount": (1000, 760),
-    "coupon": (1000, 760),
+    "bracket": (1200, 560),
 }
 
 want = sys.argv[1:] or list(SCENES)

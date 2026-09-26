@@ -6,18 +6,29 @@
 # swallows stdout and can die without a traceback, so if a run produces nothing,
 # read build.log first — it names the last step that started.
 #
-# Three FreeCAD scripting traps this file is written around (CableCell/cad/README.md):
-#   1. Shape.translate() mutates in place and returns None. Everything here is
-#      built at its final position or uses translated().
-#   2. freecadcmd sets __name__ to the module basename, so a __main__ guard
+# FreeCAD scripting traps this file is written around (CableCell/cad/README.md):
+#   1. Shape.translate() mutates in place and returns None. Use translated(),
+#      or call translate() and keep the same object.
+#   2. Shape.rotate() mutates in place. copy() first, then rotate() on that
+#      copy, and never use rotate()'s return value. export of a placed part
+#      does it this way.
+#   3. freecadcmd sets __name__ to the module basename, so a __main__ guard
 #      never fires. There isn't one.
-#   3. Routing an STL through a Mesh::Feature crashes the process. Meshes are
+#   4. Routing an STL through a Mesh::Feature crashes the process. Meshes are
 #      written directly via Mesh.Mesh(shape.tessellate(dev)).write(path).
+#
+# The belt corner (superseded 2026-09-25) is in git history at 7c560e0.
+# v0 is two straights and a tapered-roller curve: a fan of cones whose apexes
+# meet at the curve centre, so surface speed grows with radius and a part
+# follows the arc by geometry alone.
 
 import os
+import math
+import json
+import traceback
 import Part
 import Mesh
-from FreeCAD import Vector
+from FreeCAD import Vector, Matrix
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "parts")
@@ -32,9 +43,17 @@ def step(msg):
     _log.flush()
 
 
+def require(cond, msg):
+    # A failed clearance must stop the build before anything is exported.
+    if not cond:
+        step("FAIL: " + msg)
+        raise RuntimeError(msg)
+
+
 # ---------------------------------------------------------------- parameters
-# Coordinates: X along the belt, Y across it, Z up. Change a number here and
-# rerun; nothing downstream is hard-coded.
+# Coordinates: X along s1's travel, Y across it, Z up. Change a number here
+# and rerun; parts/geometry.json is the only place a downstream script gets
+# a dimension from.
 
 belt_width      = 50.0    # Kyle, 2026-08-08
 
@@ -49,243 +68,818 @@ belt_thickness  = 1.0
 # BOTH ends are small nose rollers, and the DISCHARGE one is driven.
 #
 # The Ø25 drive roller is gone. It lived at the infeed end, where a concentric
-# stadium put its axis bracket_h/2 = 17.5 mm inboard of the module face — fine
-# while that face pointed at open air, fatal once a corner discharges into it.
-# In the v1 loop every straight receives from a corner at that end, so a fat
-# infeed is systematic, not incidental. Both ends have to be small, which puts
-# the drive on a nose roller.
-#
-# It pays for itself: one roller part instead of two, the separate motor mount
-# is absorbed into the side plate, and shaft torque drops with the radius
-# (1 N × 5 mm = 0.005 N·m, against ~0.0125 at Ø25) — which is what makes a
-# printed D-bore at this diameter reasonable.
+# stadium put its axis bracket_h/2 inboard of the module face. Both ends have
+# to be small so a curve can discharge into a straight, which puts the drive
+# on a nose roller. One roller part, the motor lands on the side plate, and
+# shaft torque drops with the radius — which is what makes a printed D-bore
+# at this diameter reasonable.
 nose_dia        = 10.0
-nose_axle_dia   = 4.0     # idler stub axle; the driven end rides the motor shaft
-nose_edge       = 6.0     # module face to nose axis
+nose_axle_dia   = 4.0     # idler stub axle on the straights
+nose_edge       = 6.0     # module face to nose axis; the belt at the nose is flush with the face
 nose_travel     = 8.0     # take-up slot at the INFEED nose (pull the slack back)
 roller_flange_d = 13.0    # keeps the belt tracking
 roller_flange_w = 1.5
-roller_len      = belt_width + 2 * roller_flange_w
 
 side_gap        = 1.0     # roller end to bracket inner face
 wall            = 3.0
-mating_wall     = 2.0     # thinner on the face that butts the next module
-inner_width     = roller_len + 2 * side_gap
+inner_width     = belt_width + 2 * roller_flange_w + 2 * side_gap
 outer_width     = inner_width + 2 * wall
 
 bracket_h       = 35.0
-straight_len    = 120.0   # straight module
-corner_len      = 70.0    # corner module — same mechanism, built short
-frame_gap       = 1.5     # module face to module face (was 4.0)
+straight_len    = 120.0
+frame_gap       = 1.5     # module face to module face
 
-motor_shaft_d   = 3.0     # N20 / Pololu micro metal gearmotor
-motor_shaft_len = 9.0     # Pololu spec; generic GA12-N20 is 10. Bore is cut deeper
-                          # than either so the shaft can never bottom out and shove
-                          # the roller into the far plate — engagement is whatever
-                          # the shaft reaches, and that is what the stress check uses.
-motor_bore_depth = 8.0
-motor_shaft_flat= 2.5     # across the D
-# Motor envelope, read off the GA12-N20 dimension drawing and confirmed against
-# Pololu's published body size. The face pattern is 2 x M1.6 THREADED at 9 mm
-# pitch, placed DIAGONALLY about the shaft, around a O4 boss — not the M2 / 10 mm
-# / O12 pattern this file cut before checking. M1.6 diagonal is fiddly and its
-# exact offsets are not legible from the drawing, so the motor is held by a
-# SADDLE on its 10 x 12 body instead. That dimension is unambiguous and identical
-# across Pololu and every GA12-N20, so the mount stops depending on the vendor.
-motor_boss_d    = 4.0     # boss around the shaft at the gearbox face
-motor_body_w    = 10.0    # across the belt direction (X)
-motor_body_h    = 12.0    # vertical (Z)
-motor_body_len  = 24.0    # gearbox + can, outboard of the plate
-motor_can_d     = 11.5    # steel can, rounded — the part the saddle grips
-saddle_wall     = 2.5
-saddle_clear    = 0.4
+# goBILDA 1705-0016-0001 enclosure with a ServoCity 638122 inside.
+# Reference geometry for renders and clearance checks — never printed.
+# The shaft axis is the centre of the 24 x 16 section; ears are symmetric about it.
+encl_along          = 32.0   # body length along the shaft
+encl_wide           = 24.0   # ear side of the cross-section
+encl_narrow         = 16.0   # other side; this is what overhangs a module face
+encl_ear_t          = 2.5    # ear plate, flush with the shaft-end face
+encl_lobe_d         = 8.0    # ear lobe
+encl_ear_hole_d     = 4.0    # ear bolt hole, as printed on the enclosure
+encl_ear_pitch      = 16.0   # ear hole to shaft, along the wide side
+# The drawing shows the ear plate crossing the shaft end on a 3.5 mm slot, so
+# the gearbox face may sit a plate's thickness behind the mounting face. This
+# is the worst-case reading; Kyle calipers the real part.
+encl_face_to_gearbox = 2.5
+
+motor_shaft_d       = 3.0
+motor_boss_d        = 4.0    # gearbox boss the shaft leaves through
+motor_boss_len      = 0.6
+motor_shaft_past_boss = 8.7  # 638122 drawing: D-shaft beyond the boss
+# 8.7 mm past the boss plus the boss itself, measured from the gearbox face.
+motor_shaft_len     = motor_shaft_past_boss + motor_boss_len
+motor_shaft_flat    = 2.5    # across the D
+motor_bore_depth    = 10.0   # deeper than any shaft reaches, so a long shaft
+                              # bottoms in the bore instead of walking the roller
+spigot_d            = 7.0    # printed nose that crosses the plate / the curve wall
+spigot_hole_d       = 8.0
+spigot_recess       = 0.5    # spigot stops this short of the enclosure face;
+                              # the shaft crosses that air gap before it enters the bore
+
+m4_clear            = 4.6
+m4_nut_af           = 7.3    # M4 nut, 7.0 across flats, +0.3 so a printed pocket takes it
+m4_nut_depth        = 3.4
+nut_land            = 1.2    # plastic left between a nut pocket and the enclosure face
+tab_margin          = 1.5    # motor plate covers the upper ear lobe by at least this
+coupon_len          = 30.0   # discharge end of the motor plate, a short fit print
 
 # Return guide sits this far BELOW the taut lower run. It exists to catch sag,
 # not to bear on a correctly tensioned belt — zero clearance would add drag to
 # every module for nothing.
 return_clear    = 0.5
-m2_clear        = 2.2
-
 m3_clear        = 3.2
 
 TESS = 0.04
 
+# ---- tapered-roller curve -------------------------------------------------
+# The lane is the straights' belt, swung about C. θ is CCW from +X:
+# −90° is the entry face (the plane x = straight_len + frame_gap, pointing
+# −Y from C), 0° is the exit face (the plane y = C_y).
+curve_angle     = 90.0
+curve_r_in      = 30.0    # lane inner edge from C
+curve_r_out     = curve_r_in + belt_width
+curve_r_c       = (curve_r_in + curve_r_out) / 2.0
+# Cone diameter = k·r. The straight belt moves at ω·(nose_dia+belt_thickness)/2,
+# its neutral axis; the cone surface moves at ω·k·r/2. Equal RPM is then equal
+# speed on the centreline: Ø6 at the inner edge, Ø16 at the outer.
+curve_k         = (nose_dia + belt_thickness) / curve_r_c
+curve_alpha     = math.asin(curve_k / 2.0)   # cone half-angle, and the axle tilt down toward the outside
+curve_n         = 6
+# End rollers tangent to the faces, so the fan occupies (angle − 2α) and the
+# pitch is what is left. 6 leaves ~2 mm between cones at the small end;
+# 7 leaves 0.8 mm and 8 interferes.
+curve_pitch_deg = (curve_angle - 2.0 * math.degrees(curve_alpha)) / (curve_n - 1)
+curve_driven    = 3        # middle of the chain, so no O-ring run is longer than 3 links
+curve_axle_d    = 3.0      # the 3 mm 304 rod already ordered
+cone_past_lane  = 1.0      # cone runs this far past each lane edge, so a part never sees the end face
+stub_bore_depth = 20.0     # driven cone, small end, plain bore for the stub axle
+stub_bore_air   = 0.5      # stub stops this short of that bore's bottom
+axle_hole_d     = 3.3      # +0.15 on radius over the rod; the machine prints holes undersize, so this is a snug slip
+blind_remain    = 1.0      # inner-wall hole stops this short of the far face, along the axis
+inner_wall_inset_far = 7.0 # inner wall, 5 mm thick, outside the lane
+inner_wall_inset_near = 2.0
+outer_wall_gap  = 1.0      # outer wall starts this far past spool_end, in plan radius
+outer_wall_t    = 3.0
 
-import math
+# O-rings are real parts from a metric kit. The two sizes are PLACEHOLDERS —
+# Kyle calipers the ring he picks and changes these. Grooves are cut to suit.
+oring_id        = 20.0
+oring_cs        = 2.0
+oring_stretch   = 0.10     # installed stretch on the centreline; nitrile, lightly loaded, window 0.06–0.15
+spool_shoulder  = 2.5      # plan-radius land ahead of groove A and past groove B
+spool_groove_gap = 4.0     # plan radius between groove A and groove B
+groove_extra    = 0.15     # groove tube is the cord radius plus this, so the ring is not a press fit
+groove_flange   = 0.6      # spool OD at a groove is D + this·cs; the cord then sits just inside the lips
+oring_min_bend  = 4.0      # pitch diameter at least this many cord-widths
+oring_below_top = 1.0      # ring crown this far below the carry surface
+spool_clear_min = 1.0      # neighbouring spools
+
+keeper_t        = 2.5      # radial cover over the rod ends; an M3 head clamps it
+keeper_cap_extra = 1.6     # cap half-width past the axle-hole radius, still clear of the pad
+pad_rim         = 1.0      # pad extends this past the nut's points and past the enclosure body
+pad_bolt_t      = 5.0      # pad is at least this thick at the bolt holes, outboard of the wall
+keepout_grow    = 1.0      # frame cut is the s1 enclosure bbox grown by this on every side
+encl_check_grow = 0.5      # s1 enclosure, grown by this, must miss the frame
+pad_lift_off    = 0.05     # curve enclosure, moved this far off the pad, must miss the frame
+engage_min      = 5.0      # D-flat stress check was done at 5 mm of engagement
 
 # The carry surface — the plane the part rides on. Both nose rollers are aligned
 # to THIS by their tops, so the carry run is flat and sits on the slider bed.
 carry_z = 30.0
 nose_z = carry_z - nose_dia / 2.0
+z_top = carry_z + belt_thickness
+
+belt_y0 = wall + side_gap + roller_flange_w
+belt_y1 = belt_y0 + belt_width
+
+# Entry face is the plane x = straight_len + frame_gap. C sits on that plane,
+# one inner radius outboard of s1's belt +Y edge, so that edge is r = curve_r_in
+# and the other edge is r = curve_r_out.
+cx = straight_len + frame_gap
+cy = belt_y1 + curve_r_in
+A = Vector(cx, cy, z_top)
+
+r_a = curve_r_in - cone_past_lane
+r_b = curve_r_out + cone_past_lane
+r_gA = r_b + spool_shoulder
+r_gB = r_gA + spool_groove_gap
+spool_end_r = r_gB + spool_shoulder
+
+r_iw0 = curve_r_in - inner_wall_inset_far
+r_iw1 = curve_r_in - inner_wall_inset_near
+r_ow0 = spool_end_r + outer_wall_gap
+r_ow1 = r_ow0 + outer_wall_t
+
+alpha_deg = math.degrees(curve_alpha)
+thetas = [-90.0 + alpha_deg + i * curve_pitch_deg for i in range(curve_n)]
+
+# s2 travels +Y. rot 90 sends local (x, y) to world (−y + ox, x + oy), and the
+# mirror has already put its motor on local +Y, which lands on world −X.
+# local y = belt_y1 (the exit's inner radius) maps to cx + curve_r_in.
+s2_ox = cx + curve_r_in + belt_y1
+s2_oy = cy + frame_gap
+
+
+def vnorm(v):
+    L = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+    return Vector(v.x / L, v.y / L, v.z / L)
+
+
+def vcross(a, b):
+    return Vector(a.y * b.z - a.z * b.y,
+                  a.z * b.x - a.x * b.z,
+                  a.x * b.y - a.y * b.x)
+
+
+def vdot(a, b):
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+
+def vmul(a, s):
+    return Vector(a.x * s, a.y * s, a.z * s)
+
+
+def vadd(a, b):
+    return Vector(a.x + b.x, a.y + b.y, a.z + b.z)
+
+
+def vsub(a, b):
+    return Vector(a.x - b.x, a.y - b.y, a.z - b.z)
+
+
+def axis_u(theta_deg):
+    th = math.radians(theta_deg)
+    ca = math.cos(curve_alpha)
+    sa = math.sin(curve_alpha)
+    return Vector(math.cos(th) * ca, math.sin(th) * ca, -sa)
+
+
+def axis_frame(theta_deg):
+    # ê_θ horizontal, ê_up = u × ê_θ (mostly +Z, a little outward).
+    th = math.radians(theta_deg)
+    u = axis_u(theta_deg)
+    e_th = Vector(-math.sin(th), math.cos(th), 0.0)
+    e_up = vcross(u, e_th)
+    return u, e_th, vnorm(e_up)
+
+
+def apply_frame(shape, origin, ax, ay, az):
+    m = Matrix()
+    m.A11, m.A12, m.A13, m.A14 = ax.x, ay.x, az.x, origin.x
+    m.A21, m.A22, m.A23, m.A24 = ax.y, ay.y, az.y, origin.y
+    m.A31, m.A32, m.A33, m.A34 = ax.z, ay.z, az.z, origin.z
+    m.A44 = 1.0
+    out = shape.copy()
+    out.transformShape(m)
+    return out
+
+
+def s_on_cylinder(radius, h, v):
+    # Axis-parameter where the ray parallel to u, offset (h, v) in (ê_θ, ê_up),
+    # meets a vertical cylinder of this radius about C. The outward hit.
+    rad = radius * radius - h * h
+    if rad <= 0.0:
+        require(False, "ray h=%.2f misses cylinder r=%.2f" % (h, radius))
+    return (math.sqrt(rad) - v * math.sin(curve_alpha)) / math.cos(curve_alpha)
 
 
 def roller_axis_x(module_len):
-    # Squared at both ends now: infeed nose (idler, take-up) and discharge nose
-    # (driven). Both set from their own module face.
     return nose_edge, module_len - nose_edge
 
 
 def belt_path_length(module_len):
-    # Equal radii at equal height, so this is back to a stadium — but computed,
-    # not assumed, because nose_dia is a parameter and the sim reads the result.
-    #
-    # Measured at the belt's NEUTRAL AXIS (nose_dia + belt_thickness), not at the
-    # roller surface. The neutral axis is the fibre that neither stretches nor
-    # compresses, so it is the only length that stays constant as the belt wraps
-    # — and it is what a printed loop's mean circumference has to match. Using
-    # the roller surface undersizes every belt by pi x thickness of circumference
-    # (~2% here), against only nose_travel of take-up to absorb it.
+    # Measured at the belt's NEUTRAL AXIS (nose_dia + belt_thickness). That fibre
+    # neither stretches nor compresses, so it is the length a printed loop's mean
+    # circumference has to match. The roller surface undersizes every belt by
+    # pi x thickness, against only nose_travel of take-up to absorb it.
     ax0, ax1 = roller_axis_x(module_len)
     return 2.0 * (ax1 - ax0) + math.pi * (nose_dia + belt_thickness)
 
 
 def printed_cylinder_dia(module_len):
-    # What to actually type into the slicer: the MEAN diameter of the printed
-    # cylinder, whose circumference is the neutral-axis path.
     return belt_path_length(module_len) / math.pi
 
 
-# A transfer's unsupported span is (feeding module's discharge inset) + frame gap
-# + (receiving module's inset ON THE FACE THE PART CROSSES). Those two receiving
-# faces are different numbers, and the v1 loop uses BOTH — a straight discharges
-# into a corner's side, and a corner discharges into a straight's end.
-def side_entry_inset():
-    return mating_wall + side_gap + roller_flange_w
-
-
-def end_entry_inset():
-    return nose_edge
+def return_run_z():
+    # Outer surface of the TAUT lower run. Derived: it moves with nose_dia and
+    # belt_thickness, both of which have already changed once in this build.
+    return nose_z - nose_dia / 2.0 - belt_thickness
 
 
 def shaft_engagement():
-    # How much D-shaft is actually inside the roller: it crosses the motor-side
-    # plate and the side gap first. THIS is the bearing length, not the bore depth.
-    return min(motor_shaft_len - (wall + side_gap), motor_bore_depth)
+    # The shaft reaches (motor_shaft_len − encl_face_to_gearbox) past the
+    # mounting face, then loses spigot_recess of air before the bore starts.
+    # The bore is deeper than that on purpose; engagement is the shaft's reach.
+    return min(motor_shaft_len - encl_face_to_gearbox - spigot_recess, motor_bore_depth)
 
 
-def unsupported_span(kind):
-    return nose_edge + frame_gap + (side_entry_inset() if kind == "side" else end_entry_inset())
+def transfer_span(r):
+    # Nose setback + frame gap + how far the end cone's top line sits inboard
+    # of the face. That inboard distance is r·sin α because the end roller is
+    # placed α off the face so its surface is tangent to the plane.
+    return nose_edge + frame_gap + r * math.sin(curve_alpha)
+
+
+def hex_Rv(af):
+    return (af / 2.0) / math.cos(math.pi / 6.0)
+
+
+def groove_pitch_D(c_g, oid):
+    # Belt length is two straight runs plus two half-wraps. The 15.7° skew
+    # between neighbouring axles is ignored; the ring twists that little.
+    free = math.pi * (oid + oring_cs)
+    installed = free * (1.0 + oring_stretch)
+    return (installed - 2.0 * c_g) / math.pi
+
+
+def id_for_D(c_g, D):
+    return (D + 2.0 * c_g / math.pi) / (1.0 + oring_stretch) - oring_cs
+
+
+# --------------------------------------------------------------- vector layout
+ca = math.cos(curve_alpha)
+sa = math.sin(curve_alpha)
+pitch_rad = math.radians(curve_pitch_deg)
+# |u_i − u_{i+1}|. Axes share the downward tilt, so the angle between them is
+# not the plan pitch; the separation of two points at the same s is s times this.
+axis_sep = 2.0 * ca * math.sin(pitch_rad / 2.0)
+
+r_iw0_s = r_iw0 / ca          # axis parameter where the axis meets that cylinder
+r_iw1_s = r_iw1 / ca
+r_ow0_s = r_ow0 / ca
+r_ow1_s = r_ow1 / ca
+s_a = r_a * ca
+s_b = r_b * ca
+s_gA = r_gA * ca
+s_gB = r_gB * ca
+s_spool_end = spool_end_r * ca
+s_hole_bottom = r_iw0_s + blind_remain
+idler_rod_len = r_ow1_s - s_hole_bottom
+stub_len = (s_a + stub_bore_depth - stub_bore_air) - s_hole_bottom
+
+c_A = 2.0 * r_gA * ca * ca * math.sin(pitch_rad / 2.0)
+c_B = 2.0 * r_gB * ca * ca * math.sin(pitch_rad / 2.0)
+D_A = groove_pitch_D(c_A, oring_id)
+D_B = groove_pitch_D(c_B, oring_id)
+R_spool_A = D_A / 2.0 + groove_flange * oring_cs / 2.0
+R_spool_B = D_B / 2.0 + groove_flange * oring_cs / 2.0
+s_mid = 0.5 * (s_gA + s_gB)
+
+
+def ring_clearance(r_g, D):
+    # Crown height: axis height at the groove, plus pitch radius, plus cord radius.
+    z_axis = z_top - r_g * sa * ca
+    return z_top - (z_axis + D / 2.0 + oring_cs / 2.0)
+
+
+def spool_clearance(s, R):
+    return s * axis_sep - 2.0 * R
+
+
+clear_A = ring_clearance(r_gA, D_A)
+clear_B = ring_clearance(r_gB, D_B)
+small_end_clear = spool_clearance(s_a, s_a * math.tan(curve_alpha))
+spool_clear_A = spool_clearance(s_b, R_spool_A)
+spool_clear_B = spool_clearance(s_mid, R_spool_B)
+
+# id window for this cord, so a kit pick can be checked without rerunning blind.
+def passing_id_window():
+    lo = []
+    hi = []
+    for c_g, r_g, s_region in ((c_A, r_gA, s_b), (c_B, r_gB, s_mid)):
+        lo.append(id_for_D(c_g, oring_min_bend * oring_cs))
+        d_max_crown = 2.0 * (r_g * sa * ca - oring_below_top) - oring_cs
+        hi.append(id_for_D(c_g, d_max_crown))
+        d_max_spool = s_region * axis_sep - groove_flange * oring_cs - spool_clear_min
+        hi.append(id_for_D(c_g, d_max_spool))
+    return max(lo), min(hi)
+
+
+id_lo, id_hi = passing_id_window()
+
+# Curve enclosure: 16 mm side vertical, 24 mm side horizontal, ears ±pitch.
+u_drv, e_th_drv, e_up_drv = axis_frame(thetas[curve_driven - 1])
+s_face = s_on_cylinder(r_ow1, encl_ear_pitch, 0.0) + pad_bolt_t
+m4_Rv = hex_Rv(m4_nut_af)
+# Worst corner of the hex, so the pocket face is entirely in the gutter and
+# not buried in the curved inner wall.
+s_boss_in = s_on_cylinder(r_ow0, encl_ear_pitch + m4_Rv, m4_Rv) - 0.4
+s_slab_in = r_ow0_s - 0.8
+h_half = encl_ear_pitch + m4_Rv + pad_rim
+v_half = encl_narrow / 2.0 + pad_rim
+boss_r_curve = m4_Rv + 1.2
+
+# Straight mount bosses. The plate is `wall` thick; the pocket needs depth + land.
+boss_extra = m4_nut_depth + nut_land - wall
+boss_y1 = wall + boss_extra
+boss_r_straight = m4_Rv + 1.0
+lobe_r = encl_lobe_d / 2.0
+_, nose_x = roller_axis_x(straight_len)
+tab_x0 = nose_x - (lobe_r + tab_margin)
+tab_x1 = min(nose_x + (lobe_r + tab_margin), straight_len)
+tab_z1 = nose_z + encl_ear_pitch + lobe_r + tab_margin
+
+# motor_tab is the straight's local frame AFTER the mirror about y = outer_width/2.
+# It bounds the tab and the upper boss: what stands above the plate top or
+# inboard of the motor plate. The lower boss is below the belt; it is logged,
+# and it is not part of this rail.
+motor_tab = {
+    "x0": tab_x0,
+    "x1": tab_x1,
+    "y0": outer_width - boss_y1,
+    "y1": outer_width,
+    "z0": bracket_h,
+    "z1": tab_z1,
+}
+
+
+def main():
+    step("=== build start ===")
+    require(abs(curve_angle - 90.0) < 1e-9,
+            "curve_angle is %.3f; s2's exit face is the plane y=C_y only for a right angle"
+            % curve_angle)
+    require(curve_driven >= 1 and curve_driven <= curve_n, "curve_driven out of range")
+
+    step("layout: C=(%.3f, %.3f) z_top=%.3f belt y %.3f..%.3f" % (cx, cy, z_top, belt_y0, belt_y1))
+    step("layout: s2 rot=90 offset=(%.3f, %.3f) entry_face_x=%.3f exit_face_y=%.3f"
+         % (s2_ox, s2_oy, cx, cy))
+    step("curve: k=%.5f alpha=%.4f deg pitch=%.4f deg n=%d driven=%d"
+         % (curve_k, alpha_deg, curve_pitch_deg, curve_n, curve_driven))
+    step("curve theta deg: %s" % ", ".join("%.4f" % t for t in thetas))
+    step("cone plan r %.3f..%.3f  spool grooves %.3f %.3f end %.3f"
+         % (r_a, r_b, r_gA, r_gB, spool_end_r))
+    step("walls inner %.3f..%.3f outer %.3f..%.3f" % (r_iw0, r_iw1, r_ow0, r_ow1))
+    step("spans mm: inner %.3f centre %.3f outer %.3f (entry and exit)"
+         % (transfer_span(curve_r_in), transfer_span(curve_r_c), transfer_span(curve_r_out)))
+    overhang = encl_narrow / 2.0 - nose_edge
+    step("straight enclosure overhang past the discharge face: %.3f mm" % overhang)
+
+    step("oring A: c=%.3f D=%.3f crown_clear=%.3f stretch=%.3f"
+         % (c_A, D_A, clear_A, oring_stretch))
+    step("oring B: c=%.3f D=%.3f crown_clear=%.3f stretch=%.3f"
+         % (c_B, D_B, clear_B, oring_stretch))
+    step("oring id window at cs=%.2f: %.3f .. %.3f mm" % (oring_cs, id_lo, id_hi))
+    step("spool OD radius A=%.3f B=%.3f" % (R_spool_A, R_spool_B))
+    step("clearance small-end cones %.3f mm; spool A at s_b %.3f; spool B at mid %.3f"
+         % (small_end_clear, spool_clear_A, spool_clear_B))
+    step("rod cut mm: idler %.3f  driven stub %.3f" % (idler_rod_len, stub_len))
+    step("shaft engagement %.3f mm (bore %.1f)" % (shaft_engagement(), motor_bore_depth))
+    step("straight bosses: protrusion %.3f mm, inboard face y=%.3f after mirror (both ears)"
+         % (boss_extra, outer_width - boss_y1))
+    step("pad: s_face=%.3f s_slab_in=%.3f s_boss_in=%.3f h_half=%.3f v_half=%.3f"
+         % (s_face, s_slab_in, s_boss_in, h_half, v_half))
+
+    require(id_lo < id_hi, "no oring_id passes at cs=%.2f" % oring_cs)
+    require(id_lo - 1e-6 <= oring_id <= id_hi + 1e-6,
+            "oring_id %.2f outside %.3f..%.3f" % (oring_id, id_lo, id_hi))
+    require(D_A >= oring_min_bend * oring_cs and D_B >= oring_min_bend * oring_cs,
+            "pitch diameter below %d·cs (A %.3f B %.3f); id window %.3f..%.3f"
+            % (int(oring_min_bend), D_A, D_B, id_lo, id_hi))
+    require(clear_A >= oring_below_top and clear_B >= oring_below_top,
+            "ring crown clearance A %.3f B %.3f, need >= %.1f; id window %.3f..%.3f"
+            % (clear_A, clear_B, oring_below_top, id_lo, id_hi))
+    require(spool_clear_A >= spool_clear_min and spool_clear_B >= spool_clear_min,
+            "spool clearance A %.3f B %.3f, need >= %.1f" % (spool_clear_A, spool_clear_B, spool_clear_min))
+    require(small_end_clear > 0.2,
+            "cone small-end clearance %.3f mm; rollers intersect" % small_end_clear)
+    require(shaft_engagement() >= engage_min,
+            "shaft engagement %.3f < %.1f" % (shaft_engagement(), engage_min))
+    require(s_face - spigot_recess > s_spool_end + 1.0,
+            "spigot has no room between spool end and pad face")
+    require(s_a + stub_bore_depth < s_gA - motor_bore_depth,
+            "driven cone bores would meet")
+    require(tab_x1 <= straight_len + 1e-9 and tab_x0 >= 0.0,
+            "motor tab leaves the module length")
+    lower_boss_z1 = nose_z - encl_ear_pitch + boss_r_straight
+    upper_boss_z0 = nose_z + encl_ear_pitch - boss_r_straight
+    require(lower_boss_z1 < return_run_z(),
+            "lower boss top z=%.3f meets the return run at %.3f" % (lower_boss_z1, return_run_z()))
+    require(upper_boss_z0 > bracket_h - 1e-6,
+            "upper boss dips into the plate (z0=%.3f, plate top %.1f)" % (upper_boss_z0, bracket_h))
+    require(nose_x + boss_r_straight <= straight_len and tab_x1 <= straight_len,
+            "tab or boss crosses x=module_len")
+
+    # Crown of the enclosure footprint must sit >= 1 mm outside the outer wall.
+    face_r_min = s_face * ca + (-encl_narrow / 2.0) * sa
+    require(face_r_min >= r_ow1 + 1.0 - 1e-6,
+            "pad face plan radius %.3f is not 1 mm outboard of r=%.3f" % (face_r_min, r_ow1))
+    # Nut pocket leaves land behind it.
+    land_curve = s_face - (s_boss_in + m4_nut_depth)
+    require(land_curve >= nut_land,
+            "curve nut pocket leaves %.3f mm, need %.1f" % (land_curve, nut_land))
+    step("curve nut land behind pocket: %.3f mm" % land_curve)
+
+    # Blind-hole bottom disk must not break the curved far face.
+    # The disk's most inward point moves r_hole·sin α in plan.
+    hole_r = axle_hole_d / 2.0
+    bottom_plan_r = s_hole_bottom * ca - hole_r * sa
+    require(bottom_plan_r > r_iw0,
+            "blind hole breaks the inner face (plan r %.3f vs wall %.3f)" % (bottom_plan_r, r_iw0))
+    step("blind-hole remaining plan thickness %.3f mm" % (bottom_plan_r - r_iw0))
+
+    # Keeper cap must cover the idler hole and still clear the pad.
+    cap_half_mm = hole_r + keeper_cap_extra
+    neighbour_gap = r_ow1 * 2.0 * math.sin(pitch_rad / 2.0) - h_half - cap_half_mm
+    require(neighbour_gap >= 0.8,
+            "keeper cap meets the pad (gap %.3f mm)" % neighbour_gap)
+    step("keeper cap half-width %.3f mm, gap to pad %.3f mm" % (cap_half_mm, neighbour_gap))
+
+    step("--- solids ---")
+    # Placement probe: FreeCAD's rotate must match the axis formula, big end down.
+    probe = Part.makeLine(Vector(s_b, 0, 0), Vector(s_b + 0.2, 0, 0))
+    probe.rotate(Vector(0, 0, 0), Vector(0, 1, 0), alpha_deg)
+    probe.rotate(Vector(0, 0, 0), Vector(0, 0, 1), thetas[0])
+    probe.translate(A)
+    got = probe.Vertexes[0].Point
+    exp = vadd(A, vmul(axis_u(thetas[0]), s_b))
+    require((got - exp).Length < 1e-4,
+            "roller placement mismatch %.4f mm" % (got - exp).Length)
+
+    step("bracket + straight rollers")
+    br_motor = make_bracket(straight_len, motor_side=True)
+    br_plain = make_bracket(straight_len, motor_side=False)
+    require(br_motor.BoundBox.XMax <= straight_len + 1e-6,
+            "motor bracket XMax %.3f exceeds module length" % br_motor.BoundBox.XMax)
+    require(br_motor.BoundBox.ZMax >= tab_z1 - 0.05,
+            "tab did not reach z=%.2f (got %.2f)" % (tab_z1, br_motor.BoundBox.ZMax))
+    rol_id = make_roller(False)
+    rol_dr = make_roller(True)
+    bed = make_slider_bed(straight_len)
+    ret = make_return_guide(straight_len)
+    belt = make_belt(straight_len)
+
+    step("cone rollers")
+    cone_id = make_cone_roller(False)
+    cone_dr = make_cone_roller(True)
+    placed = []
+    for i, th in enumerate(thetas):
+        src = cone_dr if (i + 1) == curve_driven else cone_id
+        placed.append(place_cone(src, th))
+    # The axis sits α off the face, so the top line — what a part rides — is
+    # tangent to the plane. The axle also tilts down, and that puts the cone's
+    # lower flank about 0.04 mm past a vertical plane through the apex. Shave
+    # the end rollers flush. The axes stay where the pitch formula put them.
+    entry_cut = Part.makeBox(400, 800, 160, Vector(cx - 400, cy - 400, -40))
+    exit_cut = Part.makeBox(800, 400, 160, Vector(cx - 200, cy, -40))
+    for i, sol in enumerate(placed):
+        bb = sol.BoundBox
+        if bb.XMin < cx - 1e-6:
+            step("roller %d entry lip %.4f mm, shaved flush" % (i + 1, cx - bb.XMin))
+            sol = sol.cut(entry_cut)
+        if bb.YMax > cy + 1e-6:
+            step("roller %d exit lip %.4f mm, shaved flush" % (i + 1, bb.YMax - cy))
+            sol = sol.cut(exit_cut)
+        placed[i] = sol
+        bb = sol.BoundBox
+        require(bb.ZMax <= z_top + 0.02,
+                "roller %d rises to z=%.3f, z_top=%.3f" % (i + 1, bb.ZMax, z_top))
+        require(bb.ZMax >= z_top - 0.05,
+                "roller %d top is z=%.3f, expected the carry plane" % (i + 1, bb.ZMax))
+        require(bb.XMin >= cx - 1e-4,
+                "roller %d crosses the entry plane (x=%.4f)" % (i + 1, bb.XMin))
+        require(bb.YMax <= cy + 1e-4,
+                "roller %d crosses the exit plane (y=%.4f)" % (i + 1, bb.YMax))
+
+    step("enclosures")
+    encl_straight = make_motor_enclosure("z")
+    encl_straight.translate(Vector(nose_x, 0, nose_z))
+    encl_curve = make_motor_enclosure("x")
+    encl_curve = apply_frame(encl_curve, vadd(A, vmul(u_drv, s_face)),
+                              e_th_drv, vmul(u_drv, -1.0), e_up_drv)
+
+    step("curve frame")
+    frame = make_curve_frame()
+    require(frame.BoundBox.XMin >= cx - 0.05,
+            "frame crosses the entry plane")
+    require(frame.BoundBox.YMax <= cy + 0.05,
+            "frame crosses the exit plane")
+
+    step("keeper")
+    keeper = make_keeper(cap_half_mm)
+    # Bolt holes through the keeper and the outer wall, midway between idlers
+    # at the two ends — the gutter there is below the spools.
+    bolt_angles = [0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[4] + thetas[5])]
+    z_bolt = 0.5 * (wall + 1.0 + 10.0)
+    for ang in bolt_angles:
+        cutter = radial_hole(ang, z_bolt, m3_clear / 2.0, r_ow0 - 1.0, r_ow1 + keeper_t + 1.0)
+        frame = frame.cut(cutter)
+        keeper = keeper.cut(cutter)
+        step("keeper bolt at theta %.3f deg, z=%.2f" % (ang, z_bolt))
+
+    step("s1 enclosure vs frame")
+    d_s1 = encl_straight_world(encl_straight).distToShape(frame)[0]
+    step("s1 enclosure distance to curve frame: %.3f mm (need >= %.2f)" % (d_s1, encl_check_grow))
+    require(d_s1 >= encl_check_grow - 1e-6,
+            "s1 enclosure (grown %.2f) meets the curve frame, dist %.3f" % (encl_check_grow, d_s1))
+
+    step("curve enclosure vs frame, lifted off the pad")
+    lifted = encl_curve.copy()
+    lifted.translate(vmul(u_drv, pad_lift_off))
+    d_cv = lifted.distToShape(frame)[0]
+    step("curve enclosure, %.3f mm off the pad, distance %.3f mm" % (pad_lift_off, d_cv))
+    require(d_cv > 0.01,
+            "curve enclosure intersects the frame away from the pad face (dist %.4f)" % d_cv)
+
+    step("rollers vs frame")
+    for i, sol in enumerate(placed):
+        d = sol.distToShape(frame)[0]
+        step("roller %d distance to frame %.3f mm" % (i + 1, d))
+        require(d > 0.05, "roller %d intersects the frame (dist %.4f)" % (i + 1, d))
+
+    step("o-rings")
+    links = []
+    link_spec = []
+    for i in range(curve_n - 1):
+        groove = "A" if (i + 1) % 2 == 1 else "B"
+        r_g = r_gA if groove == "A" else r_gB
+        D = D_A if groove == "A" else D_B
+        link = make_oring_link(thetas[i], thetas[i + 1], r_g, D)
+        bb = link.BoundBox
+        step("oring %d-%d groove %s zmax %.3f" % (i + 1, i + 2, groove, bb.ZMax))
+        require(bb.ZMax <= z_top - 0.5,
+                "oring %d-%d reaches z=%.3f" % (i + 1, i + 2, bb.ZMax))
+        links.append(link)
+        link_spec.append((i, groove, link))
+
+    # ---------------------------------------------------------------- export
+    step("--- export ---")
+    export(br_motor, "bracket_straight_motor")
+    export(br_plain, "bracket_straight_plain")
+    export(rol_id, "roller_idler")
+    export(rol_dr, "roller_driven")
+    export(to_print(cone_id), "roller_cone_idler")
+    export(to_print(cone_dr), "roller_cone_driven")
+    export(bed, "slider_bed_straight")
+    export(ret, "return_guide_straight")
+    export(encl_straight, "ref_motor")
+
+    step("coupon: discharge end of the motor plate")
+    coupon = br_motor.common(Part.makeBox(
+        coupon_len, boss_y1 + 8.0, tab_z1 + 10.0,
+        Vector(straight_len - coupon_len, -2.0, -2.0)))
+    export(coupon, "coupon_bracket_end")
+
+    # Print files sit on z=0 near the origin. cv_* stay in world placement.
+    export(drop_to_bed(frame), "curve_frame")
+    export(drop_to_bed(keeper), "curve_keeper")
+
+    a0 = thetas[curve_driven - 1] - curve_pitch_deg / 2.0
+    a1 = thetas[curve_driven] + curve_pitch_deg / 2.0
+    step("coupon_curve: sector %.3f .. %.3f deg" % (a0, a1))
+    coupon_frame = clip_angles(frame, a0, a1)
+    # Link 3-4 is groove A (roller 3 is odd).
+    coupon_oring = link_spec[curve_driven - 1][2]
+    export(Part.makeCompound([
+        coupon_frame,
+        placed[curve_driven - 1],
+        placed[curve_driven],
+        coupon_oring,
+    ]), "coupon_curve")
+
+    step("assembly: straight, then mirror onto the left plate")
+    local = assemble_straight_local(br_motor, br_plain, rol_id, rol_dr, bed, ret, belt)
+    asm_s1 = mirror_left(local)
+    export(asm_s1, "assembly_straight")
+
+    asm_s2 = mirror_left(local)
+    asm_s2.rotate(Vector(0, 0, 0), Vector(0, 0, 1), 90.0)
+    asm_s2.translate(Vector(s2_ox, s2_oy, 0))
+    export(Part.makeCompound([asm_s1, frame, Part.makeCompound(placed),
+                              Part.makeCompound(links), keeper, asm_s2]),
+           "assembly_v0")
+
+    export_straight_components(br_motor, br_plain, rol_id, rol_dr, bed, ret, belt,
+                               encl_straight, "cs", 0.0, None)
+    export_straight_components(br_motor, br_plain, rol_id, rol_dr, bed, ret, belt,
+                               encl_straight, "s2", 90.0, Vector(s2_ox, s2_oy, 0))
+
+    export(frame, "cv_frame")
+    export(Part.makeCompound(placed), "cv_rollers")
+    export(Part.makeCompound(links), "cv_orings")
+    export(encl_curve, "cv_motor")
+    export(keeper, "cv_keeper")
+
+    ax0, nose_ax = roller_axis_x(straight_len)
+    spans = {
+        "inner": transfer_span(curve_r_in),
+        "centre": transfer_span(curve_r_c),
+        "outer": transfer_span(curve_r_out),
+    }
+    geom = {
+        "_generated_by": "cad/conveyor/build_parts.py — do not hand-edit",
+        "belt_width": belt_width,
+        "belt_thickness": belt_thickness,
+        "nose_dia": nose_dia,
+        "roller_flange_w": roller_flange_w,
+        "side_gap": side_gap,
+        "bracket_h": bracket_h,
+        "wall": wall,
+        "inner_width": inner_width,
+        "outer_width": outer_width,
+        "carry_z": carry_z,
+        "nose_z": nose_z,
+        "return_run_z": return_run_z(),
+        "return_guide_top": return_run_z() - return_clear,
+        "frame_gap": frame_gap,
+        "straight": {
+            "len": straight_len,
+            "drive_ax": ax0,
+            "nose_ax": nose_ax,
+            "t": wall,
+            "outer_width": outer_width,
+            # After the mirror the y=0 plate is the plain one; the motor plate
+            # carries the tab, so its rail is the tab top.
+            "rail_top": [bracket_h, tab_z1],
+            "belt_len": belt_path_length(straight_len),
+            "print_cyl_dia": printed_cylinder_dia(straight_len),
+        },
+        "motor_shaft_len": motor_shaft_len,
+        "shaft_engagement": shaft_engagement(),
+        "motor_side": "left",
+        "motor_tab": motor_tab,
+        "s1": {"rot": 0, "offset": [0, 0]},
+        "s2": {"rot": 90, "offset": [s2_ox, s2_oy]},
+        "curve": {
+            "centre": [cx, cy],
+            "z_top": z_top,
+            "r_in": curve_r_in,
+            "r_out": curve_r_out,
+            "r_c": curve_r_c,
+            "k": curve_k,
+            "alpha_deg": alpha_deg,
+            "n": curve_n,
+            "pitch_deg": curve_pitch_deg,
+            "theta_deg": thetas,
+            "cone_r": [r_a, r_b],
+            "driven": curve_driven,
+            "inner_wall": [r_iw0, r_iw1],
+            "outer_wall": [r_ow0, r_ow1],
+            "wall_top": bracket_h,
+            "entry_face_x": cx,
+            "exit_face_y": cy,
+            "grooves": {
+                "A": {"r": r_gA, "c": c_A, "D": D_A},
+                "B": {"r": r_gB, "c": c_B, "D": D_B},
+            },
+            "rod_cut_mm": {"idler": idler_rod_len, "stub": stub_len},
+        },
+        "spans": {"entry": spans, "exit": dict(spans)},
+    }
+    with open(os.path.join(OUT, "geometry.json"), "w", encoding="utf-8") as fh:
+        json.dump(geom, fh, indent=2)
+    step("export: geometry.json")
+    step("=== build complete ===")
 
 
 # ------------------------------------------------------------- side bracket
-def make_bracket(module_len, t=None, top_z=None, motor_side=False):
-    # SQUARED at both ends, so each nose axis is set from its own module face
-    # rather than by bracket_h. Infeed end carries the take-up slot; discharge
-    # end carries the driven nose — either the motor (motor_side) or the stub
-    # axle that supports the far end of the same roller.
-    #
-    # top_z cuts the plate down flush with the carry plane. A full-height plate
-    # stands bracket_h - (carry_z + belt_thickness) = 4.0 mm PROUD of its own
-    # belt, which is a useful side rail on a through face and a kerb on a
-    # transfer face. The sim found this the hard way: the part crossed the gap
-    # fine and then stopped dead against the receiving module's wall.
-    t = wall if t is None else t
-    step("bracket: len=%.1f t=%.1f motor_side=%s" % (module_len, t, motor_side))
-    ax0, nose_x = roller_axis_x(module_len)
-
-    body = Part.makeBox(module_len, t, bracket_h, Vector(0, 0, 0))
+def make_bracket(module_len, motor_side=False):
+    # Built with the motor plate at local y in [0, wall] and the motor outboard
+    # toward −y. Every finished straight is mirrored about y = outer_width/2,
+    # which puts the motor on the +Y plate — the left side of travel, inside
+    # the turn — and points the driven roller's D-bore at +Y.
+    step("bracket: len=%.1f motor_side=%s" % (module_len, motor_side))
+    ax0, nose = roller_axis_x(module_len)
+    body = Part.makeBox(module_len, wall, bracket_h, Vector(0, 0, 0))
 
     step("bracket: infeed take-up slot")
     sw = nose_axle_dia + 0.5
-    # Slot runs INBOARD from the tensioned position — take-up pulls the infeed
-    # nose out toward the face, so the fully-tensioned axis is the outer limit
-    # and the design span is what you actually get, not a best case.
-    slot = Part.makeBox(nose_travel, t + 2, sw, Vector(ax0, -1, nose_z - sw / 2.0))
-    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(ax0, -1, nose_z), Vector(0, 1, 0)))
-    slot = slot.fuse(Part.makeCylinder(sw / 2.0, t + 2, Vector(ax0 + nose_travel, -1, nose_z),
-                                       Vector(0, 1, 0)))
+    # Slot runs INBOARD from the tensioned position. Take-up pulls the infeed
+    # nose out toward the face, so the design span is what you actually get.
+    slot = Part.makeBox(nose_travel, wall + 2, sw, Vector(ax0, -1, nose_z - sw / 2.0))
+    slot = slot.fuse(Part.makeCylinder(sw / 2.0, wall + 2, Vector(ax0, -1, nose_z), Vector(0, 1, 0)))
+    slot = slot.fuse(Part.makeCylinder(sw / 2.0, wall + 2, Vector(ax0 + nose_travel, -1, nose_z),
+                                        Vector(0, 1, 0)))
     body = body.cut(slot)
 
     if motor_side:
-        step("bracket: motor saddle + boss clearance at the driven nose")
-        # Only the O4 boss and the shaft pass through the plate. The old O12.4
-        # hole was sized for the BODY by mistake and needlessly gutted the plate.
-        body = body.cut(Part.makeCylinder(motor_boss_d / 2.0 + 0.3, t + 2,
-                                          Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
-
-        # Saddle: a tunnel outboard of the plate that the motor slides into,
-        # shaft first. CLIPPED to the module footprint — an unclipped wall
-        # overhangs the discharge face by 1.5 mm and would foul the next module
-        # across a 1.5 mm frame gap. The motor body itself (10 wide) clears with
-        # 1 mm to spare; only the retaining wall had to give.
-        pw = motor_body_w + 2 * saddle_clear
-        ph = motor_body_h + 2 * saddle_clear
-        ow, oh = pw + 2 * saddle_wall, ph + 2 * saddle_wall
-        slen = motor_body_len + 2.0
-        sad = Part.makeBox(ow, slen, oh, Vector(nose_x - ow / 2.0, -slen, nose_z - oh / 2.0))
-        sad = sad.common(Part.makeBox(module_len, slen + 2, bracket_h * 3,
-                                      Vector(0, -slen - 1, -bracket_h)))
-        body = body.fuse(sad)
-        body = body.cut(Part.makeBox(pw, slen + 1, ph,
-                                     Vector(nose_x - pw / 2.0, -slen - 0.5, nose_z - ph / 2.0)))
-        step("bracket: saddle clamp screw")
-        body = body.cut(Part.makeCylinder(m2_clear / 2.0, oh, Vector(nose_x, -slen / 2.0, nose_z),
-                                          Vector(0, 0, 1)))
+        step("bracket: enclosure face, tab, M4 nuts")
+        body = body.fuse(Part.makeBox(
+            tab_x1 - tab_x0, wall, tab_z1 - (bracket_h - 0.2),
+            Vector(tab_x0, 0, bracket_h - 0.2)))
+        for sign, name in ((-1.0, "lower"), (1.0, "upper")):
+            zc = nose_z + sign * encl_ear_pitch
+            body = body.fuse(Part.makeCylinder(
+                boss_r_straight, boss_y1 - (wall - 0.2),
+                Vector(nose, wall - 0.2, zc), Vector(0, 1, 0)))
+            step("bracket: %s boss inboard to y=%.2f, centred z=%.2f" % (name, boss_y1, zc))
+        body = body.cut(Part.makeCylinder(
+            spigot_hole_d / 2.0, wall + 2, Vector(nose, -1, nose_z), Vector(0, 1, 0)))
+        for sign in (-1.0, 1.0):
+            zc = nose_z + sign * encl_ear_pitch
+            body = body.cut(Part.makeCylinder(
+                m4_clear / 2.0, boss_y1 + 2, Vector(nose, -1, zc), Vector(0, 1, 0)))
+            pocket = hex_along_y(m4_nut_af, boss_y1 - m4_nut_depth, boss_y1 + 0.2, nose, zc)
+            body = body.cut(pocket)
     else:
         step("bracket: stub-axle bore at the driven nose")
-        body = body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, t + 2,
-                                          Vector(nose_x, -1, nose_z), Vector(0, 1, 0)))
+        body = body.cut(Part.makeCylinder(
+            nose_axle_dia / 2.0 + 0.2, wall + 2,
+            Vector(nose, -1, nose_z), Vector(0, 1, 0)))
 
     step("bracket: cross-member mounting holes")
-    for hx in (ax0 + 18.0, nose_x - 18.0):
-        body = body.cut(Part.makeCylinder(m3_clear / 2.0, t + 2, Vector(hx, -1, 7.0), Vector(0, 1, 0)))
-
-    if top_z is not None and top_z < bracket_h:
-        step("bracket: cut down to z=%.1f (open transfer face)" % top_z)
-        body = body.cut(Part.makeBox(module_len + 2 * bracket_h, t + 2, bracket_h,
-                                     Vector(-bracket_h, -1, top_z)))
-
+    for hx in (ax0 + 18.0, nose - 18.0):
+        body = body.cut(Part.makeCylinder(m3_clear / 2.0, wall + 2, Vector(hx, -1, 7.0), Vector(0, 1, 0)))
     return body
 
 
+def hex_along_y(af, y0, y1, x, z):
+    Rv = hex_Rv(af)
+    pts = []
+    for i in range(6):
+        ang = math.radians(30 + 60 * i)
+        pts.append(Vector(x + Rv * math.cos(ang), y0, z + Rv * math.sin(ang)))
+    pts.append(pts[0])
+    return Part.Face(Part.makePolygon(pts)).extrude(Vector(0, y1 - y0, 0))
+
+
 # ------------------------------------------------------------------ rollers
-# One roller body serves both ends. The idler rides a Ø4 stub axle as a plain
-# bearing; the driven one takes the motor's D-shaft directly. At Ø10 there is no
-# room for a rolling bearing — 10 mm OD is the whole roller — and no room for a
-# grub screw either: a Ø3.2 hole through a 3.5 mm wall leaves nothing. The D-flat
-# IS the key, which is what it is for, and shaft torque here is only 0.005 N·m.
+# One straight roller serves both ends. The idler rides a Ø4 stub. The driven
+# one takes the motor's D-shaft through a Ø7 spigot that crosses the plate.
 def make_roller(driven=False):
-    step("roller: Ø%.0f %s" % (nose_dia, "driven (D-bore)" if driven else "idler (plain bore)"))
+    step("roller: Ø%.0f %s" % (nose_dia, "driven" if driven else "idler"))
     r = nose_dia / 2.0
     fr = roller_flange_d / 2.0
     body = Part.makeCylinder(r, belt_width, Vector(0, roller_flange_w, 0), Vector(0, 1, 0))
     body = body.fuse(Part.makeCylinder(fr, roller_flange_w, Vector(0, 0, 0), Vector(0, 1, 0)))
     body = body.fuse(Part.makeCylinder(fr, roller_flange_w,
-                                       Vector(0, roller_len - roller_flange_w, 0), Vector(0, 1, 0)))
-
+                                        Vector(0, roller_len_straight() - roller_flange_w, 0),
+                                        Vector(0, 1, 0)))
     if not driven:
-        return body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, roller_len + 2,
-                                          Vector(0, -1, 0), Vector(0, 1, 0)))
+        return body.cut(Part.makeCylinder(
+            nose_axle_dia / 2.0 + 0.2, roller_len_straight() + 2,
+            Vector(0, -1, 0), Vector(0, 1, 0)))
 
-    # Bore is the shape of the SHAFT: a Ø3 cylinder with one side flattened to
-    # 2.5 across. Build the shaft, then subtract it.
-    #
-    # Bore DEEPER than any shaft can reach. Cutting it to the exact engagement
-    # would let a 10 mm generic shaft bottom out and jam the roller against the
-    # far plate. Engagement (below) is shaft-limited and is the number the
-    # bearing-stress check uses — the two are deliberately different.
+    y_tip = -(wall + side_gap - spigot_recess)
+    body = body.fuse(Part.makeCylinder(
+        spigot_d / 2.0, -y_tip + 0.2, Vector(0, y_tip, 0), Vector(0, 1, 0)))
     depth = motor_bore_depth
-    shaft = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth, Vector(0, -0.5, 0), Vector(0, 1, 0))
+    cut = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth, Vector(0, y_tip, 0), Vector(0, 1, 0))
     beyond = motor_shaft_flat - motor_shaft_d / 2.0
     sliver = Part.makeBox(motor_shaft_d + 2, depth + 1, motor_shaft_d,
-                          Vector(-(motor_shaft_d / 2.0 + 1), -1, beyond))
-    body = body.cut(shaft.cut(sliver))
-    # far end still rides a stub axle in the opposite plate
-    return body.cut(Part.makeCylinder(nose_axle_dia / 2.0 + 0.2, roller_len - depth + 1,
-                                      Vector(0, depth, 0), Vector(0, 1, 0)))
+                           Vector(-(motor_shaft_d / 2.0 + 1), y_tip - 0.5, beyond))
+    body = body.cut(cut.cut(sliver))
+    y_far = y_tip + depth
+    return body.cut(Part.makeCylinder(
+        nose_axle_dia / 2.0 + 0.2, roller_len_straight() - y_far + 1,
+        Vector(0, y_far, 0), Vector(0, 1, 0)))
+
+
+def roller_len_straight():
+    return belt_width + 2 * roller_flange_w
 
 
 # --------------------------------------------------------------- slider bed
-def make_slider_bed(module_len, t=None):
-    t = wall if t is None else t
+def make_slider_bed(module_len):
     step("slider bed: plate + lead-in chamfers, len=%.1f" % module_len)
-    ax0, nose_x = roller_axis_x(module_len)
-    span = nose_x - ax0
-    bed = Part.makeBox(span, inner_width, wall, Vector(ax0, t, carry_z - wall))
+    ax0, nose = roller_axis_x(module_len)
+    span = nose - ax0
+    bed = Part.makeBox(span, inner_width, wall, Vector(ax0, wall, carry_z - wall))
     try:
         edges = [e for e in bed.Edges
                  if abs(e.CenterOfMass.z - carry_z) < 1e-6 and
-                 (abs(e.CenterOfMass.x - ax0) < 1e-6 or abs(e.CenterOfMass.x - nose_x) < 1e-6)]
+                 (abs(e.CenterOfMass.x - ax0) < 1e-6 or abs(e.CenterOfMass.x - nose) < 1e-6)]
         if edges:
             bed = bed.makeChamfer(1.2, edges)
     except Exception as exc:
@@ -293,34 +887,18 @@ def make_slider_bed(module_len, t=None):
     return bed
 
 
-# -------------------------------------------------------------- return guide
-def return_run_z():
-    # Outer (downward-facing) surface of the TAUT lower run. The belt wraps the
-    # underside of both noses at nose_z - nose_dia/2, and its own thickness hangs
-    # below that. Derived, not typed: it moves with nose_dia and belt_thickness,
-    # both of which have already changed once in this build.
-    return nose_z - nose_dia / 2.0 - belt_thickness
-
-
-def make_return_guide(module_len, t=None):
-    # A crowned bar under the return run. It is NOT a tensioner and must not
-    # preload the belt — it sits return_clear BELOW the taut line so a correctly
-    # tensioned belt never touches it, and only a sagging one lands on it. Set it
-    # flush and every module would fight its own return run for no reason.
-    t = wall if t is None else t
+def make_return_guide(module_len):
+    # A crowned bar under the return run, return_clear BELOW the taut line, so a
+    # correctly tensioned belt never touches it. Flush, and every module would
+    # fight its own return run.
     step("return guide: crowned bar, len=%.1f" % module_len)
-    ax0, nose_x = roller_axis_x(module_len)
-    # Stop a nose diameter clear of each axis so the bar never intrudes into the
-    # arc where the belt is wrapping — that is the one place a support becomes a
-    # jam. Between the noses there is nothing but belt, so full inner width is
-    # free and gives the bar both plates to register against, like the slider bed.
+    ax0, nose = roller_axis_x(module_len)
+    # Stop a nose diameter clear of each axis so the bar never enters the wrap.
     x0 = ax0 + nose_dia
-    span = (nose_x - nose_dia) - x0
+    span = (nose - nose_dia) - x0
     top = return_run_z() - return_clear
-    bar = Part.makeBox(span, inner_width, wall, Vector(x0, t, top - wall))
+    bar = Part.makeBox(span, inner_width, wall, Vector(x0, wall, top - wall))
     try:
-        # Crown the two long top edges: the belt should meet a rounded rub strip,
-        # not a square corner dragged along its width.
         edges = [e for e in bar.Edges
                  if abs(e.CenterOfMass.z - top) < 1e-6 and
                  abs(e.CenterOfMass.x - (x0 + span / 2.0)) < 1e-6]
@@ -331,45 +909,369 @@ def make_return_guide(module_len, t=None):
     return bar
 
 
-# The separate motor mount plate is gone. Driving a nose roller puts the motor
-# on the side plate's outer face, so the N20 pattern is cut into make_bracket
-# directly — one fewer printed part, and one fewer stack-up between the shaft
-# and the roller (t + side_gap = 4 mm, leaving ~6 mm of a 10 mm D-shaft engaged).
-
-
-# ------------------------------------------- motor (reference only, not printed)
-def make_motor_body():
-    # Dimensioned envelope for fit checks and renders, NOT a printed part.
-    step("motor: GA12-N20 reference envelope")
-    gear_len = motor_body_len - 15.2
-    m = Part.makeBox(motor_body_w, gear_len, motor_body_h,
-                     Vector(-motor_body_w / 2.0, -gear_len, -motor_body_h / 2.0))
-    can = Part.makeCylinder(motor_can_d / 2.0, 15.2, Vector(0, -motor_body_len, 0), Vector(0, 1, 0))
-    can = can.common(Part.makeBox(motor_body_w, 15.2, motor_body_h,
-                                  Vector(-motor_body_w / 2.0, -motor_body_len, -motor_body_h / 2.0)))
-    m = m.fuse(can)
-    m = m.fuse(Part.makeCylinder(motor_boss_d / 2.0, 0.8, Vector(0, 0, 0), Vector(0, 1, 0)))
-    shaft = Part.makeCylinder(motor_shaft_d / 2.0, motor_shaft_len, Vector(0, 0, 0), Vector(0, 1, 0))
+# ---------------------------------------------------- enclosure (not printed)
+def make_motor_enclosure(ear_axis):
+    # Mounting face at y=0, shaft along +Y toward the roller, body in −Y.
+    # ear_axis "z": 16 mm along X, 24 mm vertical, ears at ±Z (a straight).
+    # ear_axis "x": 24 mm along X, 16 mm vertical, ears at ±X (the curve).
+    step("motor enclosure: reference, ears along %s" % ear_axis)
+    if ear_axis == "z":
+        hx, hz = encl_narrow / 2.0, encl_wide / 2.0
+    else:
+        hx, hz = encl_wide / 2.0, encl_narrow / 2.0
+    body = Part.makeBox(2 * hx, encl_along, 2 * hz, Vector(-hx, -encl_along, -hz))
+    lr = encl_lobe_d / 2.0
+    for sign in (-1.0, 1.0):
+        if ear_axis == "z":
+            lobe = Part.makeCylinder(lr, encl_ear_t,
+                                      Vector(0, -encl_ear_t, sign * encl_ear_pitch),
+                                      Vector(0, 1, 0))
+            a, b = sign * (hz - 2.0), sign * encl_ear_pitch
+            z0, z1 = (a, b) if a < b else (b, a)
+            plate = Part.makeBox(2 * lr, encl_ear_t, z1 - z0, Vector(-lr, -encl_ear_t, z0))
+            hole = Part.makeCylinder(encl_ear_hole_d / 2.0, encl_ear_t + 2.0,
+                                      Vector(0, -encl_ear_t - 1.0, sign * encl_ear_pitch),
+                                      Vector(0, 1, 0))
+        else:
+            lobe = Part.makeCylinder(lr, encl_ear_t,
+                                      Vector(sign * encl_ear_pitch, -encl_ear_t, 0),
+                                      Vector(0, 1, 0))
+            a, b = sign * (hx - 2.0), sign * encl_ear_pitch
+            x0, x1 = (a, b) if a < b else (b, a)
+            plate = Part.makeBox(x1 - x0, encl_ear_t, 2 * lr, Vector(x0, -encl_ear_t, -lr))
+            hole = Part.makeCylinder(encl_ear_hole_d / 2.0, encl_ear_t + 2.0,
+                                      Vector(sign * encl_ear_pitch, -encl_ear_t - 1.0, 0),
+                                      Vector(0, 1, 0))
+        body = body.fuse(plate).fuse(lobe).cut(hole)
+    boss = Part.makeCylinder(motor_boss_d / 2.0, motor_boss_len,
+                              Vector(0, -encl_face_to_gearbox, 0), Vector(0, 1, 0))
+    shaft = Part.makeCylinder(motor_shaft_d / 2.0, motor_shaft_len,
+                               Vector(0, -encl_face_to_gearbox, 0), Vector(0, 1, 0))
     beyond = motor_shaft_flat - motor_shaft_d / 2.0
-    shaft = shaft.cut(Part.makeBox(motor_shaft_d + 2, motor_shaft_len + 1, motor_shaft_d,
-                                   Vector(-(motor_shaft_d / 2.0 + 1), -0.5, beyond)))
-    return m.fuse(shaft)
+    sliver = Part.makeBox(motor_shaft_d + 2, motor_shaft_len + 1, motor_shaft_d,
+                           Vector(-(motor_shaft_d / 2.0 + 1), -encl_face_to_gearbox - 0.5, beyond))
+    return body.fuse(boss).fuse(shaft.cut(sliver))
 
 
-# ---------------------------------------------------------- corner guide rail
-def make_guide_rail():
-    step("guide rail: L-section")
-    rail = Part.makeBox(wall, outer_width, 15.0, Vector(0, 0, 0))
-    rail = rail.fuse(Part.makeBox(12.0, outer_width, wall, Vector(0, 0, 0)))
-    return rail
+def encl_straight_world(build_frame_encl):
+    # The check is against the placed straight: mirrored onto the +Y plate.
+    return mirror_left(build_frame_encl)
 
 
-# ------------------------------------------------- belt (render only, not printed)
+# ------------------------------------------------------------- cone rollers
+def make_cone_roller(driven):
+    # Apex at the origin, axis +X, big end at larger X. Placement tilts this
+    # down by α, swings it to θ and parks the apex on A. Print orientation is
+    # a separate copy, axis vertical, big end down.
+    step("cone roller: %s" % ("driven" if driven else "idler"))
+    r0 = s_a * math.tan(curve_alpha)
+    r1 = s_b * math.tan(curve_alpha)
+    body = Part.makeCone(r0, r1, s_b - s_a, Vector(s_a, 0, 0), Vector(1, 0, 0))
+    # Spool OD is the groove flange. Overlap the cone end so the fuse is a solid.
+    body = body.fuse(Part.makeCylinder(R_spool_A, s_mid - (s_b - 0.15),
+                                        Vector(s_b - 0.15, 0, 0), Vector(1, 0, 0)))
+    body = body.fuse(Part.makeCylinder(R_spool_B, s_spool_end - s_mid + 0.05,
+                                        Vector(s_mid - 0.05, 0, 0), Vector(1, 0, 0)))
+    minor = oring_cs / 2.0 + groove_extra
+    body = body.cut(groove_torus(s_gA, D_A / 2.0, minor))
+    body = body.cut(groove_torus(s_gB, D_B / 2.0, minor))
+    bore_r = (curve_axle_d + 0.4) / 2.0
+    if not driven:
+        return body.cut(Part.makeCylinder(
+            bore_r, s_spool_end - s_a + 2.0, Vector(s_a - 1.0, 0, 0), Vector(1, 0, 0)))
+
+    s_tip = s_face - spigot_recess
+    body = body.fuse(Part.makeCylinder(
+        spigot_d / 2.0, s_tip - (s_spool_end - 0.15),
+        Vector(s_spool_end - 0.15, 0, 0), Vector(1, 0, 0)))
+    # Small-end stub bore, 20 mm, opening on the small face.
+    body = body.cut(Part.makeCylinder(
+        bore_r, stub_bore_depth + 0.3, Vector(s_a - 0.3, 0, 0), Vector(1, 0, 0)))
+    # D-bore from the spigot tip back into the roller. Flat on +Z, which lands
+    # on ê_up after the placement rotations — the same side as the enclosure shaft.
+    depth = motor_bore_depth
+    cut = Part.makeCylinder(motor_shaft_d / 2.0 + 0.15, depth,
+                             Vector(s_tip - depth, 0, 0), Vector(1, 0, 0))
+    beyond = motor_shaft_flat - motor_shaft_d / 2.0
+    sliver = Part.makeBox(depth + 1, motor_shaft_d + 2, motor_shaft_d,
+                           Vector(s_tip - depth - 0.5, -(motor_shaft_d / 2.0 + 1), beyond))
+    return body.cut(cut.cut(sliver))
+
+
+def groove_torus(s_g, major, minor):
+    circ = Part.makeCircle(minor, Vector(s_g, 0, major), Vector(0, 1, 0))
+    face = Part.Face(Part.Wire([circ]))
+    return face.revolve(Vector(0, 0, 0), Vector(1, 0, 0), 360)
+
+
+def place_cone(shape, theta_deg):
+    s = shape.copy()
+    s.rotate(Vector(0, 0, 0), Vector(0, 1, 0), alpha_deg)
+    s.rotate(Vector(0, 0, 0), Vector(0, 0, 1), theta_deg)
+    s.translate(A)
+    return s
+
+
+def to_print(shape):
+    # +X (toward the big end) rotates about Y onto −Z, then the part is sat
+    # on the bed. The spool and the driven spigot are outboard of the big end,
+    # so they become the base and the cone narrows as it rises.
+    p = shape.copy()
+    p.rotate(Vector(0, 0, 0), Vector(0, 1, 0), 90.0)
+    require(p.BoundBox.ZMin < -1.0, "print rotation did not put the big end down")
+    p.translate(Vector(0, 0, -p.BoundBox.ZMin))
+    return p
+
+
+# --------------------------------------------------------------- curve frame
+def annular_sector(r0, r1, z0, z1, a0_deg, a1_deg):
+    h = z1 - z0
+    outer = Part.makeCylinder(r1, h, Vector(cx, cy, z0))
+    ring = outer.cut(Part.makeCylinder(max(r0, 0.1), h, Vector(cx, cy, z0)))
+    return clip_angles(ring, a0_deg, a1_deg)
+
+
+def clip_angles(shape, a0_deg, a1_deg):
+    # Keep θ in [a0, a1]. The planes pass through C and are vertical.
+    a0 = math.radians(a0_deg)
+    a1 = math.radians(a1_deg)
+    n0 = Vector(-math.sin(a0), math.cos(a0), 0.0)          # toward increasing θ
+    n1 = Vector(math.sin(a1), -math.cos(a1), 0.0)           # toward decreasing θ
+    origin = Vector(cx, cy, 0.0)
+    shape = clip_halfspace(shape, origin, n0)
+    return clip_halfspace(shape, origin, n1)
+
+
+def clip_halfspace(shape, origin, inward):
+    n = vnorm(inward)
+    tmp = Vector(0, 0, 1) if abs(n.z) < 0.9 else Vector(1, 0, 0)
+    x = vnorm(vcross(tmp, n))
+    y = vnorm(vcross(n, x))
+    span = 800.0
+    # Local +Z is the inward normal, so the box starts on the plane itself.
+    box = Part.makeBox(span, span, span, Vector(-span / 2.0, -span / 2.0, 0.0))
+    return shape.common(apply_frame(box, origin, x, y, n))
+
+
+def make_curve_frame():
+    step("curve frame: base, walls, pad, axle holes")
+    base = annular_sector(r_iw0, r_ow1, 0.0, wall, -90.0, 0.0)
+    inner = annular_sector(r_iw0, r_iw1, 0.0, bracket_h, -90.0, 0.0)
+    outer = annular_sector(r_ow0, r_ow1, 0.0, bracket_h, -90.0, 0.0)
+    frame = base.fuse(inner).fuse(outer)
+
+    pad = apply_frame(
+        Part.makeBox(2 * h_half, s_face - s_slab_in, 2 * v_half,
+                     Vector(-h_half, s_slab_in, -v_half)),
+        A, e_th_drv, u_drv, e_up_drv)
+    frame = frame.fuse(pad)
+    for sign in (-1.0, 1.0):
+        p0 = vadd(A, vadd(vmul(u_drv, s_boss_in), vmul(e_th_drv, sign * encl_ear_pitch)))
+        frame = frame.fuse(Part.makeCylinder(boss_r_curve, s_face - s_boss_in, p0, u_drv))
+
+    for i, th in enumerate(thetas):
+        u = axis_u(th)
+        # Blind hole from the roller face back toward the apex, stopping short.
+        frame = frame.cut(Part.makeCylinder(
+            axle_hole_d / 2.0, (r_iw1_s + 0.6) - s_hole_bottom,
+            vadd(A, vmul(u, s_hole_bottom)), u))
+        if (i + 1) == curve_driven:
+            frame = frame.cut(Part.makeCylinder(
+                spigot_hole_d / 2.0, (s_face + 1.0) - (r_ow0_s - 1.0),
+                vadd(A, vmul(u, r_ow0_s - 1.0)), u))
+        else:
+            frame = frame.cut(Part.makeCylinder(
+                axle_hole_d / 2.0, (r_ow1_s + 0.6) - (r_ow0_s - 0.4),
+                vadd(A, vmul(u, r_ow0_s - 0.4)), u))
+
+    for sign in (-1.0, 1.0):
+        h = sign * encl_ear_pitch
+        p0 = vadd(A, vadd(vmul(u_drv, s_boss_in - 0.4), vmul(e_th_drv, h)))
+        frame = frame.cut(Part.makeCylinder(
+            m4_clear / 2.0, s_face - s_boss_in + 1.2, p0, u_drv))
+        frame = frame.cut(hex_along_u(m4_nut_af, s_boss_in - 0.2, s_boss_in + m4_nut_depth, h, 0.0))
+
+    # s1's enclosure overhangs the discharge face into the empty centre. The
+    # inner wall's entry end would meet it. Cut the bbox, grown, out of the frame.
+    ko = keepout_box()
+    step("keep-out x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f"
+         % (ko.BoundBox.XMin, ko.BoundBox.XMax, ko.BoundBox.YMin, ko.BoundBox.YMax,
+            ko.BoundBox.ZMin, ko.BoundBox.ZMax))
+    return frame.cut(ko)
+
+
+def keepout_box():
+    # Body + ears only. The shaft stays inside s1's roller and is not the overhang.
+    ko = keepout_grow
+    x0 = nose_x - encl_narrow / 2.0 - ko
+    x1 = nose_x + encl_narrow / 2.0 + ko
+    y0 = outer_width - ko
+    y1 = outer_width + encl_along + ko
+    z0 = nose_z - (encl_ear_pitch + lobe_r) - ko
+    z1 = nose_z + (encl_ear_pitch + lobe_r) + ko
+    return Part.makeBox(x1 - x0, y1 - y0, z1 - z0, Vector(x0, y0, z0))
+
+
+def hex_along_u(af, s0, s1, h, v):
+    Rv = hex_Rv(af)
+    pts = []
+    for i in range(6):
+        ang = math.radians(30 + 60 * i)
+        hh = h + Rv * math.cos(ang)
+        vv = v + Rv * math.sin(ang)
+        pts.append(vadd(A, vadd(vmul(u_drv, s0),
+                                 vadd(vmul(e_th_drv, hh), vmul(e_up_drv, vv)))))
+    pts.append(pts[0])
+    return Part.Face(Part.makePolygon(pts)).extrude(vmul(u_drv, s1 - s0))
+
+
+def make_keeper(cap_half_mm):
+    # One arc on the outer wall's outer face. A low rail ties the caps together
+    # under the pad, so the driven position stays uncovered and the part is
+    # still one piece. Caps rise over each idler rod end.
+    step("curve keeper")
+    cap_deg = math.degrees(cap_half_mm / r_ow1)
+    z_rail0 = wall + 1.0
+    z_rail1 = 10.0
+    z_cap1 = (z_top - r_ow1_s * sa) + hole_cover()
+    a0 = thetas[0] - cap_deg
+    a1 = thetas[-1] + cap_deg
+    rail = annular_sector(r_ow1, r_ow1 + keeper_t, z_rail0, z_rail1, a0, a1)
+    parts = [rail]
+    for i, th in enumerate(thetas):
+        if (i + 1) == curve_driven:
+            continue
+        parts.append(annular_sector(
+            r_ow1, r_ow1 + keeper_t, z_rail1 - 0.3, z_cap1,
+            th - cap_deg, th + cap_deg))
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.fuse(p)
+    # Rail must stay below the pad. Checked by the fuse not being asked to
+    # join them; they are separate parts and the rail top is under the pad.
+    return out
+
+
+def hole_cover():
+    return axle_hole_d / 2.0 + keeper_cap_extra
+
+
+def radial_hole(theta_deg, z, radius, r_from, r_to):
+    th = math.radians(theta_deg)
+    direction = Vector(math.cos(th), math.sin(th), 0.0)
+    start = Vector(cx + direction.x * r_from, cy + direction.y * r_from, z)
+    return Part.makeCylinder(radius, r_to - r_from, start, direction)
+
+
+# ------------------------------------------------------------------- o-rings
+def make_oring_link(theta_a, theta_b, r_g, D):
+    # Render only. The line of centres is perpendicular to the average axle
+    # (the two axes intersect at the apex, so (u2−u1)·(u1+u2) = 0). The cord
+    # is a stadium in the plane normal to that average: straight length equals
+    # the centre distance, half a turn on each spool. The 15.7° skew between
+    # the axles is the part this ignores.
+    s = r_g * ca
+    u1 = axis_u(theta_a)
+    u2 = axis_u(theta_b)
+    P1 = vadd(A, vmul(u1, s))
+    P2 = vadd(A, vmul(u2, s))
+    ex = vnorm(vsub(P2, P1))
+    ey = vnorm(vadd(u1, u2))
+    ez = vnorm(vcross(ex, ey))
+    if ez.z < 0.0:
+        ez = vmul(ez, -1.0)
+    local = oring_stadium((P2 - P1).Length, D / 2.0, oring_cs / 2.0)
+    return apply_frame(local, P1, ex, ey, ez)
+
+
+def torus_about_y(major, minor):
+    circ = Part.makeCircle(minor, Vector(major, 0, 0), Vector(0, 0, 1))
+    face = Part.Face(Part.Wire([circ]))
+    return face.revolve(Vector(0, 0, 0), Vector(0, 1, 0), 360)
+
+
+def oring_stadium(c, R, cr):
+    torus = torus_about_y(R, cr)
+    big = R + cr + 2.0
+    left_box = Part.makeBox(big + 0.4, 2 * (cr + 1), 2 * big,
+                             Vector(-big, -(cr + 1), -big))
+    right_box = Part.makeBox(big + 0.4, 2 * (cr + 1), 2 * big,
+                              Vector(-0.4, -(cr + 1), -big))
+    left = torus.common(left_box)
+    right = torus.common(right_box)
+    right.translate(Vector(c, 0, 0))
+    upper = Part.makeCylinder(cr, c + 0.6, Vector(-0.3, 0, R), Vector(1, 0, 0))
+    lower = Part.makeCylinder(cr, c + 0.6, Vector(-0.3, 0, -R), Vector(1, 0, 0))
+    return left.fuse(right).fuse(upper).fuse(lower)
+
+
+# --------------------------------------------------------------- straights
+def assemble_straight_local(br_motor, br_plain, rol_id, rol_dr, bed, ret, belt):
+    ax0, nose = roller_axis_x(straight_len)
+    ry = wall + side_gap
+    parts = [
+        br_motor,
+        br_plain.translated(Vector(0, inner_width + wall, 0)),
+        rol_id.translated(Vector(ax0, ry, nose_z)),
+        rol_dr.translated(Vector(nose, ry, nose_z)),
+        bed,
+        ret,
+        belt.translated(Vector(0, ry + roller_flange_w, 0)),
+    ]
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.fuse(p)
+    return out
+
+
+def mirror_left(shape):
+    # Motor plate was y in [0, wall], motor toward −y. Reflecting through the
+    # module mid-plane parks it on the +Y plate.
+    out = shape.mirror(Vector(0, outer_width / 2.0, 0), Vector(0, 1, 0))
+    try:
+        if out.Volume < 0:
+            out.reverse()
+    except Exception as exc:
+        step("mirror: orientation not flipped (%s)" % exc)
+    return out
+
+
+def export_straight_components(br_motor, br_plain, rol_id, rol_dr, bed, ret, belt,
+                               encl, tag, rot, offset):
+    step("components: %s" % tag)
+    ax0, nose = roller_axis_x(straight_len)
+    ry = wall + side_gap
+
+    def place(s):
+        s = mirror_left(s)
+        if rot:
+            s.rotate(Vector(0, 0, 0), Vector(0, 0, 1), rot)
+        if offset is not None:
+            s.translate(offset)
+        return s
+
+    brackets = br_motor.fuse(br_plain.translated(Vector(0, inner_width + wall, 0)))
+    rollers = rol_id.translated(Vector(ax0, ry, nose_z)).fuse(
+        rol_dr.translated(Vector(nose, ry, nose_z)))
+    export(place(brackets), tag + "_brackets")
+    export(place(rollers), tag + "_rollers")
+    export(place(encl), tag + "_motor")
+    export(place(bed), tag + "_bed")
+    export(place(ret), tag + "_return")
+    export(place(belt.translated(Vector(0, ry + roller_flange_w, 0))), tag + "_belt")
+
+
+def drop_to_bed(shape):
+    bb = shape.BoundBox
+    out = shape.copy()
+    out.translate(Vector(-bb.XMin, -bb.YMin, -bb.ZMin))
+    return out
+
+
+# ------------------------------------------------- belt (render only)
 def _tangent_normal(c1, r1, c2, r2, upper):
-    # A single line tangent to both circles on the same side shares one normal n,
-    # and n·(c2-c1) = r1-r2. That gives acos, NOT asin — asin is the classic
-    # wrong turn here and it tilts the carry run by about a degree, which is
-    # enough to make the belt sit off the slider bed.
+    # A shared normal n has n·(c2−c1) = r1−r2, which is acos. asin tilts the
+    # carry run about a degree and lifts the belt off the slider bed.
     dx, dz = c2[0] - c1[0], c2[1] - c1[1]
     dist = math.hypot(dx, dz)
     alpha = math.atan2(dz, dx)
@@ -379,11 +1281,9 @@ def _tangent_normal(c1, r1, c2, r2, upper):
 
 
 def make_belt(module_len):
-    # Equal radii at equal height now, so the tangents come out horizontal and
-    # this is a stadium again. Kept general because nose_dia is a parameter.
-    ax0, nose_x = roller_axis_x(module_len)
+    ax0, nose = roller_axis_x(module_len)
     c1, r1 = (ax0, nose_z), nose_dia / 2.0
-    c2, r2 = (nose_x, nose_z), nose_dia / 2.0
+    c2, r2 = (nose, nose_z), nose_dia / 2.0
     bt = belt_thickness
 
     def prism(grow):
@@ -412,182 +1312,10 @@ def export(shape, name):
     Mesh.Mesh(shape.tessellate(TESS)).write(os.path.join(OUT, name + ".stl"))
 
 
-step("=== build start ===")
-
-# The corner's side plates are thinner, because one of them is the face the part
-# has to cross. Every mm here is a mm of unsupported span.
-corner_outer_width = inner_width + 2 * mating_wall
-corner_offset_x = straight_len + frame_gap + corner_outer_width
-
-export(make_bracket(straight_len, motor_side=True), "bracket_straight_motor")
-export(make_bracket(straight_len), "bracket_straight_plain")
-export(make_bracket(corner_len, t=mating_wall, motor_side=True), "bracket_corner_motor")
-export(make_bracket(corner_len, t=mating_wall, top_z=carry_z), "bracket_corner_infeed")
-export(make_roller(), "roller_idler")
-export(make_roller(driven=True), "roller_driven")
-export(make_slider_bed(straight_len), "slider_bed_straight")
-export(make_return_guide(straight_len), "return_guide_straight")
-export(make_return_guide(corner_len, t=mating_wall), "return_guide_corner")
-export(make_guide_rail(), "guide_rail")
-export(make_motor_body(), "ref_motor")
-
-# ---- fit coupon: the discharge end only, so the fit check is a 20-minute print
-# rather than a whole module. Carries every feature the fit depends on — the
-# boss bore, the motor saddle, the take-up slot and the module face.
-step("coupon: discharge end of the motor-side bracket")
-_coupon_len = 45.0
-_cb = make_bracket(straight_len, motor_side=True)
-_cb = _cb.common(Part.makeBox(_coupon_len, wall + saddle_wall * 2 + motor_body_w + 4,
-                              bracket_h * 2,
-                              Vector(straight_len - _coupon_len, -(saddle_wall * 2 + motor_body_w + 4),
-                                     -bracket_h / 2.0)))
-export(_cb, "coupon_bracket_end")
-
-
-# ---- assemblies, for rendering -------------------------------------------
-# The motor always goes on the local y=0 plate. open_face cuts the OTHER plate
-# down to the carry plane — that is the face a feeding module butts against once
-# a corner is rotated into place.
-def assemble(module_len, t=None, with_belt=True, open_face=False):
-    t = wall if t is None else t
-    step("assembly: len=%.1f t=%.1f open_face=%s" % (module_len, t, open_face))
-    ax0, nose_x = roller_axis_x(module_len)
-    ry = t + side_gap
-
-    parts = [make_bracket(module_len, t, motor_side=True),
-             make_bracket(module_len, t, top_z=carry_z if open_face else None
-                          ).translated(Vector(0, inner_width + t, 0)),
-             make_roller().translated(Vector(ax0, ry, nose_z)),
-             make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)),
-             make_slider_bed(module_len, t),
-             make_return_guide(module_len, t)]
-
-    if with_belt:
-        parts.append(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0)))
-
-    out = parts[0]
-    for p in parts[1:]:
-        out = out.fuse(p)
-    return out
-
-
-export(assemble(straight_len), "assembly_straight")
-export(assemble(corner_len, t=mating_wall, open_face=True), "assembly_corner")
-
-
-# Components exported separately so the renderer can colour them independently.
-def export_components(module_len, tag, t=None, rot=0.0, offset=None, open_face=False):
-    t = wall if t is None else t
-    step("components: %s" % tag)
-    ax0, nose_x = roller_axis_x(module_len)
-    ry = t + side_gap
-
-    def place(s):
-        s = s.copy()
-        if rot:
-            s.rotate(Vector(0, 0, 0), Vector(0, 0, 1), rot)
-        if offset is not None:
-            s = s.translated(offset)
-        return s
-
-    br = make_bracket(module_len, t, motor_side=True)
-    br = br.fuse(make_bracket(module_len, t, top_z=carry_z if open_face else None
-                              ).translated(Vector(0, inner_width + t, 0)))
-    export(place(br), tag + "_brackets")
-
-    ro = make_roller().translated(Vector(ax0, ry, nose_z))
-    ro = ro.fuse(make_roller(driven=True).translated(Vector(nose_x, ry, nose_z)))
-    export(place(ro), tag + "_rollers")
-
-    export(place(make_motor_body().translated(Vector(nose_x, 0, nose_z))), tag + "_motor")
-    export(place(make_slider_bed(module_len, t)), tag + "_bed")
-    export(place(make_return_guide(module_len, t)), tag + "_return")
-    export(place(make_belt(module_len).translated(Vector(0, ry + roller_flange_w, 0))), tag + "_belt")
-
-
-# straight2 sits beyond the corner in +Y with its belt laterally aligned to the
-# corner's. The +1 offset is (wall - mating_wall): the two modules have different
-# side-plate thicknesses, so aligning their FRAMES would misalign their BELTS.
-s2_offset_x = corner_offset_x + (wall - mating_wall)
-s2_offset_y = corner_len + frame_gap
-
-export_components(straight_len, "cs")
-export_components(corner_len, "cc", t=mating_wall, open_face=True,
-                  rot=90.0, offset=Vector(corner_offset_x, 0, 0))
-export_components(straight_len, "s2", rot=90.0, offset=Vector(s2_offset_x, s2_offset_y, 0))
-
-# ---- v0: straight -> corner -> straight, the full three-module line -------
-step("assembly: v0 line = straight + corner + straight")
-a_str = assemble(straight_len)
-a_cor = assemble(corner_len, t=mating_wall, open_face=True)
-a_s2 = assemble(straight_len)
-# rotate 90 about Z so the belt runs across the feed, then park beyond it.
-a_cor = a_cor.copy()
-a_cor.rotate(Vector(0, 0, 0), Vector(0, 0, 1), 90)
-a_cor = a_cor.translated(Vector(corner_offset_x, 0, 0))
-a_s2 = a_s2.copy()
-a_s2.rotate(Vector(0, 0, 0), Vector(0, 0, 1), 90)
-a_s2 = a_s2.translated(Vector(s2_offset_x, s2_offset_y, 0))
-export(a_str.fuse(a_cor), "assembly_L")
-export(a_str.fuse(a_cor).fuse(a_s2), "assembly_v0")
-
-step("belt (neutral axis, D/t=%.1f): straight=%.1f mm -> print cyl mean dia %.1f | corner=%.1f mm -> %.1f"
-     % (nose_dia / belt_thickness,
-        belt_path_length(straight_len), printed_cylinder_dia(straight_len),
-        belt_path_length(corner_len), printed_cylinder_dia(corner_len)))
-
-_ax0, _nose_x = roller_axis_x(straight_len)
-step("JOINT A straight->corner (side entry): %.1f + %.1f + %.1f = %.1f mm"
-     % (nose_edge, frame_gap, side_entry_inset(), unsupported_span("side")))
-step("JOINT B corner->straight (end entry): %.1f + %.1f + %.1f = %.1f mm"
-     % (nose_edge, frame_gap, end_entry_inset(), unsupported_span("end")))
-
-# ---- publish the derived geometry ----------------------------------------
-# The sim used to re-declare these constants by hand, which meant a dimension
-# change here silently left the sim testing the OLD design. It is the same
-# defect class as a stale blocker inside a live ticket: both halves individually
-# correct, the pair wrong. The CAD is the single source; everything else reads.
-# Explicit utf-8 — this repo has an open bug (#751) about JSON going out in the
-# platform locale encoding, and there is no reason to add to it.
-import json
-
-_c_ax0, _c_nose_x = roller_axis_x(corner_len)
-geom = {
-    "_generated_by": "cad/conveyor/build_parts.py — do not hand-edit",
-    "belt_width": belt_width, "belt_thickness": belt_thickness,
-    "nose_dia": nose_dia,
-    "roller_flange_w": roller_flange_w, "side_gap": side_gap,
-    "bracket_h": bracket_h, "wall": wall, "mating_wall": mating_wall,
-    "inner_width": inner_width, "outer_width": outer_width,
-    "carry_z": carry_z, "nose_z": nose_z,
-    # Taut lower run, and the guide that catches it if it sags. The sim reads
-    # carry_z; these are here so a return-run question never gets re-derived.
-    "return_run_z": return_run_z(),
-    "return_guide_top": return_run_z() - return_clear,
-    # rail_top is the top of each side plate, [local y=0 side, local y=max side].
-    # The corner's y=max plate is its infeed face and is cut to the carry plane
-    # so a part can cross onto it; everything else stays full height as a rail.
-    "straight": {"len": straight_len, "drive_ax": _ax0, "nose_ax": _nose_x,
-                 "t": wall, "outer_width": outer_width,
-                 "rail_top": [bracket_h, bracket_h],
-                 "belt_len": belt_path_length(straight_len),
-                 "print_cyl_dia": printed_cylinder_dia(straight_len)},
-    "corner": {"len": corner_len, "drive_ax": _c_ax0, "nose_ax": _c_nose_x,
-               "t": mating_wall, "outer_width": corner_outer_width,
-               "rail_top": [bracket_h, carry_z],
-               "belt_len": belt_path_length(corner_len),
-               "print_cyl_dia": printed_cylinder_dia(corner_len),
-               "offset_x": corner_offset_x},
-    "straight2": {"offset_x": s2_offset_x, "offset_y": s2_offset_y},
-    "frame_gap": frame_gap,
-    "motor_shaft_len": motor_shaft_len,
-    "shaft_engagement": shaft_engagement(),
-    "joint_a_side_entry": unsupported_span("side"),
-    "joint_b_end_entry": unsupported_span("end"),
-}
-with open(os.path.join(OUT, "geometry.json"), "w", encoding="utf-8") as fh:
-    json.dump(geom, fh, indent=2)
-step("export: geometry.json")
-
-step("=== build complete ===")
-_log.close()
+try:
+    main()
+except Exception:
+    step(traceback.format_exc())
+    raise
+finally:
+    _log.close()
