@@ -9,6 +9,7 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
   - The kit's breadboard, jumper wires and micro-USB cable cover the v0 wiring.
 - Pico screw-terminal breakout, hookup wire, PLA+ and PETG.
 - Wire tools from the arm-cable job ([wiring-hardware.md](../wiring-hardware.md)).
+- Soldering iron and solder.
 
 ## Order
 
@@ -54,7 +55,6 @@ Total: about $238 before shipping. Kyle ordered the ServoCity part ($69.88) on 2
 
 | Tool | Source | Price | Why |
 |---|---|---|---|
-| Soldering iron | [Pinecil V2](https://pine64.com/product/pinecil-smart-mini-portable-soldering-iron/) + any 0.8 mm rosin-core solder | $25.99 + solder | driver and Pico headers, motor input boards |
 | Multimeter | [Klein MM325 at DigiKey](https://www.digikey.com/en/products/detail/klein-tools-inc/MM325/16649074) | $39.74 | optional: continuity and voltage checks. The bench supply already shows motor current |
 
 ## Later, with the loop
