@@ -1,23 +1,26 @@
 # Mini modular conveyor — MuJoCo sim (Hive plan #835)
 #
 #   uv run python cad/conveyor/sim_conveyor.py            # nominal run, frames in renders/sim/
+#   uv run python cad/conveyor/sim_conveyor.py --frames 0 # same run, no meshes, no PNGs
 #   uv run python cad/conveyor/sim_conveyor.py --sweep    # acceptance matrix, writes sweep.json
 #   uv run python cad/conveyor/sim_conveyor.py --view     # interactive viewer
 #
 # Visuals are the component STLs. Collision is not: a belt loop is non-convex
 # and MuJoCo would fill its convex hull solid, which hides the gap this sim
 # exists to measure. Straights keep two nose cylinders, a carry plate and the
-# rails that stand above the belt. Each cone is the convex hull of its two
-# end circles, which is the cone, so a mesh is honest there.
+# rails that stand above the belt. Each cone is sliced into short frustums so
+# a line contact is several points.
 #
-# The surface drive is a force on each contact. The curve's speed changes
-# across the part, and a single drag at the centre of mass cannot yaw it with
-# the path. Applying that yaw by hand would be deciding the result.
+# The drive is MuJoCo's own friction on a surface that is already moving.
+# A force computed in Python is an explicit damper on the part's yaw, and that
+# damper went unstable at the friction this sweep has to cover.
 
 import os
 import sys
 import math
 import json
+import time
+import concurrent.futures
 import numpy as np
 import mujoco
 
@@ -76,9 +79,18 @@ def place_box(rot, ox, oy, cx, cy, cz, hx, hy, hz):
 PART = (32.0, 32.0, 16.0)
 PART_MASS = 0.030
 
-# Regularised Coulomb. Below u0 the force is linear in slip, so the explicit
-# step cannot add more speed than the slip it is cancelling. The bound used
-# here is µ g dt / u0 ≤ 0.5 at the highest µ the sweep commands.
+# A contact from the part has to leave the commanded surface speed alone
+# inside one step, or the friction is no longer the belt's. These sit far
+# above that impulse. Slide armature is a mass, hinge armature an inertia.
+SLIDE_ARMATURE = 50.0
+HINGE_ARMATURE = 0.5
+
+# Part versus static (rails, walls, floor) versus drive. A nose occupies the
+# same volume as the slab, and a cone can sit against a wall; neither pair is
+# a contact the part makes.
+CON_PART = 1
+CON_STATIC = 2
+CON_DRIVE = 4
 
 
 def m(v):
@@ -126,11 +138,12 @@ CURVE_SPEED = _argv("--curve-speed", STRAIGHT_SPEED)
 MU_BELT = _argv("--mu", 0.9)
 MU_CURVE = _argv("--mu-curve", 0.35)
 ENTRY_OFFSET = _argv("--offset", 0.0)
-# The U0 study did not converge: 0.01, 0.003 and 0.001 disagree by more than
-# 0.5° of yaw. The fallback is the smallest, and dt is what keeps
-# 1.2·g·dt/U0 under 0.5, 1.2 being the sweep's highest belt friction.
-U0 = _argv("--u0", 0.001)
-DT = _argv("--dt", 0.00004)
+DT = _argv("--dt", 0.0005)
+# Soft contacts creep at the constraint time constant. Without this, a part
+# that should be stuck to the belt slowly walks its heading. Ten iterations
+# left a degree of yaw against a halved step. Thirty saturates this timestep
+# but not the halved one; sixty agrees with both.
+NOSLIP = _argv("--noslip", 60)
 
 
 def _stl_faces(path):
@@ -276,40 +289,37 @@ def cone_assets():
 
 
 def visual_geom(mesh, colour):
-    return ('<geom type="mesh" mesh="%s" contype="0" conaffinity="0" group="1" '
+    return ('<geom type="mesh" mesh="%s" contype="0" conaffinity="0" group="1" density="0" '
             'rgba="%s"/>' % (mesh, rgba(colour)))
 
 
-def straight_body(tag, rot, ox, oy, visuals):
+def _body(name, pos, inertial, joint_xml, geoms):
+    ix, iy, iz = inertial
+    px, py, pz = pos
+    return ('<body name="%s" pos="%g %g %g">\n      '
+            '<inertial pos="%g %g %g" mass="0.02" diaginertia="1e-4 1e-4 1e-4"/>\n      '
+            '%s\n      %s\n    </body>'
+            % (name, px, py, pz, ix, iy, iz, joint_xml, "\n      ".join(geoms)))
+
+
+def _slide(name, axis):
+    return ('<joint name="%s" type="slide" axis="%g %g %g" armature="%g"/>'
+            % (name, axis[0], axis[1], axis[2], SLIDE_ARMATURE))
+
+
+def _hinge(name, pos, axis):
+    return ('<joint name="%s" type="hinge" pos="%g %g %g" axis="%g %g %g" armature="%g"/>'
+            % (name, pos[0], pos[1], pos[2], axis[0], axis[1], axis[2], HINGE_ARMATURE))
+
+
+def straight_bodies(tag, rot, ox, oy, visuals):
     # Rails are only the plate standing above the belt. A face cut flush with
     # the carry plane is not a kerb, and the transfer depends on that.
     p = placer(rot, ox, oy)
-    y0, y1 = belt_y()
-    ymid = (y0 + y1) / 2.0
+    y0, _y1 = belt_y()
+    ymid = lane_centre()
     a0, a1 = STR["drive_ax"], STR["nose_ax"]
-    euler = "90 0 0" if rot == 0 else "0 90 0"
-    fric = 'friction="0.04 0.005 0.0001"'
     g = [visual_geom(n, c) for n, c in visuals]
-
-    # Same reason as the cone slices. A nose is a line contact, and one
-    # reported point on a 50 mm cylinder is not a support.
-    n_ax = int(math.ceil(belt_width / 5.0 - 1e-9))
-    seg = belt_width / n_ax
-    for name, ax in (("infeed", a0), ("driven", a1)):
-        for k in range(n_ax):
-            y_c = y0 + (k + 0.5) * seg
-            cx, cy = p(ax, y_c)
-            g.append('<geom name="%s_%s%d" type="cylinder" size="%g %g" pos="%g %g %g" '
-                     'euler="%s" rgba="%s" %s/>'
-                     % (tag, name, k, m(nose_r), m(seg / 2.0),
-                        m(cx), m(cy), m(nose_z), euler, rgba(BELT_C, 0.0), fric))
-
-    cx, cy = p((a0 + a1) / 2.0, ymid)
-    half_len, half_wid = (a1 - a0) / 2.0, belt_width / 2.0
-    sx, sy = (half_len, half_wid) if rot == 0 else (half_wid, half_len)
-    g.append('<geom name="%s_belt" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s" %s/>'
-             % (tag, m(sx), m(sy), m(1.0), m(cx), m(cy), m(belt_top - 1.0),
-                rgba(BELT_C, 0.0), fric))
 
     for i, yc in enumerate((STR["t"] / 2.0, STR["outer_width"] - STR["t"] / 2.0)):
         rt = STR["rail_top"][i]
@@ -334,18 +344,51 @@ def straight_body(tag, rot, ox, oy, visuals):
     g.append('<geom name="%s_tab" type="box" size="%g %g %g" pos="%g %g %g" rgba="%s"/>'
              % (tag, m(hx), m(hy), m(hz), m(px), m(py), m(pz), rgba(BRACKET_C, 0.0)))
 
-    return '<body name="%s" pos="0 0 0">\n      %s\n    </body>' % (tag, "\n      ".join(g))
+    bodies = ['<body name="%s" pos="0 0 0">\n      %s\n    </body>' % (tag, "\n      ".join(g))]
+
+    # The flat run is one velocity. A slide that the step is not allowed to
+    # integrate: the slab is only as long as the carry, and walking it would
+    # pull the surface out from under the part.
+    cx, cy = p((a0 + a1) / 2.0, ymid)
+    half_len, half_wid = (a1 - a0) / 2.0, belt_width / 2.0
+    sx, sy = (half_len, half_wid) if rot == 0 else (half_wid, half_len)
+    slide = (1.0, 0.0, 0.0) if rot == 0 else (0.0, 1.0, 0.0)
+    belt = ('<geom class="drive" name="%s_belt" type="box" size="%g %g %g" pos="0 0 0" rgba="%s"/>'
+            % (tag, m(sx), m(sy), m(1.0), rgba(BELT_C, 0.0)))
+    centre = (m(cx), m(cy), m(belt_top - 1.0))
+    bodies.append(_body(tag + "_belt", centre, (0.0, 0.0, 0.0), _slide(tag + "_belt", slide), [belt]))
+
+    # Same reason as the cone slices. A nose is a line contact, and one
+    # reported point on a 50 mm cylinder is not a support. The hinge is the
+    # nose axis; the outer fibre is the belt wrapped over it.
+    euler = "90 0 0" if rot == 0 else "0 90 0"
+    # Positive qvel has to send the crown along the module's travel. On s2 the
+    # nose lies along X, and the right-hand sense of +X sends the crown backward.
+    axis = (0.0, 1.0, 0.0) if rot == 0 else (-1.0, 0.0, 0.0)
+    n_ax = int(math.ceil(belt_width / 5.0 - 1e-9))
+    seg = belt_width / n_ax
+    for name, ax in (("infeed", a0), ("driven", a1)):
+        slices = []
+        for k in range(n_ax):
+            y_c = y0 + (k + 0.5) * seg
+            gx, gy = p(ax, y_c)
+            slices.append(
+                '<geom class="drive" name="%s_%s%d" type="cylinder" size="%g %g" pos="%g %g %g" '
+                'euler="%s" rgba="%s"/>'
+                % (tag, name, k, m(nose_r), m(seg / 2.0),
+                   m(gx), m(gy), m(nose_z), euler, rgba(BELT_C, 0.0)))
+        jx, jy = p(ax, ymid)
+        joint = tag + "_" + name
+        bodies.append(_body(
+            joint, (0.0, 0.0, 0.0), (m(jx), m(jy), m(nose_z)),
+            _hinge(joint, (m(jx), m(jy), m(nose_z)), axis), slices))
+    return bodies
 
 
-def curve_body():
-    # Fixed geoms. The rollers do not spin: the traction law imposes the
-    # surface velocity, the same way the straight cylinders do.
-    fric = 'friction="0.04 0.005 0.0001"'
-    g = [visual_geom(n, c) for n, c in VISUALS if n.startswith("cv_")]
-    for i in range(CURVE["n"]):
-        for k in range(n_frusta()):
-            g.append('<geom name="c_roll%d_%d" type="mesh" mesh="cone%d_%d" rgba="%s" %s/>'
-                     % (i, k, i, k, rgba(ROLLER_C, 0.0), fric))
+def curve_bodies(visuals):
+    # The walls are not driven. The rollers are, one hinge each, so the crown
+    # can follow the turn instead of a single speed for the whole curve.
+    g = [visual_geom(n, c) for n, c in visuals]
 
     # Only the wall above the carry plane can meet the part. Boxes tile the
     # arc at 5°, tangent to it, and stop on the entry and exit faces so a box
@@ -371,7 +414,22 @@ def curve_body():
                 % ("in" if which == "in" else "out", i,
                    m(htang), m(hrad), m(hz), m(px), m(py), m(zc),
                    tx, ty, rx, ry, rgba(BRACKET_C, 0.0)))
-    return '<body name="c" pos="0 0 0">\n      %s\n    </body>' % ("\n      ".join(g))
+    bodies = ['<body name="c" pos="0 0 0">\n      %s\n    </body>' % ("\n      ".join(g))]
+
+    # Hinge through the apex, along the roller. The crown is a point on this
+    # body; which sign makes it follow the left turn is checked, not assumed,
+    # because the axis direction is a convention.
+    apex = (m(cx), m(cy), m(CURVE["z_top"]))
+    for i, theta in enumerate(CURVE["theta_deg"]):
+        u, _, _, _, _ = cone_frame(theta)
+        slices = []
+        for k in range(n_frusta()):
+            slices.append(
+                '<geom class="drive" name="c_roll%d_%d" type="mesh" mesh="cone%d_%d" rgba="%s"/>'
+                % (i, k, i, k, rgba(ROLLER_C, 0.0)))
+        name = "cone%d" % i
+        bodies.append(_body(name, (0.0, 0.0, 0.0), apex, _hinge(name, apex, u), slices))
+    return bodies
 
 
 def joiner_body():
@@ -379,26 +437,42 @@ def joiner_body():
     return '<body name="joiners" pos="0 0 0">\n      %s\n    </body>' % ("\n      ".join(g))
 
 
-def build_xml():
-    y0, y1 = belt_y()
+def build_xml(visuals):
+    # Headless runs never load the meshes. Two processes welding the same STL
+    # into renders/sim/ corrupted a sweep, and the meshes are not what is measured.
     part_z = belt_top + PART[2] / 2.0 + 0.5
-    s1v = [(n, c) for n, c in VISUALS if n.startswith("cs_")]
-    s2v = [(n, c) for n, c in VISUALS if n.startswith("s2_")]
-    bodies = [
-        straight_body("s1", S1["rot"], S1["offset"][0], S1["offset"][1], s1v),
-        curve_body(),
-        straight_body("s2", S2["rot"], S2["offset"][0], S2["offset"][1], s2v),
-        joiner_body(),
-    ]
+    if visuals:
+        s1v = [(n, c) for n, c in VISUALS if n.startswith("cs_")]
+        s2v = [(n, c) for n, c in VISUALS if n.startswith("s2_")]
+        cv = [(n, c) for n, c in VISUALS if n.startswith("cv_")]
+        meshes = mesh_assets()
+        extra = [joiner_body()]
+    else:
+        s1v, s2v, cv = [], [], []
+        meshes = ""
+        extra = []
+    bodies = []
+    bodies.extend(straight_bodies("s1", S1["rot"], S1["offset"][0], S1["offset"][1], s1v))
+    bodies.extend(curve_bodies(cv))
+    bodies.extend(straight_bodies("s2", S2["rot"], S2["offset"][0], S2["offset"][1], s2v))
+    bodies.extend(extra)
     # multiccd: a box on a cylinder or a cone is a line contact. One reported
     # point can sit anywhere along that line, and the torque about it is then
     # noise. Every point on the line has to count.
+    # Rails stay at a low friction. A guide that grips harder than the belt
+    # would decide the heading, which is the failure this drive is here to leave behind.
     return """
 <mujoco model="mini_conveyor">
   <compiler angle="degree" autolimits="true"/>
-  <option timestep="{dt}" integrator="implicitfast" cone="elliptic">
+  <option timestep="{dt}" integrator="implicitfast" cone="elliptic" noslip_iterations="{noslip}">
     <flag multiccd="enable"/>
   </option>
+  <default>
+    <geom contype="{st}" conaffinity="{pt}" condim="3" friction="0.04 0.005 0.0001"/>
+    <default class="drive">
+      <geom contype="{dr}" conaffinity="{pt}" condim="3" density="0" friction="0.9 0.005 0.0001"/>
+    </default>
+  </default>
   <visual>
     <headlight ambient="0.45 0.45 0.45" diffuse="0.5 0.5 0.5" specular="0.1 0.1 0.1"/>
     <rgba haze="0.95 0.94 0.92 1"/>
@@ -423,18 +497,23 @@ def build_xml():
 
     <body name="part" pos="{px} {py} {pz}">
       <freejoint name="partfree"/>
-      <!-- MuJoCo combines a pair's friction by the maximum, so a high value
-           here would override the drive geoms and fight the traction law. -->
+      <!-- The pair takes the larger friction, so this stays under every µ the
+           sweep commands and the drive geom is the one that acts. condim 3:
+           the slices already make a torsional moment, and a torsional
+           coefficient would count it twice. -->
       <geom name="partgeom" type="box" size="{hx} {hy} {hz}" mass="{pm}"
+            contype="{pt}" conaffinity="{pa}" condim="3"
             rgba="{pc}" friction="0.05 0.005 0.0001"/>
     </body>
   </worldbody>
 </mujoco>
 """.format(
-        meshes=mesh_assets(),
+        meshes=meshes,
         cones=cone_assets(),
         bodies="\n\n    ".join(bodies),
         dt=DT,
+        noslip=int(NOSLIP),
+        st=CON_STATIC, dr=CON_DRIVE, pt=CON_PART, pa=CON_STATIC | CON_DRIVE,
         px=m(40.0), py=m(lane_centre()), pz=m(part_z),
         hx=m(PART[0] / 2.0), hy=m(PART[1] / 2.0), hz=m(PART[2] / 2.0),
         pm=PART_MASS, pc=rgba(PART_C))
@@ -445,39 +524,239 @@ def gid(model, name):
 
 
 _MODEL = None
-_MODEL_DT = None
+_MODEL_VIS = None
 
 
-def compiled_model():
-    # Speed and friction are applied in Python, so one compile serves every
-    # run at this timestep. --dt changes the option, so it compiles again.
-    global _MODEL, _MODEL_DT
-    if _MODEL is None or _MODEL_DT != DT:
-        _MODEL = mujoco.MjModel.from_xml_string(build_xml())
-        _MODEL_DT = DT
+def compiled_model(visuals):
+    # Friction and the timestep are written onto the compiled model per run.
+    # A second compile is only for the meshes, which a measurement does not use.
+    global _MODEL, _MODEL_VIS
+    if _MODEL is None or _MODEL_VIS != visuals:
+        _MODEL = mujoco.MjModel.from_xml_string(build_xml(visuals))
+        _MODEL_VIS = visuals
+    _MODEL.opt.timestep = DT
+    _MODEL.opt.noslip_iterations = int(NOSLIP)
     return _MODEL
 
 
-def setup(straight_speed, curve_speed, mu_belt, mu_curve):
-    model = compiled_model()
+def _neutral_r_m():
+    # The flat run moves at the belt's neutral axis. Around the nose the outer
+    # fibre, which is what the part can touch, is faster.
+    return (G["nose_dia"] / 2.0 + belt_thickness / 2.0) * MM
+
+
+def drive_records(straight_speed, curve_speed):
+    recs = []
+    outer = nose_r * MM
+    omega_nose = straight_speed / _neutral_r_m()
+    for tag, mod in (("s1", S1), ("s2", S2)):
+        rot = mod["rot"]
+        p = placer(rot, mod["offset"][0], mod["offset"][1])
+        a0, a1 = STR["drive_ax"], STR["nose_ax"]
+        hat = np.array([1.0, 0.0, 0.0]) if rot == 0 else np.array([0.0, 1.0, 0.0])
+        cx, cy = p((a0 + a1) / 2.0, lane_centre())
+        recs.append({
+            "name": tag + "_belt",
+            "kind": "belt",
+            "point": np.array([m(cx), m(cy), m(belt_top)]),
+            "expect": hat * straight_speed,
+            "vel": straight_speed,
+            "mag": straight_speed,
+        })
+        for name, ax in (("infeed", a0), ("driven", a1)):
+            jx, jy = p(ax, lane_centre())
+            recs.append({
+                "name": "%s_%s" % (tag, name),
+                "kind": "nose",
+                "point": np.array([m(jx), m(jy), m(nose_z) + outer]),
+                "expect": hat * (omega_nose * outer),
+                "vel": omega_nose,
+                "mag": omega_nose,
+            })
+    # Ω > 0 is the left turn. |ω| = Ω / sin α because a crown point at plan
+    # radius r is r·sin α off the roller axis. The sign is not set here.
+    omega_field = curve_speed / (CURVE["r_c"] * MM)
+    alpha = math.radians(CURVE["alpha_deg"])
+    mag = abs(omega_field) / math.sin(alpha) if math.sin(alpha) else 0.0
+    cx, cy = CURVE["centre"]
+    for i, theta in enumerate(CURVE["theta_deg"]):
+        th = math.radians(theta)
+        px = cx + CURVE["r_c"] * math.cos(th)
+        py = cy + CURVE["r_c"] * math.sin(th)
+        point = np.array([m(px), m(py), m(CURVE["z_top"])])
+        expect = omega_field * np.array([-(point[1] - m(cy)), point[0] - m(cx), 0.0])
+        recs.append({
+            "name": "cone%d" % i,
+            "kind": "cone",
+            "point": point,
+            "expect": expect,
+            "vel": mag,
+            "mag": mag,
+        })
+    return recs
+
+
+def bind_drives(model, recs):
+    out = []
+    for rec in recs:
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, rec["name"])
+        if jid < 0:
+            raise RuntimeError("missing drive joint %s" % rec["name"])
+        rec = dict(rec)
+        rec["qadr"] = int(model.jnt_qposadr[jid])
+        rec["vadr"] = int(model.jnt_dofadr[jid])
+        rec["bid"] = int(model.jnt_bodyid[jid])
+        rec["point"] = np.ascontiguousarray(rec["point"], dtype=np.float64)
+        rec["expect"] = np.ascontiguousarray(rec["expect"], dtype=np.float64)
+        out.append(rec)
+    return out
+
+
+def kick(data, drives, moving=True):
+    # qpos stays put. The slab is only the length of the flat run, and the
+    # slices are faceted: letting either integrate would walk the belt away
+    # and roll the crown points the part is standing on. qvel is what the
+    # contact solver reads as the surface speed.
+    for d in drives:
+        data.qpos[d["qadr"]] = 0.0
+        data.qvel[d["vadr"]] = d["vel"] if moving else 0.0
+
+
+def _prepare_jac(model, data):
+    # mj_jac reads cdof, which the position pass does not fill.
+    mujoco.mj_kinematics(model, data)
+    mujoco.mj_comPos(model, data)
+    mujoco.mj_comVel(model, data)
+
+
+def _jac_vel(model, data, drive):
+    jacp = np.zeros((3, model.nv))
+    mujoco.mj_jac(model, data, jacp, None, drive["point"], int(drive["bid"]))
+    return jacp @ np.asarray(data.qvel)
+
+
+def _rel_err(got, expect):
+    got = np.asarray(got, dtype=np.float64)
+    expect = np.asarray(expect, dtype=np.float64)
+    scale = float(np.linalg.norm(expect))
+    if scale < 1e-9:
+        return 0.0 if float(np.linalg.norm(got)) < 1e-6 else 1.0
+    return float(np.linalg.norm(got - expect)) / scale
+
+
+def _apply_cone_sign(drives, sign):
+    for d in drives:
+        if d["kind"] == "cone":
+            d["vel"] = sign * d["mag"]
+
+
+def _cone_sign(model, drives):
+    # The crown has to follow Ω ẑ × (p − C). Which way the hinge turns to do
+    # that is the axis convention, so both signs are measured and the one that
+    # matches is kept.
     data = mujoco.MjData(model)
-    part_gid = gid(model, "partgeom")
-    part_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "part")
+    errs = {}
+    for sign in (1.0, -1.0):
+        _apply_cone_sign(drives, sign)
+        kick(data, drives, True)
+        _prepare_jac(model, data)
+        worst = 0.0
+        for d in drives:
+            if d["kind"] != "cone":
+                continue
+            worst = max(worst, _rel_err(_jac_vel(model, data, d), d["expect"]))
+        errs[sign] = worst
+    sign = 1.0 if errs[1.0] <= errs[-1.0] else -1.0
+    return sign, errs[1.0], errs[-1.0]
 
-    # geom id -> (kind, extra, mu). extra is the travel direction for a straight.
-    # Slices share a name prefix; each one is its own drive geom.
-    drive = {}
+
+def _balance(model, drives, part_bid):
+    # Gravity must not turn a roller. The mass sits on the hinge, and this is
+    # the check that it does: one step, part parked clear, commanded speed zero.
+    data = mujoco.MjData(model)
+    place_part(model, data, part_bid, 0.0, at=(40.0, lane_centre(), 200.0))
+    kick(data, drives, moving=False)
+    mujoco.mj_step(model, data)
+    return max(abs(float(data.qvel[d["vadr"]])) for d in drives)
+
+
+def _hold(model, drives, part_bid):
+    # One step under the part's weight. The armature is there so this change
+    # stays negligible beside the commanded speed.
+    data = mujoco.MjData(model)
+    poses = [(40.0, lane_centre(), belt_top + PART[2] / 2.0 + 0.5, 0.0)]
+    th = math.radians(-45.0)
+    cx, cy = CURVE["centre"]
+    x = cx + CURVE["r_c"] * math.cos(th)
+    y = cy + CURVE["r_c"] * math.sin(th)
+    poses.append((x, y, CURVE["z_top"] + PART[2] / 2.0 + 0.5, path_tangent_deg(x, y)))
+    worst = 0.0
+    n = max(1, int(0.05 / model.opt.timestep))
+    for x_mm, y_mm, z_mm, yaw in poses:
+        place_part(model, data, part_bid, 0.0, at=(x_mm, y_mm, z_mm), yaw_deg=yaw)
+        for _ in range(n):
+            kick(data, drives, True)
+            mujoco.mj_step(model, data)
+        kick(data, drives, True)
+        commanded = [d["vel"] for d in drives]
+        mujoco.mj_step(model, data)
+        for d, v0 in zip(drives, commanded):
+            if abs(v0) < 1e-12:
+                continue
+            worst = max(worst, abs(float(data.qvel[d["vadr"]]) - v0) / abs(v0))
+    return worst
+
+
+def prove_drive(model, drives, part_bid, announce):
+    sign, err_pos, err_neg = _cone_sign(model, drives)
+    _apply_cone_sign(drives, sign)
+    chosen = err_neg if sign < 0 else err_pos
+    other = err_pos if sign < 0 else err_neg
+    lines = ["cone hinge sign %+d  crown err %.4f%%  other %.4f%%"
+             % (int(sign), 100.0 * chosen, 100.0 * other)]
+    bad = chosen > 0.01
+    data = mujoco.MjData(model)
+    kick(data, drives, True)
+    _prepare_jac(model, data)
+    for d in drives:
+        got = _jac_vel(model, data, d)
+        err = _rel_err(got, d["expect"])
+        lines.append(
+            "drive %-12s  v %8.4f %8.4f %8.4f  expected %8.4f %8.4f %8.4f  err %7.3f%%"
+            % (d["name"], got[0], got[1], got[2],
+               d["expect"][0], d["expect"][1], d["expect"][2], 100.0 * err))
+        if err > 0.01:
+            bad = True
+    bal = _balance(model, drives, part_bid)
+    lines.append("drive balance  max |qvel| after one unloaded step %.3e" % bal)
+    if bal > 1e-5:
+        bad = True
+    hold = _hold(model, drives, part_bid)
+    lines.append("drive hold  max relative qvel change under the part %.3e" % hold)
+    if hold > 0.01:
+        bad = True
+    if announce or bad:
+        for line in lines:
+            print(line, flush=True)
+    if bad:
+        raise RuntimeError("drive check failed")
+
+
+def _set_friction(model, mu_belt, mu_curve):
     for i in range(model.ngeom):
-        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
-        if not name:
-            continue
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i) or ""
+        mu = None
         if name == "s1_belt" or name.startswith("s1_infeed") or name.startswith("s1_driven"):
-            drive[i] = ("straight", (straight_speed, 0.0), mu_belt)
+            mu = mu_belt
         elif name == "s2_belt" or name.startswith("s2_infeed") or name.startswith("s2_driven"):
-            drive[i] = ("straight", (0.0, straight_speed), mu_belt)
+            mu = mu_belt
         elif name.startswith("c_roll"):
-            drive[i] = ("curve", curve_speed, mu_curve)
+            mu = mu_curve
+        if mu is not None:
+            model.geom_friction[i, 0] = mu
 
+
+def _rails(model):
     rails = set()
     for tag in ("s1", "s2"):
         for name in ("rail0", "rail1", "tab"):
@@ -486,54 +765,19 @@ def setup(straight_speed, curve_speed, mu_belt, mu_curve):
     for which in ("in", "out"):
         for i in range(nbox):
             rails.add(gid(model, "c_%s%d" % (which, i)))
-    return model, data, drive, rails, part_gid, part_bid
+    rails.discard(-1)
+    return rails
 
 
-def traction(model, data, drive, part_gid, part_bid):
-    # Each contact pushes the part toward that patch's surface velocity, up to
-    # µN. Weight on two modules splits the drive in the same proportion, which
-    # is what a handoff actually does.
-    com = np.array(data.xipos[part_bid])
-    vel = np.zeros(6)
-    mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_BODY, part_bid, vel, 0)
-    omega, vcom = vel[0:3], vel[3:6]
-    cx, cy = CURVE["centre"]
-    C = np.array([m(cx), m(cy), 0.0])
-    F = np.zeros(3)
-    tau = np.zeros(3)
-    for i in range(data.ncon):
-        c = data.contact[i]
-        if part_gid not in (c.geom1, c.geom2):
-            continue
-        other = c.geom2 if c.geom1 == part_gid else c.geom1
-        spec = drive.get(int(other))
-        if spec is None:
-            continue
-        cf = np.zeros(6)
-        mujoco.mj_contactForce(model, data, i, cf)
-        N = cf[0]
-        if N <= 0.0:
-            continue
-        kind, extra, mu = spec
-        p = np.array(c.pos)
-        if kind == "straight":
-            v_surf = np.array([extra[0], extra[1], 0.0])
-        else:
-            # Ω about z through C. Positive Ω is the left turn; on the
-            # centreline the speed is the commanded curve speed.
-            omega_z = extra / m(CURVE["r_c"])
-            r = p - C
-            v_surf = np.array([-omega_z * r[1], omega_z * r[0], 0.0])
-        v_part = vcom + np.cross(omega, p - com)
-        slip = v_surf - v_part
-        slip[2] = 0.0
-        speed = float(np.linalg.norm(slip))
-        if speed < 1e-12:
-            continue
-        force = slip * (mu * N * min(1.0, speed / U0) / speed)
-        F += force
-        tau += np.cross(p - com, force)
-    data.xfrc_applied[part_bid] = np.array([F[0], F[1], F[2], tau[0], tau[1], tau[2]])
+def setup(straight_speed, curve_speed, mu_belt, mu_curve, visuals=False, announce=False):
+    model = compiled_model(visuals)
+    _set_friction(model, mu_belt, mu_curve)
+    data = mujoco.MjData(model)
+    part_gid = gid(model, "partgeom")
+    part_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "part")
+    drives = bind_drives(model, drive_records(straight_speed, curve_speed))
+    prove_drive(model, drives, part_bid, announce)
+    return model, data, drives, _rails(model), part_gid, part_bid
 
 
 def pose(data, part_bid):
@@ -574,11 +818,15 @@ def time_limit(speed):
     return path_length_m() / speed * 1.5 + 1.0
 
 
-def place_part(model, data, part_bid, offset_mm_):
+def place_part(model, data, part_bid, offset_mm_, at=None, yaw_deg=0.0):
     qadr = model.body_jntadr[part_bid]
     qpos = model.jnt_qposadr[qadr]
-    z = belt_top + PART[2] / 2.0 + 0.5
-    data.qpos[qpos:qpos + 7] = [m(40.0), m(lane_centre() + offset_mm_), m(z), 1, 0, 0, 0]
+    if at is None:
+        z = belt_top + PART[2] / 2.0 + 0.5
+        at = (40.0, lane_centre() + offset_mm_, z)
+    half = math.radians(yaw_deg) * 0.5
+    data.qpos[qpos:qpos + 7] = [
+        m(at[0]), m(at[1]), m(at[2]), math.cos(half), 0.0, 0.0, math.sin(half)]
     dof = model.jnt_dofadr[qadr]
     data.qvel[dof:dof + 6] = 0
     data.xfrc_applied[part_bid][:] = 0
@@ -760,10 +1008,12 @@ def cone_support(model, data, part_gid, part_bid, rest_z):
     }
 
 
-def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, limit=None, prove=False):
+def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, limit=None,
+             prove=False, visuals=False, announce_drive=False):
     # Headless on purpose. Nothing here puts the part back on the belt.
-    model, data, drive, rails, part_gid, part_bid = setup(
-        straight_speed, curve_speed, mu_belt, mu_curve)
+    model, data, drives, rails, part_gid, part_bid = setup(
+        straight_speed, curve_speed, mu_belt, mu_curve,
+        visuals=visuals or frames > 0, announce=announce_drive)
     place_part(model, data, part_bid, offset)
     if limit is None:
         limit = time_limit(straight_speed)
@@ -791,7 +1041,7 @@ def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, l
         travel_steps = max(1, int(path_length_m() / straight_speed / dt))
         shot_at = set(int(round(travel_steps * k / max(1, frames - 1))) for k in range(frames))
     for i in range(steps):
-        traction(model, data, drive, part_gid, part_bid)
+        kick(data, drives)
         mujoco.mj_step(model, data)
         if i % sample_every == 0:
             x, y, z, yaw, tilt = pose(data, part_bid)
@@ -887,6 +1137,32 @@ def print_spans():
               % (which, s["inner"], s["centre"], s["outer"]))
 
 
+def _settle(model, data, drives, part_bid):
+    n = int(1.0 / model.opt.timestep)
+    for _ in range(n):
+        kick(data, drives, moving=False)
+        mujoco.mj_step(model, data)
+    return pose(data, part_bid)
+
+
+def resting_contacts(model, data, drives, part_gid, part_bid):
+    # Drives held. The s1 height is the reference, so a contact that sinks on
+    # both modules does not show up as a step between them.
+    place_part(model, data, part_bid, 0.0)
+    _, _, z_s1, _, tilt_s1 = _settle(model, data, drives, part_bid)
+    th = math.radians(-45.0)
+    cx, cy = CURVE["centre"]
+    x = cx + CURVE["r_c"] * math.cos(th)
+    y = cy + CURVE["r_c"] * math.sin(th)
+    z = CURVE["z_top"] + PART[2] / 2.0 + 0.5
+    place_part(model, data, part_bid, 0.0, at=(x, y, z), yaw_deg=path_tangent_deg(x, y))
+    _settle(model, data, drives, part_bid)
+    proof = cone_support(model, data, part_gid, part_bid, z_s1)
+    proof["z_s1"] = z_s1
+    proof["tilt_s1"] = tilt_s1
+    return proof
+
+
 def run_nominal():
     # --seconds replaces the acceptance limit. A cap that misses the exit fails;
     # it is not a different, easier test.
@@ -895,21 +1171,35 @@ def run_nominal():
         limit = _argv("--seconds", limit)
     frames = _argv("--frames", 6)
     print_spans()
-    print("nominal  speed %.3f  curve %.3f  mu %.2f / %.2f  offset %.1f mm  limit %.2f s"
-          % (STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, ENTRY_OFFSET, limit))
+    print("nominal  speed %.3f  curve %.3f  mu %.2f / %.2f  offset %.1f mm  "
+          "dt %.4g s  noslip %d  limit %.2f s"
+          % (STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, ENTRY_OFFSET,
+             DT, int(NOSLIP), limit))
+    t0 = time.perf_counter()
+    model, data, drives, _rails, part_gid, part_bid = setup(
+        STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, visuals=False, announce=True)
+    rest = resting_contacts(model, data, drives, part_gid, part_bid)
+    print("at rest  x %.1f  y %.1f  z %.3f mm  s1 z %.3f mm  s1 tilt %.3f deg"
+          % (rest["x"], rest["y"], rest["z"], rest["z_s1"], rest["tilt_s1"]))
+    print_proof(rest)
+    t_rest = time.perf_counter()
     samples, metrics, shots, proof = simulate(
         STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, ENTRY_OFFSET,
-        frames=frames, limit=limit, prove=True)
+        frames=frames, limit=limit, prove=True, visuals=frames > 0, announce_drive=False)
+    t_run = time.perf_counter()
+    print("in the run")
     print_proof(proof)
     for s in samples:
         print("  t=%5.2f  x=%7.1f  y=%7.1f  z=%6.2f  yaw=%6.1f  tilt=%5.2f  off=%6.2f"
               % (s[0], s[1], s[2], s[3], s[4], s[5], offset_mm(s[1], s[2])))
-    for name in os.listdir(OUT):
-        if name.startswith("frame") and name.endswith(".png"):
-            os.remove(os.path.join(OUT, name))
-    for i, img in enumerate(shots):
-        write_png(os.path.join(OUT, "frame%02d.png" % i), img)
+    if frames > 0:
+        for name in os.listdir(OUT):
+            if name.startswith("frame") and name.endswith(".png"):
+                os.remove(os.path.join(OUT, name))
+        for i, img in enumerate(shots):
+            write_png(os.path.join(OUT, "frame%02d.png" % i), img)
     print_metrics(metrics)
+    print("wall rest %.2f s  run %.2f s" % (t_rest - t0, t_run - t_rest))
     return metrics["pass"]
 
 
@@ -919,49 +1209,70 @@ def rnd(v, n=4):
     return round(float(v), n)
 
 
+def _row(offset, speed, mu_b, mu_c, metrics):
+    return {
+        "speed": speed,
+        "mu": mu_b,
+        "mu_curve": mu_c,
+        "offset_mm": offset,
+        "entry_offset_mm": rnd(metrics["entry_offset_mm"], 3),
+        "exit_offset_mm": rnd(metrics["exit_offset_mm"], 3),
+        "exit_yaw_deg": rnd(metrics["exit_yaw_deg"], 3),
+        "dip_mm": rnd(metrics["dip_mm"], 3),
+        "max_tilt_deg": rnd(metrics["max_tilt_deg"], 3),
+        "rail_contacts": metrics["rail_contacts"],
+        "reached": metrics["reached"],
+        "t_exit": rnd(metrics["t_exit"], 3),
+        "t_limit": rnd(metrics["t_limit"], 3),
+        "pass": metrics["pass"],
+        "yaw_error_deg": {k: rnd(v, 3) for k, v in metrics["yaw_error_deg"].items()},
+        "dip_where": metrics["dip_where"],
+        "tilt_where": metrics["tilt_where"],
+    }
+
+
+def _sweep_case(case):
+    offset, speed, mu_b, mu_c = case
+    _, metrics, _, _ = simulate(
+        speed, speed, mu_b, mu_c, offset, frames=0, visuals=False, announce_drive=False)
+    return _row(offset, speed, mu_b, mu_c, metrics)
+
+
 def run_sweep():
     # No frames. The matrix is the result, and a timed-out run is a failed row.
     print_spans()
     speeds = (0.03, 0.08, 0.155)
     mus = ((0.3, 0.25), (0.9, 0.35), (1.2, 0.5), (1.2, 0.25))
     offsets = (-8.0, 0.0, 8.0)
-    runs = []
+    cases = [(offset, speed, mu_b, mu_c)
+             for offset in offsets for speed in speeds for mu_b, mu_c in mus]
+    jobs = _argv("--jobs", max(1, (os.cpu_count() or 2) - 1))
+    print("sweep  %d runs  jobs %d  dt %.4g s  noslip %d"
+          % (len(cases), jobs, DT, int(NOSLIP)), flush=True)
+    # One announced check, at a speed the matrix actually runs. Workers check
+    # again at their own speed and only print if that check fails.
+    setup(0.155, 0.155, 0.9, 0.35, visuals=False, announce=True)
+    t0 = time.perf_counter()
+    with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as ex:
+        futs = [ex.submit(_sweep_case, case) for case in cases]
+        done = {}
+        for fut in concurrent.futures.as_completed(futs):
+            done[fut] = fut.result()
+            print("sweep finished %d/%d" % (len(done), len(futs)), flush=True)
+    runs = [done[fut] for fut in futs]
     all_pass = True
-    for offset in offsets:
-        for speed in speeds:
-            for mu_b, mu_c in mus:
-                _, metrics, _, _ = simulate(speed, speed, mu_b, mu_c, offset, frames=0)
-                row = {
-                    "speed": speed,
-                    "mu": mu_b,
-                    "mu_curve": mu_c,
-                    "offset_mm": offset,
-                    "entry_offset_mm": rnd(metrics["entry_offset_mm"], 3),
-                    "exit_offset_mm": rnd(metrics["exit_offset_mm"], 3),
-                    "exit_yaw_deg": rnd(metrics["exit_yaw_deg"], 3),
-                    "dip_mm": rnd(metrics["dip_mm"], 3),
-                    "max_tilt_deg": rnd(metrics["max_tilt_deg"], 3),
-                    "rail_contacts": metrics["rail_contacts"],
-                    "reached": metrics["reached"],
-                    "t_exit": rnd(metrics["t_exit"], 3),
-                    "t_limit": rnd(metrics["t_limit"], 3),
-                    "pass": metrics["pass"],
-                    "yaw_error_deg": {k: rnd(v, 3) for k, v in metrics["yaw_error_deg"].items()},
-                    "dip_where": metrics["dip_where"],
-                    "tilt_where": metrics["tilt_where"],
-                }
-                runs.append(row)
-                all_pass = all_pass and metrics["pass"]
-                print("speed %.3f  mu %.2f/%.2f  off %+4.0f  entry %s  exit %s  yaw %s  "
-                      "dip %s  tilt %s  rails %d  %s"
-                      % (speed, mu_b, mu_c, offset,
-                         fmt(row["entry_offset_mm"], "%.2f"),
-                         fmt(row["exit_offset_mm"], "%.2f"),
-                         fmt(row["exit_yaw_deg"], "%.1f"),
-                         fmt(row["dip_mm"], "%.2f"),
-                         fmt(row["max_tilt_deg"], "%.2f"),
-                         len(row["rail_contacts"]),
-                         "PASS" if row["pass"] else "FAIL"))
+    for row in runs:
+        all_pass = all_pass and row["pass"]
+        print("speed %.3f  mu %.2f/%.2f  off %+4.0f  entry %s  exit %s  yaw %s  "
+              "dip %s  tilt %s  rails %d  %s"
+              % (row["speed"], row["mu"], row["mu_curve"], row["offset_mm"],
+                 fmt(row["entry_offset_mm"], "%.2f"),
+                 fmt(row["exit_offset_mm"], "%.2f"),
+                 fmt(row["exit_yaw_deg"], "%.1f"),
+                 fmt(row["dip_mm"], "%.2f"),
+                 fmt(row["max_tilt_deg"], "%.2f"),
+                 len(row["rail_contacts"]),
+                 "PASS" if row["pass"] else "FAIL"))
     by_offset = {}
     for offset in offsets:
         group = [r for r in runs if r["offset_mm"] == offset and r["exit_offset_mm"] is not None]
@@ -985,6 +1296,13 @@ def run_sweep():
     with open(os.path.join(OUT, "sweep.json"), "w", encoding="utf-8") as fh:
         json.dump({"runs": runs, "summary": summary}, fh, indent=2)
         fh.write("\n")
+    worst = max(runs, key=lambda r: 1e9 if r["exit_yaw_deg"] is None else abs(r["exit_yaw_deg"] - 90.0))
+    ye = worst["yaw_error_deg"]
+    print("worst yaw  speed %.3f  mu %.2f/%.2f  off %+4.0f  entry %s  mid %s  exit-face %s  station %s"
+          % (worst["speed"], worst["mu"], worst["mu_curve"], worst["offset_mm"],
+             fmt(ye.get("entry_face"), "%.2f"), fmt(ye.get("mid_curve"), "%.2f"),
+             fmt(ye.get("exit_face"), "%.2f"), fmt(ye.get("exit_station"), "%.2f")))
+    print("sweep wall %.1f s" % (time.perf_counter() - t0))
     print("PASS" if all_pass else "FAIL")
     return all_pass
 
@@ -992,10 +1310,9 @@ def run_sweep():
 def run_viewer():
     # The only mode that puts the part back. An open line runs off the end,
     # and the viewer is a demo of the drive, not a measurement.
-    import time
     import mujoco.viewer
-    model, data, drive, rails, part_gid, part_bid = setup(
-        STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE)
+    model, data, drives, _rails, _part_gid, part_bid = setup(
+        STRAIGHT_SPEED, CURVE_SPEED, MU_BELT, MU_CURVE, visuals=True, announce=True)
     place_part(model, data, part_bid, ENTRY_OFFSET)
     end_y = S2["offset"][1] + straight_len
     with mujoco.viewer.launch_passive(model, data) as v:
@@ -1006,7 +1323,7 @@ def run_viewer():
         while v.is_running():
             t0 = time.time()
             for _ in range(20):
-                traction(model, data, drive, part_gid, part_bid)
+                kick(data, drives)
                 mujoco.mj_step(model, data)
             p = data.xpos[part_bid]
             if p[1] / MM > end_y or p[2] / MM < belt_top - 10:

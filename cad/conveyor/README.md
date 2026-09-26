@@ -212,77 +212,92 @@ Firmware is in [`hardware/conveyor/`](../../hardware/conveyor/README.md). `uv ru
 
 ## The sim
 
-Traction is per contact, not a drag at the centre of mass. The curve's surface speed is a rotation about the curve centre, Ω = curve speed / centreline radius, so it is faster on the outside of the part than on the inside. A single force at the centre cannot yaw the part with that field, and a hand-applied yaw torque would be deciding the number the sim is there to measure. Each contact contributes µN along the slip, regularised below 0.01 m/s so the step stays stable. A part with its weight on two modules is driven in proportion to where the weight sits. Straights use the same law. µ is 0.9 on the belts and 0.35 on the cones unless the flags say otherwise.
+The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part is set to 0.05 so the drive's value is the one that acts. Rails and walls are 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
+
+The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.39 s. The sweep takes 6.5 s on 15 workers.
+
+A part set down at rest on the cones, drives held, meets two rollers, 17 contacts on each, spread 32.3 mm along the crown. Tilt is 0.010°. It sits 0.240 mm above the height it rests at on s1. Both surfaces are at 31 mm. The belt's four contacts sink 0.25 mm and the cones' 34 sink 0.01 mm, and that difference is the 0.24 mm.
 
 The nominal run (0.155 m/s, µ 0.9 / 0.35, offset 0) **fails**. Exit code 1.
 
 | | |
 |---|---|
-| Entry offset | 0.00 mm |
-| Exit offset | −0.96 mm |
-| Exit yaw | 79.6° (limit is 90° ± 5°) |
-| Dip | 0.27 mm |
-| Max tilt | 1.9° |
+| Entry offset | −0.00 mm |
+| Exit offset | −2.46 mm |
+| Exit yaw | 84.7° (limit is 90° ± 5°) |
+| Dip | 0.12 mm, on s2 |
+| Max tilt | 0.38°, on s1 |
 | Rail contacts | none |
-| Time to the exit station | 1.37 s, limit 3.03 s |
+| Time to the exit station | 1.36 s, limit 3.03 s |
 
-The part stays on the centreline and does not dip or touch a rail. Through the curve its yaw rate matches the turn, but the heading sits about 6° behind the tangent. Once the velocity matches the field, slip is zero and friction has nothing left to torque against, so that lag freezes. The straight belt is a uniform velocity and cannot finish the turn. The exit heading is 79.6°.
+Yaw error against the path tangent: +0.57° at the entry face, −4.73° at mid-curve, −7.47° at the exit face, −5.34° at the exit station. The part turns with the rollers and sits a few degrees behind the tangent. The straight belt after the curve takes about two of those degrees back. It is one velocity across the whole part, so it cannot finish the correction, and 84.7° is the heading that remains.
+
+At the same speed with the friction matched, exit offset and exit yaw are:
+
+| µ belt / curve | off | exit offset | exit yaw | |
+|---|---|---|---|---|
+| 0.35/0.35 | −8 | −10.20 mm | 89.6° | FAIL, s2 outer rail |
+| 0.35/0.35 | 0 | −2.19 mm | 88.5° | PASS |
+| 0.35/0.35 | +8 | 6.36 mm | 91.2° | PASS |
+| 0.90/0.90 | −8 | −10.54 mm | 90.0° | FAIL, s2 outer rail |
+| 0.90/0.90 | 0 | −2.23 mm | 91.3° | PASS |
+| 0.90/0.90 | +8 | 6.00 mm | 93.2° | PASS |
 
 ### Sweep
 
-36 runs: three speeds, four friction pairs, three entry offsets. **5 pass, 31 fail.** Exit code 1. The spreads fail at every offset (limit 1.0 mm and 2.0°). Full rows are in `renders/sim/sweep.json`.
+36 runs: three speeds, four friction pairs, three entry offsets. **9 pass, 27 fail.** Exit code 1. The spreads fail at every offset (limit 1.0 mm and 2.0°). Full rows are in `renders/sim/sweep.json`. Nothing was changed to make a row pass.
 
 | speed | µ belt / curve | off | entry | exit | yaw | dip | tilt | rails | |
 |---|---|---|---|---|---|---|---|---|---|
-| 0.030 | 0.30/0.25 | −8 | −8.00 | −9.88 | 95.5 | 2.84 | 1.87 | 0 | FAIL |
-| 0.030 | 0.90/0.35 | −8 | −7.98 | −9.40 | 87.0 | 1.58 | 3.70 | 0 | FAIL |
-| 0.030 | 1.20/0.50 | −8 | −7.96 | −9.10 | 85.8 | 2.21 | 4.04 | 0 | FAIL |
-| 0.030 | 1.20/0.25 | −8 | −7.96 | −9.81 | 89.3 | 1.88 | 2.64 | 0 | FAIL |
-| 0.080 | 0.30/0.25 | −8 | −8.00 | −10.13 | 95.1 | 2.52 | 2.02 | 8 | FAIL |
-| 0.080 | 0.90/0.35 | −8 | −8.01 | −8.93 | 84.8 | 0.72 | 4.92 | 0 | FAIL |
-| 0.080 | 1.20/0.50 | −8 | −7.99 | −8.23 | 86.2 | 0.68 | 4.48 | 0 | PASS |
-| 0.080 | 1.20/0.25 | −8 | −7.99 | −8.55 | 86.9 | 0.78 | 4.22 | 0 | PASS |
-| 0.155 | 0.30/0.25 | −8 | −8.00 | −10.03 | 88.0 | 1.29 | 2.02 | 0 | FAIL |
-| 0.155 | 0.90/0.35 | −8 | −8.00 | −8.89 | 83.3 | 0.61 | 4.00 | 4 | FAIL |
-| 0.155 | 1.20/0.50 | −8 | −8.00 | −8.96 | 85.4 | 0.49 | 6.21 | 0 | FAIL |
-| 0.155 | 1.20/0.25 | −8 | −8.00 | −6.41 | 70.4 | 0.59 | 6.94 | 4 | FAIL |
-| 0.030 | 0.30/0.25 | 0 | 0.00 | −0.29 | 86.2 | 1.05 | 0.81 | 0 | FAIL |
-| 0.030 | 0.90/0.35 | 0 | 0.01 | −0.39 | 80.9 | 0.76 | 1.51 | 0 | FAIL |
-| 0.030 | 1.20/0.50 | 0 | 0.00 | −0.39 | 80.8 | 0.83 | 1.86 | 0 | FAIL |
-| 0.030 | 1.20/0.25 | 0 | 0.00 | −0.65 | 78.0 | 0.77 | 2.71 | 0 | FAIL |
-| 0.080 | 0.30/0.25 | 0 | 0.00 | −0.54 | 85.4 | 0.74 | 1.19 | 0 | PASS |
-| 0.080 | 0.90/0.35 | 0 | −0.01 | −0.57 | 79.8 | 0.63 | 2.79 | 0 | FAIL |
-| 0.080 | 1.20/0.50 | 0 | 0.05 | −0.41 | 80.4 | 0.52 | 2.82 | 0 | FAIL |
-| 0.080 | 1.20/0.25 | 0 | 0.05 | −0.97 | 77.4 | 0.52 | 4.38 | 0 | FAIL |
-| 0.155 | 0.30/0.25 | 0 | 0.00 | −1.23 | 83.7 | 0.24 | 1.54 | 0 | FAIL |
-| 0.155 | 0.90/0.35 | 0 | −0.00 | −0.96 | 79.6 | 0.27 | 1.90 | 0 | FAIL |
-| 0.155 | 1.20/0.50 | 0 | 0.01 | −0.92 | 79.7 | 0.25 | 2.20 | 0 | FAIL |
-| 0.155 | 1.20/0.25 | 0 | 0.01 | −1.81 | 74.4 | 0.53 | 2.62 | 0 | FAIL |
-| 0.030 | 0.30/0.25 | +8 | 8.00 | 6.75 | 84.3 | 1.46 | 0.44 | 0 | FAIL |
-| 0.030 | 0.90/0.35 | +8 | 8.01 | 7.07 | 76.8 | 1.11 | 0.72 | 0 | FAIL |
-| 0.030 | 1.20/0.50 | +8 | 8.04 | 7.45 | 75.4 | 0.97 | 1.53 | 0 | FAIL |
-| 0.030 | 1.20/0.25 | +8 | 8.04 | 6.94 | 73.4 | 1.20 | 1.44 | 0 | FAIL |
-| 0.080 | 0.30/0.25 | +8 | 8.00 | 6.64 | 86.5 | 0.89 | 0.37 | 0 | PASS |
-| 0.080 | 0.90/0.35 | +8 | 8.03 | 7.42 | 75.1 | 0.85 | 1.27 | 8 | FAIL |
-| 0.080 | 1.20/0.50 | +8 | 8.01 | 7.55 | 75.8 | 0.86 | 1.47 | 8 | FAIL |
-| 0.080 | 1.20/0.25 | +8 | 8.01 | 7.10 | 73.7 | 0.78 | 0.76 | 11 | FAIL |
-| 0.155 | 0.30/0.25 | +8 | 8.00 | 6.68 | 85.7 | 0.63 | 0.61 | 0 | PASS |
-| 0.155 | 0.90/0.35 | +8 | 8.01 | 6.40 | 73.4 | 0.49 | 1.79 | 0 | FAIL |
-| 0.155 | 1.20/0.50 | +8 | 8.00 | 7.50 | 75.5 | 0.47 | 0.73 | 6 | FAIL |
-| 0.155 | 1.20/0.25 | +8 | 8.00 | 6.53 | 70.4 | 0.50 | 2.10 | 5 | FAIL |
+| 0.030 | 0.30/0.25 | −8 | −8.00 | −8.51 | 88.4 | 0.00 | 0.49 | 0 | PASS |
+| 0.030 | 0.90/0.35 | −8 | −8.00 | −8.54 | 81.9 | 0.00 | 0.49 | 0 | FAIL |
+| 0.030 | 1.20/0.50 | −8 | −8.00 | −8.41 | 83.2 | 0.00 | 0.50 | 0 | FAIL |
+| 0.030 | 1.20/0.25 | −8 | −8.00 | −8.72 | 79.4 | 0.00 | 0.50 | 5 | FAIL |
+| 0.080 | 0.30/0.25 | −8 | −8.00 | −9.38 | 88.7 | 0.00 | 0.44 | 0 | PASS |
+| 0.080 | 0.90/0.35 | −8 | −8.00 | −9.40 | 83.6 | 0.00 | 0.45 | 0 | FAIL |
+| 0.080 | 1.20/0.50 | −8 | −8.00 | −9.43 | 84.3 | 0.00 | 0.46 | 0 | FAIL |
+| 0.080 | 1.20/0.25 | −8 | −8.00 | −8.54 | 78.6 | 0.00 | 0.44 | 7 | FAIL |
+| 0.155 | 0.30/0.25 | −8 | −8.00 | −10.34 | 90.2 | 0.11 | 0.44 | 5 | FAIL |
+| 0.155 | 0.90/0.35 | −8 | −8.00 | −4.69 | 35.9 | 0.08 | 0.50 | 15 | FAIL |
+| 0.155 | 1.20/0.50 | −8 | −8.00 | −9.42 | 83.5 | 0.09 | 0.36 | 7 | FAIL |
+| 0.155 | 1.20/0.25 | −8 | −8.00 | −4.40 | 39.5 | 0.08 | 0.36 | 13 | FAIL |
+| 0.030 | 0.30/0.25 | 0 | −0.00 | −0.44 | 86.8 | 0.00 | 0.47 | 0 | PASS |
+| 0.030 | 0.90/0.35 | 0 | −0.00 | −0.59 | 81.9 | 0.00 | 0.56 | 0 | FAIL |
+| 0.030 | 1.20/0.50 | 0 | −0.00 | −0.60 | 82.8 | 0.00 | 0.55 | 0 | FAIL |
+| 0.030 | 1.20/0.25 | 0 | −0.00 | −0.79 | 76.9 | 0.00 | 0.56 | 0 | FAIL |
+| 0.080 | 0.30/0.25 | 0 | −0.00 | −1.20 | 87.6 | 0.00 | 0.44 | 0 | PASS |
+| 0.080 | 0.90/0.35 | 0 | 0.00 | −1.28 | 84.7 | 0.00 | 0.54 | 0 | FAIL |
+| 0.080 | 1.20/0.50 | 0 | 0.00 | −1.22 | 86.5 | 0.00 | 0.60 | 0 | PASS |
+| 0.080 | 1.20/0.25 | 0 | 0.00 | −1.41 | 81.2 | 0.00 | 0.60 | 0 | FAIL |
+| 0.155 | 0.30/0.25 | 0 | 0.00 | −2.42 | 89.1 | 0.11 | 0.45 | 0 | PASS |
+| 0.155 | 0.90/0.35 | 0 | −0.00 | −2.46 | 84.7 | 0.12 | 0.38 | 0 | FAIL |
+| 0.155 | 1.20/0.50 | 0 | −0.00 | −2.54 | 83.8 | 0.12 | 0.38 | 0 | FAIL |
+| 0.155 | 1.20/0.25 | 0 | −0.00 | −2.46 | 81.3 | 0.12 | 0.38 | 0 | FAIL |
+| 0.030 | 0.30/0.25 | +8 | 8.00 | 7.71 | 86.9 | 0.00 | 0.47 | 0 | PASS |
+| 0.030 | 0.90/0.35 | +8 | 8.00 | 7.34 | 81.3 | 0.00 | 0.55 | 0 | FAIL |
+| 0.030 | 1.20/0.50 | +8 | 8.00 | 7.78 | 80.0 | 0.00 | 0.54 | 0 | FAIL |
+| 0.030 | 1.20/0.25 | +8 | 8.00 | 7.37 | 76.1 | 0.00 | 0.53 | 0 | FAIL |
+| 0.080 | 0.30/0.25 | +8 | 8.00 | 6.93 | 92.0 | 0.00 | 0.44 | 0 | PASS |
+| 0.080 | 0.90/0.35 | +8 | 8.00 | 6.76 | 83.9 | 0.00 | 0.54 | 0 | FAIL |
+| 0.080 | 1.20/0.50 | +8 | 8.00 | 6.72 | 83.8 | 0.00 | 0.55 | 0 | FAIL |
+| 0.080 | 1.20/0.25 | +8 | 8.00 | 6.92 | 81.1 | 0.00 | 0.54 | 0 | FAIL |
+| 0.155 | 0.30/0.25 | +8 | 8.00 | 5.86 | 86.7 | 0.11 | 0.44 | 0 | PASS |
+| 0.155 | 0.90/0.35 | +8 | 8.00 | 6.13 | 83.6 | 0.12 | 0.50 | 0 | FAIL |
+| 0.155 | 1.20/0.50 | +8 | 8.00 | 5.92 | 81.9 | 0.12 | 0.35 | 0 | FAIL |
+| 0.155 | 1.20/0.25 | +8 | 8.00 | 5.96 | 75.1 | 0.09 | 0.42 | 0 | FAIL |
 
 | entry offset | exit-offset spread | exit-yaw spread | |
 |---|---|---|---|
-| −8 mm | 3.73 mm | 25.1° | FAIL |
-| 0 | 1.52 mm | 11.8° | FAIL |
-| +8 mm | 1.15 mm | 16.0° | FAIL |
+| −8 mm | 5.94 mm | 54.3° | FAIL |
+| 0 | 2.10 mm | 12.2° | FAIL |
+| +8 mm | 1.92 mm | 16.9° | FAIL |
 
 What the failures are:
 
-- **Yaw** is the common one. Higher cone friction locks the heading in sooner, so the lag is larger. The slick-cone rows (µ 0.25) are the ones that sometimes land inside 5° of 90°. The grippy-belt / slick-cone pair (1.2 / 0.25) is the worst heading, down to 70°.
-- **Dip** is over 1 mm at 0.03 m/s on every offset, and at 0.155 m/s on the outer entry. The outer joint span is 15.5 mm. A slow part settles into it.
-- **Rails.** An inside entry (+8 mm) meets the curve's inner wall at the exit end of the arc (`c_in16`, `c_in17`). A few outer and high-friction runs meet s2's outer plate (`s2_rail0`).
-- **Routing is not independent of speed and friction.** The same entry offset does not come out in the same place.
+- **Yaw** is the common one, 26 rows. A grippier belt than the cones leaves the part behind the tangent. The close pair (0.30 / 0.25) is the one that usually lands inside 5° of 90°. The worst row is not a small lag: 0.155 m/s, µ 0.9 / 0.35, offset −8, exit yaw 35.9°. Its yaw error is +0.58° at the entry face, −6.25° at mid-curve, −44.4° at the exit face and −54.1° at the station, and it meets `s2_rail0`.
+- **Dip and tilt** are not failures. The largest dip is 0.12 mm and the largest tilt is 0.60°.
+- **Rails.** Six rows, and every contact is `s2_rail0`, the outer plate of s2. They are the outer entry, mostly at 0.155 m/s.
+- **Routing is not independent of speed and friction.** The same entry offset does not come out in the same place. The spreads fail at every offset.
 
 ---
 
