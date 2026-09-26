@@ -190,7 +190,8 @@ oring_cs        = 2.0
 oring_stretch   = 0.10     # installed stretch on the centreline; nitrile, lightly loaded, window 0.06–0.15
 spool_shoulder  = 2.5      # plan-radius land ahead of groove A and past groove B
 spool_groove_gap = 4.0     # plan radius between groove A and groove B
-groove_extra    = 0.15     # groove tube is the cord radius plus this, so the ring is not a press fit
+groove_extra    = 0.15     # under a centred cord; the floor stays at the pitch radius minus this and the cord radius
+groove_margin   = 0.1      # flanks sit this far past the axial drift
 groove_flange   = 0.6      # spool OD at a groove is D + this·cs; the cord then sits just inside the lips
 oring_min_bend  = 4.0      # pitch diameter at least this many cord-widths
 oring_below_top = 1.0      # ring crown this far below the carry surface
@@ -434,6 +435,113 @@ def passing_id_window():
 
 id_lo, id_hi = passing_id_window()
 
+
+def _dist_roller(s, rho):
+    # Distance from an axis-frame point to the roller before the groove is cut.
+    def cyl(s0, s1, radius):
+        if s0 <= s <= s1:
+            return max(0.0, rho - radius)
+        end = s0 if s < s0 else s1
+        if rho <= radius:
+            return abs(s - end)
+        return math.hypot(s - end, rho - radius)
+
+    if s_a <= s <= s_b:
+        cone = max(0.0, rho - s * math.tan(curve_alpha))
+    elif s > s_b:
+        rend = s_b * math.tan(curve_alpha)
+        cone = (s - s_b) if rho <= rend else math.hypot(s - s_b, rho - rend)
+    else:
+        r0 = s_a * math.tan(curve_alpha)
+        cone = (s_a - s) if rho <= r0 else math.hypot(s_a - s, rho - r0)
+    return min(cone,
+               cyl(s_b - 0.15, s_mid, R_spool_A),
+               cyl(s_mid - 0.05, s_spool_end, R_spool_B))
+
+
+def _off_circle(point, centre, axis, radius):
+    rel = vsub(point, centre)
+    h = vdot(rel, axis)
+    radial = vsub(rel, vmul(axis, h))
+    rho = math.sqrt(max(0.0, vdot(radial, radial)))
+    return math.sqrt(h * h + (rho - radius) ** 2), vdot(point, axis), rho
+
+
+def wrap_rim_offset(theta_here, theta_other, s_g, radius):
+    # Fleet is axial: the tangent leaves the groove plane at sin(φ/2) per mm.
+    # The centre clears the rim radially before that axial offset can become
+    # the full 3D miss, so the number that widens the flanks is the axial one.
+    u1 = axis_u(theta_here)
+    u2 = axis_u(theta_other)
+    c1 = vmul(u1, s_g)
+    c2 = vmul(u2, s_g)
+    w = vnorm(vcross(u1, u2))
+    direction = vnorm(vsub(c2, c1))
+    span = vsub(c2, c1).Length
+
+    def at(d, sign):
+        point = vadd(vadd(c1, vmul(w, sign * radius)), vmul(direction, d))
+        _delta, s, rho = _off_circle(point, c1, u1, radius)
+        h = vdot(vsub(point, c1), u1)
+        inside = _dist_roller(s, rho) <= 1e-9
+        return inside, abs(h), rho - radius
+
+    axial, radial = 0.0, 0.0
+    for sign in (1.0, -1.0):
+        if not at(0.0, sign)[0]:
+            continue
+        lo, hi = 0.0, span
+        if not at(span, sign)[0]:
+            for _ in range(40):
+                mid = 0.5 * (lo + hi)
+                if at(mid, sign)[0]:
+                    lo = mid
+                else:
+                    hi = mid
+        else:
+            lo = span
+        _inside, h, dr = at(lo, sign)
+        if h > axial:
+            axial, radial = h, dr
+    return axial, radial
+
+
+def seated_stretch(theta_a, theta_b, s_g, radius):
+    # Centreline on the pitch circle through each wrap, and the real tangent
+    # between those two circles. That is the path tension actually takes.
+    u1 = axis_u(theta_a)
+    u2 = axis_u(theta_b)
+    c1 = vmul(u1, s_g)
+    c2 = vmul(u2, s_g)
+    w = vnorm(vcross(u1, u2))
+    span = vsub(vadd(c2, vmul(w, radius)), vadd(c1, vmul(w, radius))).Length
+    installed = 2.0 * span + 2.0 * math.pi * radius
+    free = math.pi * (oring_id + oring_cs)
+    return installed / free - 1.0
+
+
+def wrap_deviation_rows():
+    rows = []
+    worst = 0.0
+    for i in range(curve_n - 1):
+        groove = "A" if (i + 1) % 2 == 1 else "B"
+        r_g = r_gA if groove == "A" else r_gB
+        D = D_A if groove == "A" else D_B
+        s_g = r_g * ca
+        radius = D / 2.0
+        h_a, dr_a = wrap_rim_offset(thetas[i], thetas[i + 1], s_g, radius)
+        h_b, dr_b = wrap_rim_offset(thetas[i + 1], thetas[i], s_g, radius)
+        stretch = seated_stretch(thetas[i], thetas[i + 1], s_g, radius)
+        rows.append((i + 1, i + 2, groove, radius, h_a, dr_a, h_b, dr_b, stretch))
+        worst = max(worst, h_a, h_b)
+    return rows, worst
+
+
+wrap_rows, wrap_axial = wrap_deviation_rows()
+# Floor stays put. The original circular section is swept along the axis.
+groove_section_r = oring_cs / 2.0 + groove_extra
+groove_axial = wrap_axial + groove_margin
+
 # Curve enclosure: 16 mm side vertical, 24 mm side horizontal, ears ±pitch.
 u_drv, e_th_drv, e_up_drv = axis_frame(thetas[curve_driven - 1])
 s_face = s_on_cylinder(r_ow1, encl_ear_pitch, 0.0) + pad_bolt_t
@@ -554,6 +662,26 @@ def main():
     step("oring B: c=%.3f D=%.3f crown_clear=%.3f stretch=%.3f"
          % (c_B, D_B, clear_B, oring_stretch))
     step("oring id window at cs=%.2f: %.3f .. %.3f mm" % (oring_cs, id_lo, id_hi))
+    for n1, n2, groove, radius, h_a, dr_a, h_b, dr_b, stretch in wrap_rows:
+        step("oring %d-%d groove %s  axial drift %.3f / %.3f mm  radial at rim %.3f"
+             % (n1, n2, groove, h_a, h_b, max(dr_a, dr_b)))
+        step("oring %d-%d  pitch r %.3f  seat r %.3f  stretch %.4f"
+             % (n1, n2, radius, radius - groove_section_r, stretch))
+        require(abs(stretch - oring_stretch) <= 0.01,
+                "oring %d-%d stretch %.4f is outside %.2f ± 0.01"
+                % (n1, n2, stretch, oring_stretch))
+    step("groove section r %.3f mm  axial sweep +/- %.3f mm  floor at pitch r - %.3f"
+         % (groove_section_r, groove_axial, groove_section_r))
+    shoulder = min(s_gA - (s_b - 0.15), s_mid - s_gA,
+                   s_gB - (s_mid - 0.05), s_spool_end - s_gB)
+    flank = groove_axial + groove_section_r
+    require(flank < shoulder,
+            "groove flank (%.3f mm) breaks the spool shoulder (%.3f)"
+            % (flank, shoulder))
+    bore_room = min(D_A, D_B) / 2.0 - cone_bore_d / 2.0
+    require(groove_section_r < bore_room,
+            "groove floor (section %.3f) reaches the bore (room %.3f)"
+            % (groove_section_r, bore_room))
     step("spool OD radius A=%.3f B=%.3f" % (R_spool_A, R_spool_B))
     step("clearance small-end cones %.3f mm; spool A at s_b %.3f; spool B at mid %.3f"
          % (small_end_clear, spool_clear_A, spool_clear_B))
@@ -739,6 +867,7 @@ def main():
     for ang in bolt_angles:
         # Boss first, then the clearance hole, so the boss cannot plug the hole.
         frame = add_keeper_nut(frame, ang, z_bolt)
+        frame = frame.cut(keeper_top_slot(ang, z_bolt))
         cutter = radial_hole(ang, z_bolt, m3_clear / 2.0, r_ow0 - 0.05,
                              r_ow1 + keeper_t + 1.0)
         frame = frame.cut(cutter)
@@ -779,6 +908,15 @@ def main():
                 "oring %d-%d reaches z=%.3f" % (i + 1, i + 2, bb.ZMax))
         links.append(link)
         link_spec.append((i, groove, link))
+    real_orings = []
+    for i in range(curve_n - 1):
+        groove = "A" if (i + 1) % 2 == 1 else "B"
+        r_g = r_gA if groove == "A" else r_gB
+        D = D_A if groove == "A" else D_B
+        solid = make_oring_real(thetas[i], thetas[i + 1], r_g, D)
+        real_orings.append(solid)
+        step("oring real %d-%d volume %.0f mm^3" % (i + 1, i + 2, abs(solid.Volume)))
+        require(abs(solid.Volume) > 10.0, "oring %d-%d path did not build" % (i + 1, i + 2))
 
     # ---------------------------------------------------------------- placed line
     step("--- placed line ---")
@@ -832,8 +970,8 @@ def main():
         w = placed_straight("s1", 0.0, None) + placed_straight("s2", 90.0, s2_off)
         for i, sol in enumerate(placed):
             w.append(("cone_%d" % (i + 1), sol))
-        for i, link in enumerate(links):
-            w.append(("oring_%d" % (i + 1), link))
+        for i, link in enumerate(real_orings):
+            w.append(("oringR_%d" % (i + 1), link))
         w.append(("frame", frame))
         w.append(("keeper", keeper))
         w.append(("curve_motor", encl_curve))
@@ -870,6 +1008,7 @@ def main():
         require(d_pf >= 0.5, "%s plain plate meets the curve frame (%.3f mm)" % (tag, d_pf))
 
     check_holes()
+    audit_nuts(br_motor, br_plain, tie_in, frame)
     check_published_rods(world)
     # The belt solid is the tensioned path. At slack that shape is not on the
     # machine yet — the loop is being slid on — so it is not a collision.
@@ -1235,27 +1374,37 @@ def tongue_grooves():
             (gz0 - fit_gap, gz1 + fit_gap, gx0 - fit_gap, gx1 + fit_gap))
 
 
+def jack_stack():
+    # Block-side nut, then a web, then the head-side nut, then the web the
+    # reaction bears on. Each nut then has plastic on the side the screw
+    # pushes it when the tip drives the block.
+    a0 = nose_edge + block_front + nose_travel
+    a1 = a0 + m3_nut_depth
+    b0 = a1 + nut_land
+    b1 = b0 + m3_nut_depth
+    return a0, a1, b0, b1
+
+
 def jack_boss(y0, y1):
     # Fixed nut stack inboard of the sliding block. The screw points at the
     # module face and the belt keeps the block against the tip.
-    ax0, _ = roller_axis_x(straight_len)
-    face = ax0 + block_front          # block's inboard face at full take-up
-    nut0 = face + nose_travel         # tip stick-out equals the travel, so at
-    nut1 = nut0 + jack_nut_depth      # slack the tip is flush with the nut
+    a0, a1, b0, b1 = jack_stack()
     z = nose_z
-    # Wider than the screw axis span: an M3 nut's points are 6.7 mm across,
-    # and the block is only 6 mm, so the boss has to grow or the pocket breaks out.
-    # The block's slack face lands on x = nut0. Starting the boss there keeps
-    # that face a shared plane instead of a bite into the boss.
-    boss = Part.makeBox(nut1 - nut0 + 1.2, (y1 - y0) + 3.0, 10.0,
-                         Vector(nut0, y0 - 1.5, z - 5.0))
-    # Pocket opens toward the block, which is off while the nuts go in.
-    if nut1 >= nut0:
-        boss = boss.cut(hex_along_x(m3_nut_af, nut0 - 0.2, nut0 + jack_nut_depth,
-                                     (y0 + y1) / 2.0, z))
+    y = (y0 + y1) / 2.0
+    rv = hex_Rv(m3_nut_af)
+    # The block's slack face lands on x = a0. The boss starts there.
+    boss = Part.makeBox((b1 + nut_land) - a0, (y1 - y0) + 3.0, 10.0,
+                         Vector(a0, y0 - 1.5, z - 5.0))
+    # Block-side nut slides in along the screw, from the open face.
+    boss = boss.cut(hex_along_x(m3_nut_af, a0 - 0.3, a1, y, z))
+    # Head-side nut is between two webs, so it comes in from above.
+    boss = boss.cut(hex_along_x(m3_nut_af, b0, b1, y, z))
+    # Up and out of the plate's bounding box. The head-side nut is between webs.
+    boss = boss.cut(Part.makeBox(b1 - b0, 2.0 * rv, (bracket_h + 25.0) - (z - rv),
+                                  Vector(b0, y - rv, z - rv)))
     boss = boss.cut(Part.makeCylinder(
-        m3_clear / 2.0, (nut1 - nut0) + 4.0,
-        Vector(nut0 - 2.0, (y0 + y1) / 2.0, z), Vector(1, 0, 0)))
+        m3_clear / 2.0, (b1 + nut_land) - a0 + 1.0,
+        Vector(a0 - 0.5, y, z), Vector(1, 0, 0)))
     return boss
 
 
@@ -1359,14 +1508,18 @@ def make_tie_bar(x_c):
     step("tie bar: x=%.1f" % x_c)
     bar = Part.makeBox(2.0 * tie_half, inner_width, tie_t,
                         Vector(x_c - tie_half, wall, tie_z0))
+    rv = hex_Rv(m3_nut_af)
     for y_face, inward in ((wall, 1.0), (wall + inner_width, -1.0)):
-        y_nut = y_face + inward * m3_nut_depth
-        # Open the pocket on the plate face so the nut goes in before the plate.
-        bar = bar.cut(hex_along_y(
-            m3_nut_af,
-            min(y_face, y_nut) - (0.3 if inward < 0 else 0.0),
-            max(y_face, y_nut) + (0.3 if inward > 0 else 0.0),
-            x_c, tie_bolt_z))
+        # Web toward the plate, so a plate pulling away takes the nut with
+        # the bar and not out of it. The nut slides in from the upright's end.
+        y_load = y_face + inward * nut_land
+        y_far = y_load + inward * m3_nut_depth
+        y_lo, y_hi = (y_load, y_far) if y_load < y_far else (y_far, y_load)
+        bar = bar.cut(hex_along_y(m3_nut_af, y_lo, y_hi, x_c, tie_bolt_z))
+        # Out the upright's +X end. The channel is the whole hex, points included.
+        bar = bar.cut(Part.makeBox(
+            tie_half + 2.0 * rv + 2.4, y_hi - y_lo, 2.0 * rv + 0.4,
+            Vector(x_c - rv - 0.2, y_lo, tie_bolt_z - rv - 0.2)))
         # Past the nut the hole is clearance: an M3×8 tip must not hit plastic.
         reach = m3_tie_len - wall
         hy0 = y_face - 0.4 if inward > 0 else y_face - reach - 0.4
@@ -1518,6 +1671,41 @@ def make_joiner():
     return plate
 
 
+def pad_bounds(pts):
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return (min(xs) - pad_margin, max(xs) + pad_margin,
+            min(ys) - pad_margin, max(ys) + pad_margin)
+
+
+def _pad_exit(x, y, x0, x1, y0, y1):
+    # The outer wall stands past the pad, so a slot aimed away from the curve
+    # centre runs into it. The nut leaves through the nearer joint face.
+    to_entry = (x0 + x1) * 0.5 - cx
+    to_exit = cy - (y0 + y1) * 0.5
+    if to_entry <= to_exit:
+        return Vector(-1, 0, 0), 0.0, x - cx
+    return Vector(0, 1, 0), 0.0, cy - y
+
+
+def pad_nut_slot(x, y, z0, z1, rv, x0, x1, y0, y1):
+    direction, _align, dist = _pad_exit(x, y, x0, x1, y0, y1)
+    span = dist + rv + 2.0
+    wide = 2.0 * rv + 0.4
+    if direction.x > 0:
+        return Part.makeBox(span, wide, z1 - z0, Vector(x - rv, y - rv - 0.2, z0))
+    if direction.x < 0:
+        return Part.makeBox(span, wide, z1 - z0, Vector(x + rv - span, y - rv - 0.2, z0))
+    if direction.y > 0:
+        return Part.makeBox(wide, span, z1 - z0, Vector(x - rv - 0.2, y - rv, z0))
+    return Part.makeBox(wide, span, z1 - z0, Vector(x - rv - 0.2, y + rv - span, z0))
+
+
+def pad_slot_dir(x, y, x0, x1, y0, y1):
+    direction, _align, dist = _pad_exit(x, y, x0, x1, y0, y1)
+    return direction, dist + hex_Rv(m3_nut_af) + 2.0
+
+
 def add_joint_pads(frame):
     # The curve's base is at z = wall. These pads bring two patches under the
     # lane, one at each face, up to the joint plane so a joiner can sit flat
@@ -1526,13 +1714,20 @@ def add_joint_pads(frame):
     entry, exit_pad = joint_pad_boxes()
     frame = frame.fuse(entry).fuse(exit_pad)
     z_open = z_j - web
-    for x_h, y_h, dia in joint_curve_holes():
+    holes = joint_curve_holes()
+    bounds = (pad_bounds(holes[:2]), pad_bounds(holes[2:]))
+    rv = hex_Rv(m3_nut_af)
+    for i, (x_h, y_h, dia) in enumerate(holes):
         frame = frame.cut(Part.makeCylinder(5.0, z_open + 0.2, Vector(x_h, y_h, -0.2),
                                              Vector(0, 0, 1)))
-        frame = frame.cut(hex_along_z(m3_nut_af, z_open - 0.1, z_open + m3_nut_depth, x_h, y_h))
+        frame = frame.cut(hex_along_z(m3_nut_af, z_open, z_open + m3_nut_depth, x_h, y_h))
         frame = frame.cut(Part.makeCylinder(dia / 2.0, web + 2.0,
                                              Vector(x_h, y_h, z_open + m3_nut_depth - 0.3),
                                              Vector(0, 0, 1)))
+        # The pad is solid below the pocket, so the nut slides in from the side.
+        x0, x1, y0, y1 = bounds[0 if i < 2 else 1]
+        frame = frame.cut(pad_nut_slot(x_h, y_h, z_open, z_open + m3_nut_depth,
+                                        rv, x0, x1, y0, y1))
     return frame
 
 
@@ -1626,9 +1821,10 @@ def make_cone_roller(driven):
                                         Vector(s_b - 0.15, 0, 0), Vector(1, 0, 0)))
     body = body.fuse(Part.makeCylinder(R_spool_B, s_spool_end - s_mid + 0.05,
                                         Vector(s_mid - 0.05, 0, 0), Vector(1, 0, 0)))
-    minor = oring_cs / 2.0 + groove_extra
-    body = body.cut(groove_torus(s_gA, D_A / 2.0, minor))
-    body = body.cut(groove_torus(s_gB, D_B / 2.0, minor))
+    # Same floor as the original round section. The flanks are swept along
+    # the axis so the fleet angle clears them without dropping the seat.
+    body = body.cut(groove_stadium(s_gA, D_A / 2.0, groove_section_r, groove_axial))
+    body = body.cut(groove_stadium(s_gB, D_B / 2.0, groove_section_r, groove_axial))
     bore_r = cone_bore_d / 2.0
     if not driven:
         return body.cut(Part.makeCylinder(
@@ -1656,6 +1852,19 @@ def groove_torus(s_g, major, minor):
     circ = Part.makeCircle(minor, Vector(s_g, 0, major), Vector(0, 1, 0))
     face = Part.Face(Part.Wire([circ]))
     return face.revolve(Vector(0, 0, 0), Vector(1, 0, 0), 360)
+
+
+def groove_stadium(s_g, major, section_r, axial):
+    # Circle of the original section, swept ±axial. Floor radius is
+    # major - section_r on the whole flat, and the end bulbs do not go deeper.
+    inner = major - section_r
+    outer = major + section_r
+    span = 2.0 * axial + 0.2
+    tube = Part.makeCylinder(outer, span, Vector(s_g - axial - 0.1, 0, 0), Vector(1, 0, 0))
+    tube = tube.cut(Part.makeCylinder(inner, span + 0.4,
+                                       Vector(s_g - axial - 0.3, 0, 0), Vector(1, 0, 0)))
+    return tube.fuse(groove_torus(s_g - axial, major, section_r)).fuse(
+        groove_torus(s_g + axial, major, section_r))
 
 
 def place_cone(shape, theta_deg):
@@ -1743,7 +1952,12 @@ def make_curve_frame():
         p0 = vadd(A, vadd(vmul(u_drv, s_boss_in - 0.4), vmul(e_th_drv, h)))
         frame = frame.cut(Part.makeCylinder(
             m4_clear / 2.0, s_face - s_boss_in + 1.2, p0, u_drv))
-        frame = frame.cut(hex_along_u(m4_nut_af, s_nut_far - 0.2, s_nut_near, h, 0.0))
+        frame = frame.cut(hex_along_u(m4_nut_af, s_nut_far, s_nut_near, h, 0.0))
+        # The bore is the only axial opening, so the nut drops in from above.
+        frame = frame.cut(apply_frame(
+            Part.makeBox(s_nut_near - s_nut_far, 2.0 * m4_Rv + 0.4, 40.0 + m4_Rv,
+                         Vector(s_nut_far, h - m4_Rv - 0.2, -m4_Rv)),
+            A, u_drv, e_th_drv, e_up_drv))
 
     # s1's enclosure overhangs the discharge face into the empty centre. The
     # inner wall's entry end would meet it. Cut the bbox, grown, out of the frame.
@@ -1834,10 +2048,8 @@ def make_oring_link(theta_a, theta_b, r_g, D):
     ez = vnorm(vcross(ex, ey))
     if ez.z < 0.0:
         ez = vmul(ez, -1.0)
-    # The ignored skew between the two axles walks the straight run off the
-    # groove centre. A full cord then clips the flange; the groove itself is
-    # cut for the real cord (cs/2 + 0.15). The picture uses a thinner section
-    # so the ring stays in the groove.
+    # Picture only. The real cord, skew included, is what the interference
+    # check holds. This section is thinner so the drawing stays in the groove.
     local = oring_stadium((P2 - P1).Length, D / 2.0, oring_cs / 2.0 * 0.45)
     return apply_frame(local, P1, ex, ey, ez)
 
@@ -2013,8 +2225,10 @@ def stub_cut_length():
 
 
 def hex_prism(af, origin, direction, length):
+    # Vertical pockets are cut with a vertex up. The same basis here, so the
+    # sweep prism is the pocket and not a 30° turn of it.
     d = vnorm(direction)
-    tmp = Vector(0, 0, 1) if abs(d.z) < 0.9 else Vector(1, 0, 0)
+    tmp = Vector(0, 0, 1) if abs(d.z) < 0.9 else Vector(0, 1, 0)
     x = vnorm(vcross(tmp, d))
     y = vnorm(vcross(d, x))
     rv = hex_Rv(af)
@@ -2027,6 +2241,20 @@ def hex_prism(af, origin, direction, length):
     return Part.Face(Part.makePolygon(pts)).extrude(vmul(d, length))
 
 
+def keeper_top_slot(ang, z):
+    # The inner mouth faces the inner wall, so the straight axial path hits it.
+    # The nut comes in from the top of the outer wall instead.
+    th = math.radians(ang)
+    er = Vector(math.cos(th), math.sin(th), 0.0)
+    et = Vector(-math.sin(th), math.cos(th), 0.0)
+    rv = hex_Rv(m3_nut_af)
+    r0 = r_ow0 - m3_nut_depth
+    box = Part.makeBox(m3_nut_depth, 2.0 * rv, (bracket_h + 20.0) - (z - rv),
+                        Vector(0.0, -rv, z - rv))
+    return apply_frame(box, Vector(cx + er.x * r0, cy + er.y * r0, 0.0),
+                        er, et, Vector(0, 0, 1))
+
+
 def add_keeper_nut(frame, ang, z):
     # The outer wall is 3 mm and the nut is 2.6, so the nut lives in a boss on
     # the inner face. An M3×10 then crosses the keeper, the wall and the nut.
@@ -2036,8 +2264,8 @@ def add_keeper_nut(frame, ang, z):
     origin = Vector(cx + er.x * r_far, cy + er.y * r_far, z)
     boss_r = hex_Rv(m3_nut_af) + 1.2
     frame = frame.fuse(Part.makeCylinder(boss_r, m3_nut_depth + 0.4, origin, er))
-    opened = Vector(cx + er.x * (r_far - 0.3), cy + er.y * (r_far - 0.3), z)
-    return frame.cut(hex_prism(m3_nut_af, opened, er, m3_nut_depth + 0.5))
+    # Stop on the wall face. Opening past it eats the web the nut bears on.
+    return frame.cut(hex_prism(m3_nut_af, origin, er, m3_nut_depth))
 
 
 def _module_point(x, y, z, rot, offset, double_mirror):
@@ -2063,10 +2291,10 @@ def _module_dir(dx, dy, dz, rot, double_mirror):
     return Vector(dx, dy, dz)
 
 
-def _spec(name, p0, direction, length, dia, nut_near, nut_far, size, where, nuts):
+def _spec(name, p0, direction, length, dia, nut_near, nut_far, size, where, nuts, spans=None):
     return {"name": name, "p0": p0, "dir": direction, "length": length, "dia": dia,
             "nut_near": nut_near, "nut_far": nut_far, "size": size, "where": where,
-            "nuts": nuts}
+            "nuts": nuts, "spans": spans or ((nut_near, nut_far),)}
 
 
 def joiner_screw_defs(origin_xy, ax, ay, tag):
@@ -2089,22 +2317,23 @@ def joiner_screw_defs(origin_xy, ax, ay, tag):
 def screw_specs(shift, s2_off):
     specs = []
     tip0 = nose_edge + block_front
-    nut0 = tip0 + nose_travel
     modules = ((0.0, None), (90.0, s2_off))
     for rot, offset in modules:
         for mirrored in (False, True):
             p0x = tip0 + shift + m3_jack_len
             p0 = _module_point(p0x, -block_out / 2.0, nose_z, rot, offset, mirrored)
             d = _module_dir(-1.0, 0.0, 0.0, rot, mirrored)
+            a0, a1, b0, b1 = jack_stack()
             specs.append(_spec("jack", p0, d, m3_jack_len, 3.0,
-                                p0x - (nut0 + jack_nut_depth), p0x - nut0,
-                                "M3", "tensioner jacks", 2))
+                                p0x - a1, p0x - a0,
+                                "M3", "tensioner jacks", 2,
+                                spans=((p0x - a1, p0x - a0), (p0x - b1, p0x - b0))))
         for x in (x_tie_in, x_tie_out):
             for mirrored in (False, True):
                 p0 = _module_point(x, 0.0, tie_bolt_z, rot, offset, mirrored)
                 d = _module_dir(0.0, 1.0, 0.0, rot, mirrored)
                 specs.append(_spec("tie", p0, d, m3_tie_len, 3.0,
-                                    wall, wall + m3_nut_depth,
+                                    wall + nut_land, wall + nut_land + m3_nut_depth,
                                     "M3", "tie bars", 1))
         for sign in (-1.0, 1.0):
             p0 = _module_point(nose_x, -encl_ear_t, nose_z + sign * encl_ear_pitch,
@@ -2151,15 +2380,18 @@ def check_screws(parts, specs, jacks_only):
     for spec in specs:
         if jacks_only and spec["where"] != "tensioner jacks":
             continue
-        nut_t = spec["nut_far"] - spec["nut_near"]
-        covered = min(spec["length"], spec["nut_far"]) - max(0.0, spec["nut_near"])
-        past = spec["length"] - spec["nut_far"]
-        step("screw %s engagement %.3f mm  nut %.3f mm  tip past far face %.3f mm"
-             % (spec["name"], covered, nut_t, past))
-        require(spec["nut_near"] >= -1e-6 and covered >= nut_t - 1e-6,
-                "%s does not cross its nut (%.3f of %.3f mm)"
-                % (spec["name"], covered, nut_t))
-        a = spec["nut_far"] + 0.05
+        far_exit = spec["nut_far"]
+        for near, far in spec["spans"]:
+            nut_t = far - near
+            covered = min(spec["length"], far) - max(0.0, near)
+            past = spec["length"] - far
+            far_exit = max(far_exit, far)
+            step("screw %s engagement %.3f mm  nut %.3f mm  tip past far face %.3f mm"
+                 % (spec["name"], covered, nut_t, past))
+            require(near >= -1e-6 and covered >= nut_t - 1e-6,
+                    "%s does not cross its nut (%.3f of %.3f mm)"
+                    % (spec["name"], covered, nut_t))
+        a = far_exit + 0.05
         b = spec["length"] - 0.05
         if b <= a:
             continue
@@ -2172,6 +2404,148 @@ def check_screws(parts, specs, jacks_only):
             vol = overlap_volume(probe, pshape)
             if vol > 1e-3:
                 require(False, "%s bottoms in %s (%.4f mm^3)" % (spec["name"], pname, vol))
+
+
+def _nut_samples(origin, axis, depth, af, direction, length):
+    step_mm = 1.0
+    n = max(1, int(math.ceil(length / step_mm)))
+    out = []
+    for i in range(n + 1):
+        h = hex_prism(af, vadd(origin, vmul(direction, length * i / n)), axis, depth)
+        out.append(h)
+    return out
+
+
+def check_one_nut(part, name, origin, axis, depth, af, bore_r, insert_dir, insert_len, load_dir):
+    # Insertion: the hex, walked from the pocket until it is outside the part.
+    length = insert_len
+    end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth)
+    while bb_hit(end, part) and length < 400.0:
+        length += 5.0
+        end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth)
+    require(length < 400.0, "%s insertion stays inside the part" % name)
+    samples = _nut_samples(origin, axis, depth, af, insert_dir, length)
+    for h in samples[:-1]:
+        if not bb_hit(h, part):
+            continue
+        vol = overlap_volume(h, part)
+        require(vol <= 1.0e-2, "%s insertion hits material (%.3f mm^3)" % (name, vol))
+    require(not bb_hit(samples[-1], part), "%s insertion does not leave the part" % name)
+    # Backing: 1.2 mm behind the loaded face, aside from the screw hole.
+    web = hex_prism(af, origin, load_dir, nut_land)
+    hole = Part.makeCylinder(bore_r, nut_land + 1.0,
+                              vadd(origin, vmul(load_dir, -0.4)), load_dir)
+    probe = web.cut(hole)
+    inside = overlap_volume(probe, part)
+    need = abs(probe.Volume)
+    step("nut %s  insert %.1f mm  web %.2f mm  probe %.0f/%.0f mm^3"
+         % (name, length, nut_land, inside, need))
+    require(need > 1.0 and inside >= 0.95 * need,
+            "%s backing web is short (%.0f of %.0f mm^3)" % (name, inside, need))
+
+
+def audit_nuts(motor, plain, tie, frame):
+    rv3 = hex_Rv(m3_nut_af)
+    a0, a1, b0, b1 = jack_stack()
+    # Straight ears. The mouth is the inboard face of the boss.
+    for mod in ("s1", "s2"):
+        for sign, which in ((-1.0, "lower"), (1.0, "upper")):
+            z = nose_z + sign * encl_ear_pitch
+            origin = Vector(nose_x, boss_y1 - m4_nut_depth, z)
+            check_one_nut(motor, "%s ear %s" % (mod, which), origin, Vector(0, 1, 0),
+                          m4_nut_depth, m4_nut_af, m4_clear / 2.0,
+                          Vector(0, 1, 0), m4_nut_depth + 6.0, Vector(0, -1, 0))
+    # Jack. Block-side nut along the screw; head-side nut from above.
+    # Each plate is used on both modules.
+    for plate, y, side in ((motor, -block_out / 2.0, "motor"),
+                           (plain, wall + block_out / 2.0, "plain")):
+        for mod in ("s1", "s2"):
+            check_one_nut(plate, "%s jack %s block-side" % (mod, side),
+                          Vector(a1, y, nose_z), Vector(-1, 0, 0), m3_nut_depth, m3_nut_af,
+                          m3_clear / 2.0, Vector(-1, 0, 0), m3_nut_depth + 6.0, Vector(1, 0, 0))
+            check_one_nut(plate, "%s jack %s head-side" % (mod, side),
+                          Vector(b1, y, nose_z), Vector(-1, 0, 0), m3_nut_depth, m3_nut_af,
+                          m3_clear / 2.0, Vector(0, 0, 1), 5.0 + rv3 + 4.0, Vector(1, 0, 0))
+    # Tie bar, one print used at both ends of both modules. Plate nuts from the
+    # upright's end; joiner nuts up from below.
+    for mod, bar_name in (("s1", "infeed"), ("s1", "discharge"),
+                          ("s2", "infeed"), ("s2", "discharge")):
+        for y_face, inward, end in ((wall, 1.0, "near"), (wall + inner_width, -1.0, "far")):
+            y_load = y_face + inward * nut_land
+            origin = Vector(x_tie_in, y_load, tie_bolt_z)
+            axis = Vector(0, inward, 0)
+            check_one_nut(tie, "%s tie %s plate %s" % (mod, bar_name, end),
+                          origin, axis, m3_nut_depth, m3_nut_af, m3_clear / 2.0,
+                          Vector(1, 0, 0), tie_half + rv3 + 3.0, Vector(0, -inward, 0))
+        for y_h, kind in ((y_loc_pre, "locating"), (y_clr_pre, "clearance")):
+            origin = Vector(x_tie_in, y_h, tie_z0 + m3_nut_depth)
+            check_one_nut(tie, "%s tie %s joiner %s" % (mod, bar_name, kind),
+                          origin, Vector(0, 0, -1), m3_nut_depth, m3_nut_af, m3_clear / 2.0,
+                          Vector(0, 0, -1), m3_nut_depth + 6.0, Vector(0, 0, 1))
+    # Curve ears, from above. Keeper nuts, from the inner mouth.
+    for sign, which in ((-1.0, "lower"), (1.0, "upper")):
+        h = sign * encl_ear_pitch
+        origin = vadd(A, vadd(vmul(u_drv, s_nut_near), vmul(e_th_drv, h)))
+        check_one_nut(frame, "curve ear %s" % which, origin, vmul(u_drv, -1.0),
+                      m4_nut_depth, m4_nut_af, m4_clear / 2.0,
+                      e_up_drv, v_half + m4_Rv + 5.0, u_drv)
+    for ang, which in ((0.5 * (thetas[0] + thetas[1]), "entry"),
+                       (0.5 * (thetas[4] + thetas[5]), "exit")):
+        th = math.radians(ang)
+        er = Vector(math.cos(th), math.sin(th), 0.0)
+        z = 0.5 * (wall + 1.0 + 10.0)
+        origin = Vector(cx + er.x * r_ow0, cy + er.y * r_ow0, z)
+        check_one_nut(frame, "keeper %s" % which, origin, vmul(er, -1.0),
+                      m3_nut_depth, m3_nut_af, m3_clear / 2.0,
+                      Vector(0, 0, 1), 40.0, er)
+    holes = joint_curve_holes()
+    bounds = (pad_bounds(holes[:2]), pad_bounds(holes[2:]))
+    for i, (x_h, y_h, _dia) in enumerate(holes):
+        x0, x1, y0, y1 = bounds[0 if i < 2 else 1]
+        direction, length = pad_slot_dir(x_h, y_h, x0, x1, y0, y1)
+        origin = Vector(x_h, y_h, (z_j - web) + m3_nut_depth)
+        check_one_nut(frame, "pad joiner %d" % (i + 1), origin, Vector(0, 0, -1),
+                      m3_nut_depth, m3_nut_af, m3_clear / 2.0,
+                      direction, length, Vector(0, 0, 1))
+
+
+def make_oring_real(theta_a, theta_b, r_g, D):
+    # Wraps sit on the pitch circle the stretch uses. The spans are the real
+    # tangents between those two circles, axle tilt included. Equal radii make
+    # the radii along u1 × u2 the external tangents.
+    s = r_g * ca
+    u1 = axis_u(theta_a)
+    u2 = axis_u(theta_b)
+    c1 = vadd(A, vmul(u1, s))
+    c2 = vadd(A, vmul(u2, s))
+    w = vnorm(vcross(u1, u2))
+    radius = D / 2.0
+    cr = oring_cs / 2.0
+
+    def tube(p, q):
+        # Past the tangent point so the straight run fuses into the arc. The
+        # extra 0.25 mm leaves the pitch circle by about 0.006 mm.
+        n = vnorm(vsub(q, p))
+        p2 = vsub(p, vmul(n, 0.25))
+        q2 = vadd(q, vmul(n, 0.25))
+        return Part.makeCylinder(cr, vsub(q2, p2).Length, p2, vsub(q2, p2))
+
+    def half(center, axis, other):
+        v = vnorm(vcross(axis, w))
+        mid = vadd(center, vmul(v, radius))
+        if vsub(mid, other).Length < vsub(vadd(center, vmul(v, -radius)), other).Length:
+            v = vmul(v, -1.0)
+        tangent = vnorm(vcross(axis, w))
+        circ = Part.makeCircle(cr, vadd(center, vmul(w, radius)), tangent)
+        face = Part.Face(Part.Wire([circ]))
+        motion = vnorm(vcross(axis, w))
+        angle = 180.0 if vdot(motion, v) >= 0.0 else -180.0
+        return face.revolve(center, axis, angle)
+
+    solid = tube(vadd(c1, vmul(w, radius)), vadd(c2, vmul(w, radius)))
+    solid = solid.fuse(tube(vsub(c1, vmul(w, radius)), vsub(c2, vmul(w, radius))))
+    solid = solid.fuse(half(c1, u1, c2))
+    return solid.fuse(half(c2, u2, c1))
 
 
 def interfere(parts, label, skip_belt, moving_only):
@@ -2194,6 +2568,22 @@ def interfere(parts, label, skip_belt, moving_only):
             if not bb_hit(ai, aj):
                 continue
             tested += 1
+            ring = ni if ni.startswith("oringR_") else nj if nj.startswith("oringR_") else None
+            if ring is not None:
+                other = nj if ring == ni else ni
+                owned = {"cone_%d" % int(ring.split("_")[1]),
+                         "cone_%d" % (int(ring.split("_")[1]) + 1)}
+                vol = overlap_volume(ai, aj)
+                if other in owned:
+                    require(vol <= 1.0e-3,
+                            "%s embeds in its groove on %s (%.4f mm^3)" % (ring, other, vol))
+                    continue
+                require(vol <= 1.0e-3,
+                        "%s overlaps %s by %.4f mm^3 at %s" % (ni, nj, vol, label))
+                dist = ai.distToShape(aj)[0]
+                require(dist > 0.05,
+                        "%s touches %s (%.3f mm) at %s" % (ring, other, dist, label))
+                continue
             vol = overlap_volume(ai, aj)
             if vol > 1.0e-3:
                 require(False, "%s overlaps %s by %.4f mm^3 at %s" % (ni, nj, vol, label))
