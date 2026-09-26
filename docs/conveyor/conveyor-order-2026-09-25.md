@@ -22,12 +22,12 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | Bench supply, 0–30 V / 0–10 A, switching, current limit, output on/off, 4-digit display | [WANPTEK TPS-C3010 (Amazon B0DR12RNPY)](https://www.amazon.com/dp/B0DR12RNPY) | 1 | $54.13 | in stock |
 | Female/male jumper wires, 20 × 12" | [Adafruit 1952](https://www.adafruit.com/product/1952) | 1 | $3.95 | in stock |
 | Freenove Pico 2 W, headers pre-soldered, for the nest bridge | [Amazon B0DRJXPPWL](https://www.amazon.com/dp/B0DRJXPPWL) | 1 | $18.95 | in stock |
-| TPU 95A HF, 1 kg | [Bambu Lab](https://us.store.bambulab.com/products/tpu-95a-hf) | 1 | $41.99 | in stock |
+| TPU 95A, 1.75 mm, 1 kg (YOUSU) | [Amazon B07QLRWZWP](https://www.amazon.com/dp/B07QLRWZWP) | 1 | $16.99 | in stock |
 | 4 mm × 300 mm 304 stainless rod, 5-pack | [Amazon B0G791YZKV](https://www.amazon.com/dp/B0G791YZKV) | 1 | $6.99 | in stock |
 | 3 mm × 300 mm 304 stainless rod, 12-pack | [Amazon B0DCBCRB1C](https://www.amazon.com/dp/B0DCBCRB1C) | 1 | $8.99 | in stock |
 | M2 / M2.5 / M3 / M4 socket-head screws, 6–20 mm, with nuts (mxuteuk 888 pc) | [Amazon B0G8F366MV](https://www.amazon.com/dp/B0G8F366MV) | 1 kit | $8.99 | in stock |
 | Nitrile O-ring kit, 20 sizes incl. 16×2, 18×2, 20×2, 22×2, 25×2.4 mm (XBVV) | [Amazon B0CBTYXVCV](https://www.amazon.com/dp/B0CBTYXVCV) | 1 kit | $7.59 | in stock |
-Total: about $250 before shipping. Kyle ordered the ServoCity and Adafruit parts on 2026-09-25/26. Still to order: the Amazon cart (bench supply, rods, screws, O-rings, Pico 2 W) and the Bambu TPU.
+Total: about $225 before shipping. Kyle ordered the ServoCity and Adafruit parts on 2026-09-25/26. Everything left is one Amazon cart: bench supply, rods, screws, O-rings, Pico 2 W, TPU.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
   - **Before first use, set the rear 115V/230V switch to 115V.** The listing says so for US use.
@@ -51,6 +51,10 @@ Total: about $250 before shipping. Kyle ordered the ServoCity and Adafruit parts
   - The CAD sizes the grooves to a ring picked from the kit. Caliper it rather than trusting the chart.
   - Printed drive rings are dropped.
 - **The TPU is for the straights' belts.** A 50 mm closed loop isn't something you can buy, so they're printed.
+  - YOUSU's 95A has the same hardness as Bambu's TPU 95A HF for $25 less.
+  - It has no Bambu-tuned profile. Print it with Bambu Studio's generic TPU profile, slower.
+  - It feeds from the A1's own side spool holder. No feed-assist module is needed; the one on Amazon doesn't list the A1 anyway.
+  - Keep it dry once opened. The maker suggests 50 °C for 7 h if it strings.
 
 ## Only if you don't have one
 
