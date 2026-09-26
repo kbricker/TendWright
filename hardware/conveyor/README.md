@@ -3,7 +3,10 @@
 Plan **#835**. Mechanical design, print plan and BOM live in
 [`cad/conveyor/README.md`](../../cad/conveyor/README.md); this is the electronics half.
 
-- `firmware/main.py` — MicroPython for the conveyor Pico 2. Flash: hold BOOTSEL, plug in, copy the MicroPython UF2, copy this file to the board as `main.py`.
+- `firmware/main.py` — MicroPython for the conveyor's Pico 2 W (the Freenove kit board). To flash it:
+  1. Hold BOOTSEL and plug the board in.
+  2. Copy the **Pico 2 W** MicroPython UF2 to it.
+  3. Copy this file to the board as `main.py`.
 - `driver.py` — host-side `ConveyorDriver`
 - `run.py` — bring-up CLI
 - `selftest.py` — protocol checks, no hardware needed

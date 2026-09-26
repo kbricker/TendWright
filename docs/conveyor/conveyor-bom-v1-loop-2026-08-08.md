@@ -4,6 +4,10 @@
 Dimensions come from `cad/conveyor/parts/geometry.json` — regenerate it, never retype it.
 Build and assembly instructions: [`cad/conveyor/README.md`](../../cad/conveyor/README.md).
 
+**Update 2026-09-25:**
+- The corner is now a tapered-roller curve (plan #835). The corner belt, corner guide rails and 70 mm corner module below are superseded until the curve's CAD lands.
+- Current sources, prices and stock: [conveyor-order-2026-09-25.md](conveyor-order-2026-09-25.md).
+
 ## 1 · Motors — where they actually come from
 
 - **"N20" is a can size, not a brand** — a 12 mm brushed can, Mabuchi frame class.
@@ -82,13 +86,13 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 |---|---|---|
 | GA12-N20 gearmotor, 12 V ~300 RPM | 8 (+2) | §1 |
 | TB6612FNG dual driver breakout | 4 | 2 ch each, **4.5–13.5 V** |
-| Raspberry Pi **Pico 2** (RP2350) | 1 | See below |
+| Raspberry Pi **Pico 2 W** (RP2350) | 1 | On hand: Freenove kit from #717.1. See below |
 | 12 V PSU, 5 A, barrel jack | 1 | Size from *measured* stall current |
 | Barrel jack breakout | 1 | |
 | Perfboard / solderable breadboard | 1 | 4 drivers is past jumper-wire territory |
 | 2-core motor wire | ~5 m | |
 | JST-XH pairs or screw terminals | 8 | So a module unplugs |
-| USB-C cable | 1 | Data, not charge-only |
+| Micro-USB cable | 1 | On hand, in the Freenove kit |
 
 - **Not the DRV8833** — tops out at 10.8 V, cannot drive 12 V motors.
 - **Pico 2, not Pico.** 8 motors × (PWM + IN1 + IN2) + STBY = 25 of a Pico's 26 GPIO. The RP2350 has 12 PWM slices (24 ch) against the RP2040's 8 (16).
@@ -109,12 +113,12 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 | 10 motors (AliExpress) | $25 |
 | 3 motors (Out of Darts, v0 now) | $21 |
 | 4 × TB6612FNG | $8–16 |
-| Pico 2 | $5–10 |
+| Pico 2 W | on hand |
 | 12 V 5 A PSU + jack | $12–18 |
 | Rod + fasteners | $12–18 |
 | TPU spool | $20–30 |
 | Wire, connectors, perfboard | $10–15 |
-| **Total** | **~$115–155** |
+| **Total** | **~$110–145** |
 
 ## 8 · Verified vs estimated
 
