@@ -25,6 +25,7 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | 4 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063687](https://www.harfington.com/products/p-1063687) | 1 | $13.03 | in stock |
 | 3 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063684](https://www.harfington.com/products/p-1063684) | 1 | $10.54 | in stock |
 | M2 / M3 / M4 socket-head screws with nuts | any assortment with M2 × 8, M3 × 16, M4 × 20 | 1 kit | ~$15–25 | *unverified* |
+| Nitrile O-ring assortment, metric | any kit, search `metric nitrile o-ring assortment` | 1 kit | ~$10–15 | *unverified* |
 | **Loop (#840):** GA12-N20 12 V 300 RPM, "with wire" | AliExpress, search `GA12-N20 12V 300RPM` | 10 | ~$2–3.50 ea | *unverified*, 1–4 wk |
 
 Total: about $189 before shipping and screws, plus ~$30 for the loop motors.
@@ -38,7 +39,11 @@ Total: about $189 before shipping and screws, plus ~$30 for the loop motors.
 - **Four drivers** cover the loop; v0 uses two. Each one needs its header soldered on.
 - **The 3 mm rod** is for the roller curve's small rollers. The 4 mm rod is for the straights' axles.
 - **Supply polarity isn't stated** on Adafruit's page. Meter it before wiring. The jack adapter's ± marks assume center-positive.
-- **O-rings wait** until the roller curve's CAD fixes the groove size. They're only the fallback if the printed TPU drive rings stretch, and one bag of the exact size is about $5.
+- **O-rings link the curve's rollers.**
+  - The rollers are evenly spaced, so every link is the same size.
+  - The CAD sizes the grooves to a ring picked from the kit. Caliper it rather than trusting the chart.
+  - Printed drive rings are dropped.
+- **The TPU is for the straights' belts.** A 50 mm closed loop isn't something you can buy, so they're printed.
 
 ## Only if you don't have one
 
