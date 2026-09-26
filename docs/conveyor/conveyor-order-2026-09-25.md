@@ -18,7 +18,7 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | N20 motor enclosure, acetal, M4 mounting holes | [ServoCity 1705-0016-0001](https://www.servocity.com/n20-gear-motor-enclosure/) | 4 | $2.49 ea | in stock |
 | Gear Motor Input Board A, solder-on, 2-pin 0.1" header | [ServoCity 605112](https://www.servocity.com/gear-motor-input-board-a/) | 4 | $1.99 ea | in stock |
 | TB6612FNG motor driver, headers loose | [Adafruit 2448](https://www.adafruit.com/product/2448) | 4 | $6.95 ea | in stock |
-| Bench supply, 0–30 V / 0–5 A, linear, current limit, 0.01 A display | [Tekpower TP3005T](https://kaito.us/products/tekpower-tp3005t-digital-variable-dc-power-supply-30-volts-5-amps-with-lock) | 1 | $89.99 | add-to-cart |
+| Bench supply, 0–30 V / 0–10 A, switching, current limit, output on/off, 4-digit display | [WANPTEK TPS-C3010 (Amazon B0DR12RNPY)](https://www.amazon.com/dp/B0DR12RNPY) | 1 | $54.13 | in stock |
 | Female/male jumper wires, 20 × 12" | [Adafruit 1952](https://www.adafruit.com/product/1952) | 1 | $3.95 | in stock |
 | Raspberry Pi Pico 2, for the nest bridge | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-2/) | 1 | $5.00 | in stock |
 | Pico header set, solder-on | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-header-set/) | 1 | $2.45 | in stock |
@@ -27,9 +27,12 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | 3 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063684](https://www.harfington.com/products/p-1063684) | 1 | $10.54 | in stock |
 | M2 / M3 / M4 socket-head screws with nuts | any assortment with M2 × 8, M3 × 16, M4 × 20 | 1 kit | ~$15–25 | *unverified* |
 | Nitrile O-ring assortment, metric | any kit, search `metric nitrile o-ring assortment` | 1 kit | ~$10–15 | *unverified* |
-Total: about $265 before shipping, screws and O-rings. The ServoCity part ($69.88) was ordered 2026-09-25.
+Total: about $229 before shipping, screws and O-rings. The ServoCity part ($69.88) was ordered 2026-09-25.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
+  - **Before first use, set the rear 115V/230V switch to 115V.** The listing says so for US use.
+  - Use the output button: set 12 V and the limit with the output off, then switch it on. Save bring-up (low limit) and running settings as memory presets.
+  - The Tekpower TP3005T ($89.99, linear) was the first pick. The WANPTEK has the same essentials for $36 less, plus the output switch.
   - Set a low current limit for the first power-up, so a wiring mistake trips the limit instead of burning out a driver or the Pico.
   - Its current display gives the motors' measured stall current, which sizes the loop's supply (#840).
   - The Pico still runs from USB. Tie the supply's − terminal to the Pico's GND, not the green earth post.

@@ -87,7 +87,7 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 | GA12-N20 gearmotor, 12 V ~300 RPM | 8 (+2) | §1 |
 | TB6612FNG dual driver breakout | 4 | 2 ch each, **4.5–13.5 V** |
 | Raspberry Pi **Pico 2 W** (RP2350) | 1 | On hand: Freenove kit from #717.1. See below |
-| Bench supply, 0–30 V / 5 A, current limit | 1 | Tekpower TP3005T, set to 12 V. Its current display gives the *measured* stall current |
+| Bench supply, 0–30 V / 10 A, current limit, output switch | 1 | WANPTEK TPS-C3010, set to 12 V. Its current display gives the *measured* stall current |
 | Perfboard / solderable breadboard | 1 | 4 drivers is past jumper-wire territory |
 | 2-core motor wire | ~5 m | |
 | N20 enclosure + Gear Motor Input Board A | 8 each | ServoCity. The enclosure is the motor mount; the input board plus female/male jumpers lets a module unplug |
@@ -107,7 +107,7 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 
 ## 7 · Cost
 
-Live prices and the total are in the [order list](conveyor-order-2026-09-25.md): about $265 for v0 plus ~$30 for the loop motors, as of 2026-09-25. The estimate this section used to carry (~$110–145) was costed before Out of Darts sold out and before the bench supply replaced the 12 V brick.
+Live prices and the total are in the [order list](conveyor-order-2026-09-25.md): about $229 for v0 as of 2026-09-25. The loop adds about 5 more ServoCity motor sets. The estimate this section used to carry (~$110–145) was costed before Out of Darts sold out and before the bench supply replaced the 12 V brick.
 
 ## 8 · Verified vs estimated
 
