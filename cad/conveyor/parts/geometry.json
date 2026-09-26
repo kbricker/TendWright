@@ -169,6 +169,12 @@
         "where": "straight idler"
       },
       {
+        "diameter_mm": 4.0,
+        "cut_mm": 51.3,
+        "count": 2,
+        "where": "straight driven stub"
+      },
+      {
         "diameter_mm": 3.0,
         "cut_mm": 70.35768488340406,
         "count": 5,

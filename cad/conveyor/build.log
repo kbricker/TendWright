@@ -29,15 +29,15 @@ bracket: upper boss inboard to y=4.60, centred z=41.00
 bracket: bed and guide grooves, tensioner seat
 bracket: len=120.0 motor_side=False
 bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
+bracket: blind bore for the driven stub
 bracket: bed and guide grooves, tensioner seat
 jack-screw engagement tensioned 5.20 mm, slack 5.20 mm
 straight idler rod cut 73.000 mm
+straight driven stub cut 51.300 mm
 roller: Ø10 idler
 roller: Ø10 driven
 slider bed: len=120.0
 return guide: len=120.0
-return guide: chamfer skipped (class StdFail_NotDone BRep_API: command not done)
 cone rollers
 cone roller: idler
 cone roller: driven
@@ -77,9 +77,11 @@ tie bar: x=102.0
 tensioner block
 joiner
 joiner
+s1 plain plate to curve frame 1.500 mm
+s2 plain plate to curve frame 1.500 mm
 joiner holes within 0.05 mm of the tie-bar and pad holes
-interference: 76 solids
-interference pairs tested 244, none over 1e-3 mm^3
+interference: 78 solids
+interference pairs tested 250, none over 1e-3 mm^3
 --- export ---
 export: bracket_straight_motor
 export: bracket_straight_plain

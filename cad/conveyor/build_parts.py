@@ -303,6 +303,17 @@ def roller_axis_x(module_len):
     return nose_edge, module_len - nose_edge
 
 
+def straight_driven_stub_ys():
+    # Pre-mirror frame, the same placement the driven roller gets. The rod
+    # sits on the blind-bore floor and stops stub_bore_air short of the step
+    # where the D-bore ends, which is what keeps it from entering that bore.
+    y_tip = -(wall + side_gap - spigot_recess)
+    y_step = (wall + side_gap) + y_tip + motor_bore_depth
+    bore_depth = wall + stub_boss_out - stub_floor
+    y_out = (inner_width + wall) + bore_depth
+    return y_step + stub_bore_air, y_out
+
+
 def belt_path_length(module_len):
     # Measured at the belt's NEUTRAL AXIS (nose_dia + belt_thickness). That fibre
     # neither stretches nor compresses, so it is the length a printed loop's mean
@@ -492,6 +503,13 @@ y_clr_pre       = lane_y - hole_pitch
 x_tie_in        = tie_inset
 x_tie_out       = straight_len - tie_inset
 idler_axle_len  = outer_width + 2.0 * block_out
+# Driven stub, plain plate. A through hole lets the rod walk out, so the bore
+# is blind from the inner face and the floor is the retainer. The boss is what
+# makes the bore deeper than the 3 mm wall while keeping that floor.
+stub_floor      = 1.2
+stub_boss_out   = 2.5     # within the 10 mm outboard limit; bore engagement is then 4.3 mm
+stub_boss_r     = 5.0     # axis is nose_edge in from the discharge face, so 5 stays inside it
+stub_hole_r     = nose_axle_dia / 2.0 + 0.15  # plate locates the rod; the roller bore stays looser so it turns
 
 
 def main():
@@ -617,6 +635,16 @@ def main():
     e_tight, e_slack = jack_engage(tip), jack_engage(tip + nose_travel)
     step("jack-screw engagement tensioned %.2f mm, slack %.2f mm" % (e_tight, e_slack))
     step("straight idler rod cut %.3f mm" % idler_axle_len)
+    y_stub_in, y_stub_out = straight_driven_stub_ys()
+    stub_cut = y_stub_out - y_stub_in
+    step("straight driven stub cut %.3f mm" % stub_cut)
+    require(stub_floor >= 1.2, "driven stub floor %.2f mm is under 1.2" % stub_floor)
+    require(stub_boss_out <= 10.0, "driven stub boss sticks out %.2f mm" % stub_boss_out)
+    require(stub_boss_r <= nose_edge,
+            "driven stub boss crosses the discharge face")
+    require((straight_len - nose_edge) - stub_boss_r >= 0.0,
+            "driven stub boss crosses x=0")
+    require(stub_cut > 0.0, "driven stub length %.3f mm" % stub_cut)
     require(e_tight >= 3.0 and e_slack >= 3.0,
             "jack-screw engagement %.2f / %.2f mm, need >= 3 at both ends of travel"
             % (e_tight, e_slack))
@@ -736,6 +764,10 @@ def main():
     block_far = mirror_left(block)
     rod = Part.makeCylinder(nose_axle_dia / 2.0, idler_axle_len,
                              Vector(nose_edge, -block_out, nose_z), Vector(0, 1, 0))
+    # Seated on the bore floor, stub_bore_air short of the D-bore step.
+    # Same frame as the plates, so place_module carries it with them.
+    drv_stub = Part.makeCylinder(nose_axle_dia / 2.0, stub_cut,
+                                 Vector(nose_ax, y_stub_in, nose_z), Vector(0, 1, 0))
     rol_id_p = rol_id.translated(Vector(ax0, ry, nose_z))
     rol_dr_p = rol_dr.translated(Vector(nose_ax, ry, nose_z))
     belt_p = belt.translated(Vector(0, ry + roller_flange_w, 0))
@@ -746,7 +778,7 @@ def main():
         ("bed", bed), ("guide", ret), ("belt", belt_p),
         ("tie_in", tie_in), ("tie_out", tie_out),
         ("block_near", block), ("block_far", block_far),
-        ("rod", rod), ("motor", encl_straight),
+        ("rod", rod), ("driven_stub", drv_stub), ("motor", encl_straight),
     ] + fasteners
 
     def placed_straight(tag, rot, offset):
@@ -788,6 +820,15 @@ def main():
     for name, shape in (joiner_screws(o1, Vector(1, 0, 0), Vector(0, 1, 0), "j1")
                         + joiner_screws(o2, Vector(0, -1, 0), Vector(-1, 0, 0), "j2")):
         world.append((name, shape))
+
+    # The boss is on the plain plate's outer face. s1's faces away from the
+    # curve; s2's faces the outside of the turn. Either one meeting the frame
+    # means the boss, or the plate itself, has crossed the gap.
+    for tag in ("s1", "s2"):
+        plate = next(s for n, s in world if n == tag + "_plate_plain")
+        d_pf = plate.distToShape(frame)[0]
+        step("%s plain plate to curve frame %.3f mm" % (tag, d_pf))
+        require(d_pf >= 0.5, "%s plain plate meets the curve frame (%.3f mm)" % (tag, d_pf))
 
     check_holes()
     step("interference: %d solids" % len(world))
@@ -978,6 +1019,8 @@ def main():
             "rods": [
                 {"diameter_mm": nose_axle_dia, "cut_mm": idler_axle_len, "count": 2,
                  "where": "straight idler"},
+                {"diameter_mm": nose_axle_dia, "cut_mm": stub_cut, "count": 2,
+                 "where": "straight driven stub"},
                 {"diameter_mm": curve_axle_d, "cut_mm": idler_rod_len, "count": curve_n - 1,
                  "where": "curve idler"},
                 {"diameter_mm": curve_axle_d, "cut_mm": stub_len, "count": 1,
@@ -1117,10 +1160,17 @@ def make_bracket(module_len, motor_side=False, belt_side=1):
             pocket = hex_along_y(m4_nut_af, boss_y1 - m4_nut_depth, boss_y1 + 0.2, nose, zc)
             body = body.cut(pocket)
     else:
-        step("bracket: stub-axle bore at the driven nose")
+        # Blind from the inner face (y = 0). The stub drops into the roller
+        # before this plate goes on; the floor stops it walking out, and the
+        # step at the end of the D-bore stops it walking the other way.
+        step("bracket: blind bore for the driven stub")
+        body = body.fuse(Part.makeCylinder(
+            stub_boss_r, stub_boss_out + 0.2,
+            Vector(nose, wall - 0.2, nose_z), Vector(0, 1, 0)))
+        bore_depth = wall + stub_boss_out - stub_floor
         body = body.cut(Part.makeCylinder(
-            nose_axle_dia / 2.0 + 0.2, wall + 2,
-            Vector(nose, -1, nose_z), Vector(0, 1, 0)))
+            stub_hole_r, bore_depth + 0.2,
+            Vector(nose, -0.2, nose_z), Vector(0, 1, 0)))
 
     # The old mid-span M3s had nothing to bolt to. The tie bars carry the
     # bolts now, one near each end.
@@ -1277,14 +1327,6 @@ def make_return_guide(module_len):
                                  Vector(tx0, wall - (tongue_d - fit_gap), tz0)))
     bar = bar.fuse(Part.makeBox(tx1 - tx0, tongue_d - fit_gap, tongue_h,
                                  Vector(tx0, wall + inner_width, tz0)))
-    try:
-        edges = [e for e in bar.Edges
-                 if abs(e.CenterOfMass.z - top) < 1e-6 and
-                 abs(e.CenterOfMass.x - (x0 + (x1 - x0) / 2.0)) < 1e-6]
-        if edges:
-            bar = bar.makeChamfer(1.0, edges)
-    except Exception as exc:
-        step("return guide: chamfer skipped (%s)" % exc)
     return bar
 
 
