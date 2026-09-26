@@ -22,7 +22,7 @@ Build and assembly instructions: [`cad/conveyor/README.md`](../../cad/conveyor/R
 | Out of Darts | $6.99 | $70 | Days, US | 300/600/1000/2000 RPM, QC'd for full-auto Nerf |
 | Pololu #3041 (100:1) | $26.45 | $265 | Days, US | Published curves; 4× the price buys nothing here |
 
-**Recommended split:** 3 from Out of Darts now (v0 needs exactly 3, US stock) + 10 GA12-N20 from AliExpress for the loop. The slow order lands about when v0 is proven.
+**Recommended split:** 4 ServoCity 638122 now (v0 needs 3, US stock; Out of Darts sold out on 2026-09-25) + 10 GA12-N20 from AliExpress for the loop. The slow order lands about when v0 is proven.
 
 ### Spec to order: 12 V · ~300 RPM · 3 mm D-shaft · single-ended
 
@@ -87,11 +87,10 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 | GA12-N20 gearmotor, 12 V ~300 RPM | 8 (+2) | §1 |
 | TB6612FNG dual driver breakout | 4 | 2 ch each, **4.5–13.5 V** |
 | Raspberry Pi **Pico 2 W** (RP2350) | 1 | On hand: Freenove kit from #717.1. See below |
-| 12 V PSU, 5 A, barrel jack | 1 | Size from *measured* stall current |
-| Barrel jack breakout | 1 | |
+| Bench supply, 0–30 V / 5 A, current limit | 1 | Tekpower TP3005T, set to 12 V. Its current display gives the *measured* stall current |
 | Perfboard / solderable breadboard | 1 | 4 drivers is past jumper-wire territory |
 | 2-core motor wire | ~5 m | |
-| JST-XH pairs or screw terminals | 8 | So a module unplugs |
+| N20 enclosure + Gear Motor Input Board A | 8 each | ServoCity. The enclosure is the motor mount; the input board plus female/male jumpers lets a module unplug |
 | Micro-USB cable | 1 | On hand, in the Freenove kit |
 
 - **Not the DRV8833** — tops out at 10.8 V, cannot drive 12 V motors.
@@ -108,17 +107,7 @@ Per module ×8: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner bloc
 
 ## 7 · Cost
 
-| | |
-|---|---|
-| 10 motors (AliExpress) | $25 |
-| 3 motors (Out of Darts, v0 now) | $21 |
-| 4 × TB6612FNG | $8–16 |
-| Pico 2 W | on hand |
-| 12 V 5 A PSU + jack | $12–18 |
-| Rod + fasteners | $12–18 |
-| TPU spool | $20–30 |
-| Wire, connectors, perfboard | $10–15 |
-| **Total** | **~$110–145** |
+Live prices and the total are in the [order list](conveyor-order-2026-09-25.md): about $265 for v0 plus ~$30 for the loop motors, as of 2026-09-25. The estimate this section used to carry (~$110–145) was costed before Out of Darts sold out and before the bench supply replaced the 12 V brick.
 
 ## 8 · Verified vs estimated
 
