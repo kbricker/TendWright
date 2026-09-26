@@ -23,11 +23,11 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | Raspberry Pi Pico 2, for the nest bridge | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-2/) | 1 | $5.00 | in stock |
 | Pico header set, solder-on | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-header-set/) | 1 | $2.45 | in stock |
 | TPU 95A HF, 1 kg | [Bambu Lab](https://us.store.bambulab.com/products/tpu-95a-hf) | 1 | $41.99 | in stock |
-| 4 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063687](https://www.harfington.com/products/p-1063687) | 1 | $13.03 | in stock |
-| 3 mm × 300 mm 304 stainless rod, 10-pack | [Harfington p-1063684](https://www.harfington.com/products/p-1063684) | 1 | $10.54 | in stock |
-| M2 / M3 / M4 socket-head screws with nuts | any assortment with M2 × 8, M3 × 16, M4 × 20 | 1 kit | ~$15–25 | *unverified* |
-| Nitrile O-ring assortment, metric | any kit, search `metric nitrile o-ring assortment` | 1 kit | ~$10–15 | *unverified* |
-Total: about $229 before shipping, screws and O-rings. The ServoCity part ($69.88) was ordered 2026-09-25.
+| 4 mm × 300 mm 304 stainless rod, 5-pack | [Amazon B0G791YZKV](https://www.amazon.com/dp/B0G791YZKV) | 1 | $6.99 | in stock |
+| 3 mm × 300 mm 304 stainless rod, 12-pack | [Amazon B0DCBCRB1C](https://www.amazon.com/dp/B0DCBCRB1C) | 1 | $8.99 | in stock |
+| M2 / M2.5 / M3 / M4 socket-head screws, 6–20 mm, with nuts (mxuteuk 888 pc) | [Amazon B0G8F366MV](https://www.amazon.com/dp/B0G8F366MV) | 1 kit | $8.99 | in stock |
+| Nitrile O-ring kit, 20 sizes incl. 16×2, 18×2, 20×2, 22×2, 25×2.4 mm (XBVV) | [Amazon B0CBTYXVCV](https://www.amazon.com/dp/B0CBTYXVCV) | 1 kit | $7.59 | in stock |
+Total: about $238 before shipping. Kyle ordered the ServoCity part ($69.88) on 2026-09-25 and put the bench supply in his Amazon cart; the rods, screws and O-rings go in the same Amazon cart.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
   - **Before first use, set the rear 115V/230V switch to 115V.** The listing says so for US use.
