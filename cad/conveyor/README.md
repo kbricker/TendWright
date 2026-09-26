@@ -1,192 +1,331 @@
 # Mini modular conveyor — build guide
 
-Hive plan **#835** (v0 rig) · **#840** (v1 loop) · **#843** (components beyond the corner)
+Hive plan **#835** (v0 rig) · **#840** (v1 loop)
 
-v0 is **two straight modules + one corner, three motors, an open line.** It exists to prove
-two things nobody knew: that a part survives the handoff gap between independently driven
-modules, and that it corners. Both are proven in simulation; nothing has been printed yet.
+v0 is two straights and one tapered-roller curve, three motors, an open line. s1 travels +X, the curve turns left, s2 travels +Y. Each straight's motor is on its left plate. Nothing has been printed yet.
 
-Shopping list and costs live in [`docs/conveyor/conveyor-bom-v1-loop-2026-08-08.md`](../../docs/conveyor/conveyor-bom-v1-loop-2026-08-08.md).
-This file is how to make and assemble the thing.
+Shopping list: [`docs/conveyor/conveyor-order-2026-09-25.md`](../../docs/conveyor/conveyor-order-2026-09-25.md).
 
 ---
 
-## Regenerating everything
+## Regenerating
 
 ```
 "%LOCALAPPDATA%/Programs/FreeCAD 1.1/bin/freecadcmd.exe" cad/conveyor/build_parts.py
-uv run python cad/conveyor/render.py            # PNGs of every part and assembly
-uv run python cad/conveyor/sim_conveyor.py      # headless, writes frames + a trajectory
+uv run python cad/conveyor/render.py
+uv run python cad/conveyor/sim_conveyor.py
+uv run python cad/conveyor/sim_conveyor.py --sweep
 uv run python cad/conveyor/sim_conveyor.py --view
 ```
 
-`build_parts.py` holds **one parameter block** and is the single source of every dimension.
-It writes `parts/*.stl`, `parts/*.step`, a step-by-step `build.log`, and **`parts/geometry.json`**.
+`build_parts.py` is the only place a dimension is declared. It writes `parts/*.stl`, `parts/*.step`, `build.log`, and `parts/geometry.json`. The sim reads that file and declares none of its own module dimensions. The payload (32 × 32 × 16 mm, 30 g) is the sim's spec.
 
-**Nothing downstream re-declares a dimension.** `sim_conveyor.py` reads `geometry.json`.
-It used to mirror the constants by hand, which meant a dimension change left the sim
-faithfully validating a design that no longer existed — while still reporting a number.
+`freecadcmd` swallows stdout and returns 0 even when the script raises. The run succeeded if `build.log` ends with `=== build complete ===`.
 
-Sim flags worth knowing: `--speed`, `--corner-speed`, `--mu`, `--seconds`, `--frames`,
-`--deadplate`.
+Sim flags:
 
-### FreeCAD traps this script is written around
+- `--speed` — straight belt speed, m/s. Default 0.155, which is 270 RPM at the Ø11 neutral axis, the speed the cone centreline is cut to match.
+- `--curve-speed` — centreline speed of the curve, m/s. Default: same as `--speed`.
+- `--mu` — belt friction, TPU on the part. Default 0.9.
+- `--mu-curve` — cone friction, TPU on the part. Default 0.9.
+- `--offset` — entry offset, mm, toward the inside of the turn. Default 0. Parts load within 4 mm of the lane centre.
+- `--seconds` — replaces the acceptance time limit, on the nominal run and on every sweep row. A cap that misses the exit is a failure. `--view` does not take it; the viewer runs until the window closes.
+- `--frames` — nominal-run PNGs in `renders/sim/`. Default 6. `--sweep` draws none.
+- `--sweep` — the acceptance matrix. Writes `renders/sim/sweep.json`. Exit 0 only if every run passes its gates. The spreads are written with the rows and do not decide the exit code.
+- `--view` — interactive viewer. The only mode that puts the part back on the belt.
 
-From [`CableCell/cad/README.md`](../../../CableCell/cad/README.md) — read them before editing:
+### FreeCAD traps
 
-1. `Shape.translate()` mutates in place and returns `None`. Everything here is built at its
-   final position or uses `translated()`.
-2. `freecadcmd` sets `__name__` to the module basename, so a `__main__` guard never fires.
-   There isn't one.
-3. Routing an STL through a `Mesh::Feature` crashes the process. Meshes go out via
-   `Mesh.Mesh(shape.tessellate(dev)).write(path)`.
+From [`CableCell/cad/README.md`](../../../CableCell/cad/README.md):
+
+1. `Shape.translate()` mutates in place and returns `None`.
+2. `freecadcmd` sets `__name__` to the module basename, so a `__main__` guard never fires. There isn't one.
+3. Routing an STL through a `Mesh::Feature` crashes the process. Meshes go out via `Mesh.Mesh(shape.tessellate(dev)).write(path)`.
 
 ---
 
-## Print the coupon first
+## Print the coupons first
 
-**Do not print a full module yet.** The coupon costs 20 minutes and the belt test an hour,
-and either could move a dimension. Printing 76 parts before those two is how you get 76
-parts with the same wrong bore.
+A coupon is twenty minutes. A wrong bore in the full set is a day. Print these, caliper them, then rebuild before printing a module.
 
-**Plate 1 — fit coupon** (needs nothing you don't already have):
+**Plate 1**
+
+| file | with | material | what it is for |
+|---|---|---|---|
+| `coupon_bracket_end.stl` | `roller_driven.stl`, `roller_idler.stl` | PETG plate, PLA+ rollers | enclosure ears on the motor plate, and the roller bores |
+| `coupon_curve.stl` | `roller_cone_driven.stl`, `roller_cone_idler.stl`, one O-ring on groove A | PETG sector, TPU 95A cones | both ear holes and their nut pockets (the nuts drop in from the top), a cone that turns freely, and the O-ring in groove A |
+| `coupon_infeed_end.stl` | one `tensioner_block_left.stl` | PETG | the block must slide on the rail, and the jack boss must take two M3 nuts, one along the screw and one from the top |
+
+The infeed coupon is the plate and the block side by side on the bed, with a gap, so the slide can actually be tried. Nested on the rail, the block would print in mid-air.
+
+`coupon_curve.stl` is the PETG sector alone. The cones and the O-ring named in that row are their own files, in their own materials.
+
+**What to caliper, and the parameter it feeds**
+
+- The O-ring you pick: inside diameter → `oring_id`, cross-section → `oring_cs`. The grooves are cut for a placeholder (build.log: ID window 18.971–22.541 mm at a 2.00 mm section). The chart on the kit is not the measurement.
+- The enclosure, face of the ear plate to the gearbox face → `encl_face_to_gearbox`. The model uses 2.5 mm, which is the worst-case reading of the drawing. The shaft engagement in the log (6.300 mm) moves if this does.
+- Then rerun `build_parts.py`. The D-bore, the Ø4.4 roller bore and the take-up slot confirm the machine's hole offset; they are not there to discover it. Bores are modelled +0.15 mm on radius, because this machine prints holes about that much undersize.
+- Each cone, idler and driven, turns freely on the Ø3 rod and on the stub. If it drags or rocks, change `cone_bore_d` and rebuild. That bore is Ø3.7, looser than the +0.15 rule, because TPU grips steel.
+- The O-ring must seat in groove A. The spool under it is TPU.
+
+**Plate 2 — belt test**, once TPU arrives. One straight belt: a cylinder **Ø79.8 mean × 50 mm tall × 1.0 mm wall**, standing upright. That diameter is `straight.print_cyl_dia` in `geometry.json`, the neutral-axis length divided by π. The 1.0 mm wall is what keeps belt-thickness / pulley-diameter at 10 on a Ø10 roller; 1.5 mm would fight the wrap.
+
+Rollers and cones on these plates print in the orientation in the table below.
+
+---
+
+## Full part set — v0
+
+v1 counts belong to #840. PETG where the part is loaded and shares holes with the plates. PLA+ on the straight rollers, where the fit against the belt or the shaft is the point, so a different shrink does not open the bore the coupon just checked. The cones are TPU 95A, the same material as the belts.
 
 | file | qty | material | orientation |
 |---|---|---|---|
-| `coupon_bracket_end.stl` | 1 | PETG | flat on the plate, no supports |
-| `roller_driven.stl` | 1 | PLA+ | **axis VERTICAL**, brim |
-| `roller_idler.stl` | 1 | PLA+ | **axis VERTICAL**, brim |
+| `bracket_straight_motor.stl` | 2 | PETG | flat |
+| `bracket_straight_plain.stl` | 2 | PETG | flat |
+| `roller_driven.stl` | 2 | PLA+ | **axis vertical**, brim |
+| `roller_idler.stl` | 2 | PLA+ | **axis vertical**, brim |
+| `roller_cone_driven.stl` | 1 | **TPU 95A** | **big end down**, brim |
+| `roller_cone_idler.stl` | 5 | **TPU 95A** | **big end down**, brim |
+| `slider_bed_straight.stl` | 2 | PLA+ | belt face up |
+| `return_guide_straight.stl` | 2 | PLA+ | belt face up |
+| `tie_bar.stl` | 4 | PETG | joiner-nut pockets up |
+| `tensioner_block_left.stl` | 2 | PETG | underside down, motor plate |
+| `tensioner_block_right.stl` | 2 | PETG | underside down, plain plate |
+| `joiner.stl` | 2 | PETG | flat, holes vertical |
+| `curve_frame.stl` | 1 | PETG | base down |
+| `curve_keeper.stl` | 1 | PETG | as exported, base down |
+| straight belt cylinder | 2 | **TPU 95A** | upright |
 
-Then caliper the Ø4.4 axle bore, the Ø3.3 D-bore and the take-up slot.
+The curve has no belt. Five O-rings, from the kit, link its rollers.
 
-**Plate 2 — belt test**, once TPU arrives. One straight belt: a cylinder **Ø79.8 mean ×
-50 mm tall × 1.0 mm wall**, standing upright. This is the last genuine unknown in the build.
-
----
-
-## Full part set
-
-Per module: 2 side brackets · 2 rollers · 1 slider bed · 2 tensioner blocks · 1 return guide.
-Plus guide rails and frame connectors.
-
-| file | v0 | v1 | material | orientation |
-|---|---|---|---|---|
-| `bracket_straight_motor.stl` | 2 | 4 | PETG | flat |
-| `bracket_straight_plain.stl` | 2 | 4 | PETG | flat |
-| `bracket_corner_motor.stl` | 1 | 4 | PETG | flat |
-| `bracket_corner_infeed.stl` | 1 | 4 | PETG | flat |
-| `roller_driven.stl` | 3 | 8 | PLA+ | **axis vertical**, brim |
-| `roller_idler.stl` | 3 | 8 | PLA+ | **axis vertical**, brim |
-| `slider_bed_straight.stl` | 3 | 8 | PLA+ | flat, smooth side up |
-| `return_guide_straight.stl` | 2 | 4 | PLA+ | flat, crowned side up |
-| `return_guide_corner.stl` | 1 | 4 | PLA+ | flat, crowned side up |
-| `guide_rail.stl` | 1 | 4 | PLA+ | flat |
-| TPU belt cylinders | 3 | 8 | **TPU 95A** | upright |
-
-PETG where it is loaded, PLA+ where the fit matters — the same split CableCell uses.
-Tree supports on, per the standing profile.
+The six cones are 38.3 g of TPU 95A, beside the two belt cylinders: 6.25 g for each idler and 7.06 g for the driven cone. That is the STL volume, 31.66 cm³, times 1.21 g/cm³, and it is a solid upper bound.
 
 ### Why the rollers print vertical
 
-The D-flat is the only thing transmitting drive torque. Printed **axis-vertical**, the
-layers are horizontal discs and the flat's bearing load is circumferential — **in-plane**,
-the strong direction. Printed horizontally it would bear across layers on interlayer
-adhesion and roughly halve the margin. Ø13 × 53 mm is slender, so the brim is doing real work.
+The D-flat is the only thing transmitting drive torque. Axis-vertical, the layers are discs and the flat's load is circumferential, in the plane of the layers. Printed on its side, that load is interlayer adhesion.
 
-### Bore tolerance
+### Why the cones print big end down
 
-Bores are modelled at **nominal +0.15 mm on radius**, matching the offset CableCell
-measured on this machine (printed holes come out undersize). Expect a Ø3.3 modelled D-bore
-to print near Ø3.1 — a light slip fit on the shaft. The coupon **confirms** that offset; it
-is not there to discover it.
+The spool and the driven spigot sit outboard of the big end. On the bed, that end is the base and the cone narrows as it rises, so the taper is not an overhang. The D-flat still bears in the plane of the layers. The STL is the placed cone, in that orientation. The axle tilt leaves a lip of a few hundredths of a millimetre past each end face; it stays inside the frame gap.
+
+### Bed and return guide
+
+Both are held by a closed groove in each plate. The tongue is captured in X and Z by the first plate; the second plate closes Y. Belt drag pushes the bed toward the discharge, and the discharge wall of the groove is what stops it. The guide uses the same grooves, so it does not compete with the joiner for the top of the tie bar. Its top is square: the two long edges sit outside the belt, so there is nothing there to crown. It stays 0.5 mm under the taut return run (`return_guide_top` 18.5 mm, `return_run_z` 19 mm).
+
+### Tie bars, tensioners, joiners
+
+- Two tie bars per straight, one within 25 mm of each end. They set the plates at `inner_width` and keep the module square. M3 through the plate into a captive nut in the upright. Slide that nut in from the end of the upright before the plate goes on. The channel is the nut across flats, 5.8 mm, so the flats bear on the walls and the nut cannot spin while the screw is turned. 1.2 mm of the bar stays between the nut and the plate, so the plates cannot pull apart and let the bed tongues out of their grooves. The top face is the joint plane the joiner sits on. Print them pockets-up so the joiner nuts drop in.
+- A tensioner block on each plate's outer face, at the infeed. The motor-plate block and the plain-plate block are mirrors — the rail groove and the bore are not symmetric — so they print as `tensioner_block_left.stl` and `tensioner_block_right.stl`, two of each. Each slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. A web between the nuts takes the screw's reaction: the block-side nut slides in along the screw, and the head-side nut drops in from the top. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span. The 8 mm travel shortens the belt path by 16 mm, which is the slack for sliding the loop on from the open side. The bed stops short of the flange at full slack, so with the belt tensioned the carry is unsupported for 14.7 mm behind the infeed nose.
+- One joiner part for both joints. The two end tie bars mirror about the module centre, so the same plate sets the 1.5 mm frame gap at J1 (s1 → curve) and J2 (curve → s2). M3 down into the nuts. The tie-bar nuts drop in from below, and the pad nuts slide in from the joint face before the straight module is set against the curve, so nothing hangs under the table. There is no straight-to-straight joint in v0.
+
+---
+
+## Hardware
+
+From `geometry.json` → `hardware`. This is s1 + curve + s2 + the two joiners.
+
+| | size | length | qty | where |
+|---|---|---|---|---|
+| screw | M3 | 8 mm | 8 | tie bars |
+| screw | M3 | 16 mm | 4 | tensioner jacks |
+| screw | M3 | 12 mm | 8 | joiners |
+| screw | M3 | 10 mm | 2 | curve keeper |
+| screw | M4 | 8 mm | 6 | motor ears |
+| nut | M3 | — | 26 | 8 tie + 8 jack (two per screw) + 8 joiner + 2 keeper |
+| nut | M4 | — | 6 | motor ears |
+| rod | Ø4 | 73.0 mm | 2 | straight idler |
+| rod | Ø4 | 51.3 mm | 2 | straight driven stub |
+| rod | Ø3 | 70.006 mm | 5 | curve idler |
+| rod | Ø3 | 24.239 mm | 1 | curve driven stub |
+
+The curve idler is 70.006 mm, seated on the blind-hole bottom. Its square end, on the 5.739° tilt, stays 0.2 mm inside the keeper's inner face. The straight idler is flush with the outsides of the tensioner blocks, the straight stub is seated on the blind floor and 0.5 mm short of the D-bore, and the curve stub stops 0.5 mm short of the cone's bore bottom. Those cuts are the solids in the interference check.
+
+**O-rings.** Five, alternating grooves A and B, three of A and two of B (`curve.n` is 6). From `build.log`, for the placeholder section of 2.00 mm:
+
+| groove | pitch c | spool D | crown clearance |
+|---|---|---|---|
+| A | 22.587 mm | 9.821 mm | 2.398 mm |
+| B | 23.669 mm | 9.132 mm | 3.140 mm |
+
+The axles are skewed by about 15.7°, so each tangent leaves the groove plane at 0.136 mm of axial offset per millimetre of span. The centre clears the rim after 2.5 mm, 0.343 mm off the plane on A and 0.332 mm on B, and 0.60 mm out to the flange. That 0.60 mm is the climb to the lip. The groove section is still a 1.15 mm radius circle, with its centre 0.15 mm outside the pitch circle, so the floor is exactly one cord radius under the pitch circle. A cord resting on the floor is centred on the pitch circle, and the stretch of that seated path is 0.100. The section is swept ±0.443 mm along the axle.
+
+Replace these by calipering the ring and rebuilding. Do not order a printed drive ring.
 
 ---
 
 ## Key dimensions
 
-Read from `parts/geometry.json`, never retyped.
+From `geometry.json` and `build.log`.
 
 | | |
 |---|---|
-| Belt width | 50 mm |
-| Carry surface | z = 30 mm; belt top 31 mm |
-| Rollers | **Ø10 at both ends**, discharge one driven |
-| Nose inset from module face | 6 mm |
-| Frame gap, module to module | 1.5 mm |
-| **Transfer span, straight → corner** (crosses the corner's *side*) | **12.0 mm** |
-| **Transfer span, corner → straight** (crosses the straight's *end*) | **13.5 mm** |
-| Belt path, straight / corner | 250.6 / 150.6 mm at the **neutral axis** |
-| Printed cylinder mean Ø | 79.8 / 47.9 mm, 1.0 mm wall |
-| Shaft engagement in the D-bore | 5–6 mm, shaft-limited |
+| Belt | 50 mm wide, 1.0 mm wall, carry surface z = 30 mm, belt top 31 mm |
+| Straights | 120 mm, nose axis 6 mm in from each face |
+| Frame gap | 1.5 mm, both joints |
+| Transfer span, both joints | inner 10.5 mm, centreline 13.0 mm, outer 15.5 mm |
+| Taper | k = 0.200, so cone diameter = 0.2 × plan radius |
+| Rollers on the curve | 6, pitch 15.704°, driven roller is the third |
+| Axle tilt | 5.739° down toward the outside, which is what keeps the crown at z = 31 |
+| Curve centreline radius | 55 mm |
+| Cone plain bore | Ø3.7 (`cone_bore_d`), on the Ø3 rod and the driven stub |
+| Shaft engagement | 6.300 mm into a 10 mm D-bore |
+| Straight belt | path 250.6 mm at the neutral axis, printed mean Ø 79.8 mm |
+| Jack-screw thread in the nuts | both nuts fully crossed, 2.6 mm each, at both ends of the 8 mm travel |
+| Take-up | 8 mm of travel, 16 mm of belt slack, 14.7 mm of carry unsupported behind the infeed nose |
 
-**90° and 180° are the only transfer angles this architecture supports.** A rectangular
-module presents two faces, and only those two turns put one square to the incoming travel.
-At any other angle the gap becomes a wedge — a 60° turn leaves one corner of the part over
-30 mm of nothing while the other is fully supported. Composed 90° turns reach any heading.
-See #843.
+The outer span is the long one. A part entered on the outer edge has 15.5 mm of nothing at each joint. Parts load within 4 mm of the lane centre. Past that, an outer-edge part at full speed reaches s2's outer plate.
 
 ---
 
-## Assembly order
+## Assembly
 
-1. **Rollers onto the brackets.** Idler goes in the **infeed** take-up slot; driven roller
-   at the **discharge** end. The idler rides a Ø4 stub axle in both plates.
-2. **Motor into the saddle**, shaft first, from outboard. Its Ø4 boss passes through the
-   plate; the shaft crosses the plate and side gap and lands 5–6 mm into the driven
-   roller's D-bore. Tighten the M2 clamp screw onto the can.
-   *There is no face-mount pattern* — the motor is held on its 10 × 12 body, so any
-   GA12-N20-class motor fits regardless of vendor.
-3. **Return guide** between the plates, under the *lower* run, crowned edge up. It sits
-   **0.5 mm below the taut return line** — a correctly tensioned belt never touches it and
-   it only catches sag. Do not shim it up to contact: that adds drag to every module in the
-   system to solve a problem the tensioner already solved. It stops a nose diameter short of
-   each axis so it can never intrude on the arc where the belt is wrapping.
-4. **Slider bed** between the plates, under the carry run. Optionally face it with UHMW or
-   PTFE tape: published practice puts a PU belt on UHMW at µ 0.03–0.06 against 0.15–0.30 on
-   steel, and printed PLA sits nearer the steel end. Cuts belt drag 5–10×. Unnecessary at
-   v0's 10–16× torque margin; worth it at eight motors on one supply.
-5. **Belt over the rollers**, then take up slack by sliding the infeed nose outward and
-   locking the tensioner blocks. The slot runs inboard from the tensioned position, so the
-   fully-tensioned axis is the outer limit — the design span is what you actually get.
-   The belt loop encircles the slider bed but passes *above* the return guide, which hangs
-   outside the loop — so the guide can go in before or after the belt, the bed cannot.
-6. **Butt the modules** at a 1.5 mm frame gap using the frame connectors. The corner's
-   infeed side plate is cut flush with the carry plane; **that face must stay clear** —
-   a full-height plate stands 4 mm proud of its own belt and is a kerb across the exact
-   face the part has to cross.
-7. **Guide rail** on the corner's far side. It backs up the design; it does not make it
-   work. The part settles into its lane by belt traction and never reaches the rail at any
-   speed or friction tested.
+The belt still goes on from the open side, with the plain plate off. Nothing in the loop except the rollers and the bed. The joiners go in before that bed, and before the cones. Their screws stand vertically under the lane: once the bed and the belt are on, no hex key reaches the tie-side screws, and with the cones in, the pad-side clearance screw meets the end cone (cone 2 at J1, cone 5 at J2).
+
+Separating two joined modules means taking that straight's plain plate, belt and bed back out first. That is the cost of this joiner. A later loop should not copy a joint whose screws are buried under the belt.
+
+### Frame, motor plates, joiners
+
+1. **Curve frame.** Pad nuts slide in from both joint faces. M4 ear nuts drop in from the top of the pad. Keeper nuts drop in from the top of the outer wall.
+2. **Each straight's motor plate, then its tie bars.** Tie-bar nuts in from the end of each upright first, flats against the channel walls. Jack nuts into the boss: the block-side nut along the screw, the head-side nut down the top slot. M4 nuts into the ear bosses from the inboard face. Bolt the tie bars through the motor plate only. Then the motor, M4s from the outboard side. The plain plate stays off.
+3. **Both joiners.** One on s1's discharge tie bar and the curve's entry pad, one on the curve's exit pad and s2's infeed tie bar. Four M3s down through each plate, into the nuts already in the tie bar and the pad. The cones are not in yet, and neither is the bed.
+
+### Cones, ring before the rod
+
+A closed ring has to encircle the spool, and once the rod runs through the cone and both walls the ring cannot get there. Each ring goes onto its cone before that cone's rod.
+
+The free half of a ring is a loop of radius 8.72 mm. Left beside the spool it meets the frame, toward the wall or in the lane. Held up, above the walls, it clears them by 1.66 mm. Hold that loop up while the cone goes in, then carry it across to the next cone.
+
+1. **Cone 1.** Loop ring 1–2 onto groove A. Drop the cone in (60.69 mm along the axle, 60.39 mm across, walls 63.00 mm apart, 2.61 mm to spare). With both rings seated the drop clearance is still 0.420 mm. Slide the Ø3 rod in from outside the outer wall; the hole clears it by 0.150 mm. The free loop waits, held up, for cone 2.
+2. **Cone 2.** Pass it through ring 1–2 so groove A is in that ring, and loop ring 2–3 onto groove B. Drop in. Rod. Hold ring 2–3's free loop up.
+3. **Driven cone.** Pass it through ring 2–3 (groove B) and loop ring 3–4 onto groove A before it goes in. The stub is already in the small-end bore. Spigot first, out through the outer wall: push until the stub clears the inner wall (4.03 mm), then back so the stub seats. With both rings on, the clearance at that 4.03 mm push is 0.150 mm. The relief is the ring's crown plus 0.4 mm, radius 5.97 mm — the bare spool was not the widest thing on the cone — and the cone is free for 4.78 mm, a margin of 0.75 mm. The outer pad keeps the Ø8 spigot bore. Hold ring 3–4's free loop up.
+4. **Cone 4.** Through ring 3–4 onto groove A, and ring 4–5 onto groove B. Drop in. Rod.
+5. **Cone 5.** Through ring 4–5 onto groove B, and ring 5–6 onto groove A. Drop in. Rod.
+6. **Cone 6.** Through ring 5–6 onto groove A. Drop in. Rod.
+
+**Keeper**, then the **curve motor**. The keeper screws come in from outside the outer wall, over the rod ends. The M4s come in from outboard of the pad. The motor stays off until the driven cone is seated.
+
+### Each straight, after its joiner
+
+1. **Bed, both rollers, the idler rod, then the belt** from the open side, over the rollers and the bed as one loop. The bed's tongues drop into the motor plate's grooves.
+2. **Return guide**, under the return run, into its own grooves. It has to be in before the plain plate, because that plate closes the groove.
+3. **Driven stub, then the plain plate.** The stub drops into the roller's far bore and stops 0.5 mm short of the D-bore step. The plain plate's bore is blind. Its two tie screws come in from the outboard face.
+4. **Tensioners.** Block on each rail, jack screw through the two nuts, taken up until the idler rod is against the outer end of the slot. The hex key comes in along the screw from the head, outboard of the plate.
 
 ---
 
 ## Wiring
 
-TB6612FNG ×2 for v0, ×4 for v1. Two supplies, one ground — the classic first-integration failure.
+Three motors for v0. The order list has the part numbers.
 
-- **12 V PSU** → driver `VM` (motor rail)
-- **Pico 2 3V3** → driver `VCC` (logic rail)
-- **PSU ground and Pico ground tied together** — the TB6612FNG splits VM from VCC, and it only works if they share a return. Get this wrong and it either does nothing or misbehaves in ways that look exactly like a firmware bug.
-- Per driver: `PWMA/AIN1/AIN2` and `PWMB/BIN1/BIN2` from Pico GPIO, plus a shared `STBY` (held high to enable).
-- Each driver channel → 2-core → one N20 motor.
-- **Not the DRV8833** — tops out at 10.8 V and cannot drive 12 V motors at all.
-- **Pico 2, not Pico.** 8 motors × (PWM + IN1 + IN2) + STBY = 25 of a Pico's 26 GPIO, leaving nothing for a sensor. The RP2350 has 12 PWM slices (24 channels) against the RP2040's 8 (16).
-- **JST-XH pairs or screw terminals** at each motor so a module can be unplugged.
-- Size the PSU from **measured** stall current, not the datasheet.
+- **TB6612FNG** drivers. Not a DRV8833: that tops out at 10.8 V and cannot run these 12 V motors. v0 uses two of the four boards in the order; each board has two channels.
+- **Bench supply, set to 12 V,** is the motor rail (`VM`). Set the rear switch to 115 V before first use, set voltage and a low current limit with the output off, then turn the output on. A low limit trips on a wiring mistake instead of killing a driver.
+- **Pico 2 W** logic. The Pico runs from USB. Tie the supply's **− terminal to the Pico's GND**, not the green earth post. The driver splits VM from VCC, and it only works if they share a return.
+- **Gear Motor Input Board** soldered onto each motor's spade tabs, then a **female/male jumper** from the driver channel to that header. That is the connector. A motor comes off without the iron.
+- Size the supply from the measured stall current, which the bench supply's display gives you. The listing's 1.6 A per motor is the number to beat, not the one to trust.
 
-### Firmware notes
+Firmware is in [`hardware/conveyor/`](../../hardware/conveyor/README.md). `uv run python -m hardware.conveyor.selftest` runs it without a Pico.
 
-Built — see [`hardware/conveyor/`](../../hardware/conveyor/README.md) for the protocol, pin map
-and bring-up CLI. `uv run python -m hardware.conveyor.selftest` checks it without a Pico.
+- Commands are absolute (`set duty=X`). A duplicate is harmless; a delta is not.
+- Duty is checked 0–100 % at the firmware boundary and rejected past that, not clamped. Clamping 150 to 100 hides a host bug as a slow conveyor.
+- A command timeout coasts every motor. A motor left driven after the host goes away is the unsafe state.
+- Stop-all on init, so a reset does not inherit a spinning motor.
+- An N20 may not break stiction at low duty. The firmware kicks once at full duty, then settles.
+- Keep PWM above audible or the motors whine.
 
-- Commands are **absolute, not deltas** — `set duty=X`, never `increase speed`. That makes
-  every command idempotent, so a duplicate is harmless.
-- Duty is validated **0–100 % at the firmware boundary**, not on the host, and out-of-range is
-  **rejected** — never clamped. Silently saturating 150 to 100 turns a host bug into a
-  conveyor that merely runs slower than someone expected.
-- **Command timeout that coasts every motor.** A motor left driven after the host goes away
-  is the one genuinely unsafe state.
-- **Stop-all on init** so a reset never inherits a spinning motor.
-- An N20 may not break stiction at low duty — the firmware wants a brief **kick-start pulse**
-  at full duty before settling to the commanded value.
-- Keep PWM above audible or the motors whine at low duty.
+---
+
+## The sim
+
+The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part's sliding friction is 0, so the pair is the drive geom's value exactly, including a commanded 0. Rails and walls keep 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
+
+The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.2 s on 15 workers.
+
+A part set down at rest on the cones, drives held, meets two rollers, 17 contacts on each, spread 32.3 mm along the crown. Tilt is 0.010°. It sits 0.240 mm above the height it rests at on s1. Both surfaces are at 31 mm. The belt's four contacts sink 0.25 mm and the cones' 34 sink 0.01 mm, and that difference is the 0.24 mm.
+
+The cones are TPU 95A. With PLA cones the nominal run, µ 0.9 on the belt and 0.35 on the cones, exited at 84.7°, and 9 of 36 runs in that sweep passed. At each handoff the grippier belt held the part's heading, and the curve's rotation field carried that lag out to s2.
+
+The nominal run (0.155 m/s, µ 0.9 / 0.9, offset 0) **passes**. Exit code 0.
+
+| | |
+|---|---|
+| Entry offset | −0.00 mm |
+| Exit offset | −2.23 mm |
+| Exit yaw | 91.3° (limit is 90° ± 6°) |
+| Dip | −0.04 mm, on s2 |
+| Max tilt | 0.38°, on s1 |
+| Rail contacts | none |
+| Time to the exit station | 1.36 s, limit 3.03 s |
+
+Yaw error against the path tangent: +2.45° at the entry face, −0.87° at mid-curve, −2.44° at the exit face, +1.31° at the exit station.
+
+### Sweep
+
+45 runs: speeds 0.030, 0.080 and 0.155 m/s; belt and cone µ of 0.6/0.6, 0.9/0.9, 1.2/1.2, 0.9/0.7 and 0.7/0.9; entry offsets −4, 0 and +4 mm. The last two pairs are the same TPU about 20% apart, which is what two prints of it can do. **45 pass.** Exit code 0. Full rows are in `renders/sim/sweep.json`. Nothing was changed to make a row pass.
+
+Parts load within 4 mm of the lane centre. Past that, an outer-edge part at full speed reaches s2's outer plate.
+
+A run passes when the exit yaw is inside 90 ± 6°, the exit offset has moved at most 3.0 mm from the entry offset, no rail is touched, the dip is at most 1.0 mm, the tilt is at most 5°, and the exit station is reached inside the time limit. The dip is measured from the mean height while the whole part is on s1's flat run: its back past the infeed nose, its front 2 mm short of the discharge nose.
+
+Per entry offset, the spread of exit offset and of exit yaw across speed and µ is printed below and stored in `sweep.json`. Kyle accepted the speed-dependent drift, so the spreads are reported and the exit code ignores them. The exit code is 0 only when every run passes the gates above.
+
+| speed | µ belt / curve | off | entry | exit | yaw | dip | tilt | rails | |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.030 | 0.60/0.60 | −4 | −4.00 | −4.45 | 89.4 | −0.01 | 0.52 | 0 | PASS |
+| 0.030 | 0.90/0.90 | −4 | −4.00 | −4.45 | 89.6 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 1.20/1.20 | −4 | −4.00 | −4.45 | 90.1 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 0.90/0.70 | −4 | −4.00 | −4.52 | 87.6 | −0.01 | 0.57 | 0 | PASS |
+| 0.030 | 0.70/0.90 | −4 | −4.00 | −4.39 | 91.6 | −0.01 | 0.55 | 0 | PASS |
+| 0.080 | 0.60/0.60 | −4 | −4.00 | −5.45 | 88.5 | −0.02 | 0.42 | 0 | PASS |
+| 0.080 | 0.90/0.90 | −4 | −4.00 | −5.31 | 89.6 | −0.02 | 0.52 | 0 | PASS |
+| 0.080 | 1.20/1.20 | −4 | −4.00 | −5.43 | 90.1 | −0.02 | 0.58 | 0 | PASS |
+| 0.080 | 0.90/0.70 | −4 | −4.00 | −5.18 | 87.7 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 0.70/0.90 | −4 | −4.00 | −5.45 | 91.9 | −0.02 | 0.46 | 0 | PASS |
+| 0.155 | 0.60/0.60 | −4 | −4.00 | −6.39 | 90.9 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | −4 | −4.00 | −6.56 | 90.8 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 1.20/1.20 | −4 | −4.00 | −6.31 | 91.2 | −0.04 | 0.37 | 0 | PASS |
+| 0.155 | 0.90/0.70 | −4 | −4.00 | −6.41 | 90.2 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.70/0.90 | −4 | −4.00 | −6.55 | 93.0 | −0.04 | 0.41 | 0 | PASS |
+| 0.030 | 0.60/0.60 | 0 | −0.00 | −0.45 | 89.2 | −0.01 | 0.53 | 0 | PASS |
+| 0.030 | 0.90/0.90 | 0 | −0.00 | −0.48 | 89.4 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 1.20/1.20 | 0 | −0.00 | −0.46 | 88.3 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 0.90/0.70 | 0 | −0.00 | −0.49 | 86.9 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 0.70/0.90 | 0 | −0.00 | −0.35 | 91.1 | −0.01 | 0.56 | 0 | PASS |
+| 0.080 | 0.60/0.60 | 0 | 0.00 | −1.16 | 89.6 | −0.02 | 0.44 | 0 | PASS |
+| 0.080 | 0.90/0.90 | 0 | 0.00 | −1.05 | 90.0 | −0.02 | 0.53 | 0 | PASS |
+| 0.080 | 1.20/1.20 | 0 | 0.00 | −1.30 | 91.1 | −0.02 | 0.58 | 0 | PASS |
+| 0.080 | 0.90/0.70 | 0 | 0.00 | −1.17 | 88.2 | −0.02 | 0.53 | 0 | PASS |
+| 0.080 | 0.70/0.90 | 0 | 0.00 | −1.34 | 92.6 | −0.02 | 0.46 | 0 | PASS |
+| 0.155 | 0.60/0.60 | 0 | −0.00 | −2.26 | 91.4 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | 0 | −0.00 | −2.23 | 91.3 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 1.20/1.20 | 0 | −0.00 | −2.28 | 92.7 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.90/0.70 | 0 | −0.00 | −2.24 | 89.5 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.70/0.90 | 0 | −0.00 | −2.22 | 92.9 | −0.04 | 0.40 | 0 | PASS |
+| 0.030 | 0.60/0.60 | +4 | 4.00 | 3.70 | 89.3 | −0.01 | 0.54 | 0 | PASS |
+| 0.030 | 0.90/0.90 | +4 | 4.00 | 3.54 | 88.7 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 1.20/1.20 | +4 | 4.00 | 3.53 | 89.9 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 0.90/0.70 | +4 | 4.00 | 3.55 | 87.5 | −0.01 | 0.57 | 0 | PASS |
+| 0.030 | 0.70/0.90 | +4 | 4.00 | 3.74 | 93.0 | −0.01 | 0.55 | 0 | PASS |
+| 0.080 | 0.60/0.60 | +4 | 4.00 | 2.90 | 90.6 | −0.02 | 0.41 | 0 | PASS |
+| 0.080 | 0.90/0.90 | +4 | 4.00 | 2.75 | 89.3 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 1.20/1.20 | +4 | 4.00 | 2.87 | 91.4 | −0.02 | 0.57 | 0 | PASS |
+| 0.080 | 0.90/0.70 | +4 | 4.00 | 2.77 | 90.0 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 0.70/0.90 | +4 | 4.00 | 2.80 | 93.4 | −0.02 | 0.45 | 0 | PASS |
+| 0.155 | 0.60/0.60 | +4 | 4.00 | 1.88 | 94.1 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | +4 | 4.00 | 1.50 | 90.2 | −0.04 | 0.37 | 0 | PASS |
+| 0.155 | 1.20/1.20 | +4 | 4.00 | 1.75 | 93.6 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.90/0.70 | +4 | 4.00 | 1.65 | 88.7 | −0.04 | 0.41 | 0 | PASS |
+| 0.155 | 0.70/0.90 | +4 | 4.00 | 1.90 | 95.8 | −0.04 | 0.40 | 0 | PASS |
+
+| entry offset | exit-offset spread | exit-yaw spread |
+|---|---|---|
+| −4 mm | 2.172 mm | 5.385° |
+| 0 | 1.927 mm | 5.935° |
+| +4 mm | 2.242 mm | 8.265° |
+
+The yaw furthest from 90° is 95.8°, at 0.155 m/s, µ 0.70 / 0.90, offset +4. Its yaw error is +3.50° at the entry face, +1.05° at mid-curve, +0.17° at the exit face and +5.79° at the station. The largest offset change is 2.56 mm, at 0.155 m/s, µ 0.9 / 0.9, entry −4 mm, exit −6.56 mm. The dip runs from −0.04 mm to −0.01 mm, so the part stays at the height it had on s1, and the largest tilt is 0.58°. No row touches a rail.
+
+---
+
+## The belt corner
+
+Superseded 2026-09-25. It is in git history at `7c560e0`. That layout kept the part's yaw instead of turning it with the path. This one turns the part by the roller speeds, and the sim above is the measurement of whether that yaw actually arrives at 90°.

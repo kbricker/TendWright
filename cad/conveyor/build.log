@@ -1,191 +1,378 @@
 === build start ===
-bracket: len=120.0 t=3.0 motor_side=True
+layout: C=(121.500, 85.500) z_top=31.000 belt y 5.500..55.500
+layout: s2 rot=90 offset=(207.000, 87.000) entry_face_x=121.500 exit_face_y=85.500
+curve: k=0.20000 alpha=5.7392 deg pitch=15.7043 deg n=6 driven=3
+cone_bore_d 3.70 mm
+curve theta deg: -84.2608, -68.5565, -52.8522, -37.1478, -21.4435, -5.7392
+cone plan r 29.000..81.000  spool grooves 83.500 87.500 end 90.000
+walls inner 23.000..28.000 outer 91.000..94.000
+spans mm: inner 10.500 centre 13.000 outer 15.500 (entry and exit)
+straight enclosure overhang past the discharge face: 2.000 mm
+oring A: c=22.587 D=9.821 crown_clear=2.398 stretch=0.100
+oring B: c=23.669 D=9.132 crown_clear=3.140 stretch=0.100
+oring id window at cs=2.00: 18.971 .. 22.541 mm
+oring 1-2 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
+oring 1-2  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
+oring 2-3 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
+oring 2-3  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
+oring 3-4 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
+oring 3-4  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
+oring 4-5 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
+oring 4-5  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
+oring 5-6 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
+oring 5-6  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
+groove floor at pitch r - 1.000  section centre outward 0.150  axial sweep +/- 0.443
+spool OD radius A=5.510 B=5.166
+clearance small-end cones 2.045 mm; spool A at s_b 10.890; spool B at mid 12.796
+rod cut mm: idler 70.006  driven stub 24.239
+curve idler end rim 0.200 mm inside the keeper
+shaft engagement 6.300 mm (bore 10.0)
+straight bosses: protrusion 1.600 mm, inboard face y=56.400 after mirror (both ears)
+pad: s_face=98.095 s_slab_in=90.658 s_boss_in=88.350 h_half=21.215 v_half=9.000
+curve nut land behind pocket: 1.200 mm
+blind-hole remaining plan thickness 0.830 mm
+keeper cap half-width 3.250 mm, gap to pad 1.219 mm
+--- solids ---
+bracket + straight rollers
+bracket: len=120.0 motor_side=True
 bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
+bracket: enclosure face, tab, M4 nuts
+bracket: lower boss inboard to y=4.60, centred z=9.00
+bracket: upper boss inboard to y=4.60, centred z=41.00
+bracket: bed and guide grooves, tensioner seat
+bracket: len=120.0 motor_side=False
+bracket: infeed take-up slot
+bracket: blind bore for the driven stub
+bracket: bed and guide grooves, tensioner seat
+jack-screw engagement tensioned 5.20 mm, slack 5.20 mm
+take-up 8.0 mm, belt slack 16.0 mm, unsupported carry 14.723 mm
+straight idler rod cut 73.000 mm
+straight driven stub cut 51.300 mm
+roller: Ø10 idler
+roller: Ø10 driven
+slider bed: len=120.0
+return guide: len=120.0
+cone rollers
+cone roller: idler
+cone roller: driven
+roller 1 entry lip 0.0408 mm, inside the frame gap
+roller 6 exit lip 0.0408 mm, inside the frame gap
+enclosures
+motor enclosure: reference, ears along z
+motor enclosure: reference, ears along x
+curve frame
+curve frame: base, walls, pad, axle holes
+driven spool relief radius 5.97 mm out to s 94.37 (pad face 98.09)
+keep-out x 105.00..123.00 y 60.00..94.00 z 4.00..46.00
+curve joint pads at z=10.0
+keeper
+curve keeper
+keeper bolt at theta -76.409 deg, z=7.00
+keeper bolt at theta -13.591 deg, z=7.00
+s1 enclosure vs frame
+s1 enclosure distance to curve frame: 1.000 mm (need >= 0.50)
+curve enclosure vs frame, lifted off the pad
+curve enclosure, 0.050 mm off the pad, distance 0.050 mm
+rollers vs frame
+roller 1 distance to frame 0.420 mm
+roller 2 distance to frame 0.420 mm
+roller 3 distance to frame 0.420 mm
+roller 4 distance to frame 0.420 mm
+roller 5 distance to frame 0.420 mm
+roller 6 distance to frame 0.420 mm
+idler cone 60.69 mm axial, 60.39 mm across, walls 63.00 mm apart, drop margin 2.61 mm
+idler drop-in clearance 0.420 mm
+idler rod from outside the outer wall, clearance 0.150 mm
+driven cone seated, stub on the blind floor; 0.15 mm off the floor the clearance is 0.150 mm
+driven stub clears the inner wall after 4.03 mm outward; free travel 4.78 mm; margin 0.75 mm
+idler cone with both rings on, drop clearance 0.420 mm
+driven cone with both rings on, clearance at 4.03 mm outward 0.150 mm
+oring free loop radius 8.72 mm  toward the wall 0.000 mm  in the lane 0.000 mm  held up 1.658 mm
+o-rings
+oring 1-2 groove A zmax 28.464
+oring 2-3 groove B zmax 27.695
+oring 3-4 groove A zmax 28.464
+oring 4-5 groove B zmax 27.695
+oring 5-6 groove A zmax 28.464
+oring real 1-2 volume 239 mm^3
+oring real 2-3 volume 239 mm^3
+oring real 3-4 volume 239 mm^3
+oring real 4-5 volume 239 mm^3
+oring real 5-6 volume 239 mm^3
+--- placed line ---
+tie bar: x=18.0
+tie bar: x=102.0
+tensioner block
+joiner
+joiner
+s1 plain plate to curve frame 1.500 mm
+s2 plain plate to curve frame 1.500 mm
+joiner holes within 0.05 mm of the tie-bar and pad holes
+nut s1 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s1 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s2 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s2 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s1 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut curve ear lower  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3  turn 3.8 mm^3
+nut curve ear upper  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3  turn 3.8 mm^3
+nut keeper entry  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut keeper exit  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 1  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 2  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 3  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 4  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+rod s1_rod cut 73.000 mm  volume err 0.00000%
+rod s1_driven_stub cut 51.300 mm  volume err 0.00000%
+rod s2_rod cut 73.000 mm  volume err 0.00000%
+rod s2_driven_stub cut 51.300 mm  volume err 0.00000%
+rod crod_1 cut 70.006 mm  volume err 0.00000%
+rod crod_2 cut 70.006 mm  volume err 0.00000%
+rod stub cut 24.239 mm  volume err 0.00000%
+rod crod_4 cut 70.006 mm  volume err 0.00000%
+rod crod_5 cut 70.006 mm  volume err 0.00000%
+rod crod_6 cut 70.006 mm  volume err 0.00000%
+straight stub 0.50 mm short of the D-bore, seated on the blind floor
+curve stub 0.50 mm short of the cone bore bottom
+interference take-up: 78 solids
+interference take-up pairs 249, none over 1e-3 mm^3
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 11.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 11.800 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 11.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 11.800 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 1.200 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw cv_m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw cv_m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw keeper engagement 2.600 mm  nut 2.600 mm  tip past far face 1.900 mm
+screw keeper engagement 2.600 mm  nut 2.600 mm  tip past far face 1.900 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+interference mid: 78 solids
+interference mid pairs 24, none over 1e-3 mm^3
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
+interference slack: 78 solids
+interference slack pairs 24, none over 1e-3 mm^3
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
+screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
+tool j1 tie-loc        with cones in  clear
+tool j1 tie-clr        with cones in  clear
+tool j1 pad-loc        with cones in  0.35 mm to cone_2
+tool j1 pad-clr        with cones in  0.00 mm to cone_2
+tool j2 tie-loc        with cones in  clear
+tool j2 tie-clr        with cones in  clear
+tool j2 pad-loc        with cones in  0.35 mm to cone_5
+tool j2 pad-clr        with cones in  0.00 mm to cone_5
+assembly 1  curve frame, pad nuts, ear nuts, keeper nuts
+assembly 2  s1 motor plate and tie bars
+tool s1 tie in motor   M3  3.31 mm to s1_plate_motor
+tool s1 tie out motor  M3  3.31 mm to s1_plate_motor
+assembly 3  s1 motor
+tool s1 m4 lower       M4  2.25 mm to s1_motor
+tool s1 m4 upper       M4  2.25 mm to s1_motor
+assembly 4  s2 motor plate and tie bars
+tool s2 tie in motor   M3  3.31 mm to s2_plate_motor
+tool s2 tie out motor  M3  3.31 mm to s2_plate_motor
+assembly 5  s2 motor
+tool s2 m4 lower       M4  2.25 mm to s2_motor
+tool s2 m4 upper       M4  2.25 mm to s2_motor
+assembly 6  joiners
+tool j1 tie-loc        M3  clear
+tool j1 tie-clr        M3  clear
+tool j1 pad-loc        M3  6.35 mm to frame
+tool j1 pad-clr        M3  6.35 mm to frame
+tool j2 tie-loc        M3  clear
+tool j2 tie-clr        M3  clear
+tool j2 pad-loc        M3  6.35 mm to frame
+tool j2 pad-clr        M3  6.35 mm to frame
+assembly 7  cone 1: ring 1-2 groove A; drop in, then the rod
+assembly 8  cone 2: ring 1-2 groove A, ring 2-3 groove B; drop in, then the rod
+assembly 9  cone 3: ring 2-3 groove B, ring 3-4 groove A; spigot-first, stub already in the bore
+assembly 10  cone 4: ring 3-4 groove A, ring 4-5 groove B; drop in, then the rod
+assembly 11  cone 5: ring 4-5 groove B, ring 5-6 groove A; drop in, then the rod
+assembly 12  cone 6: ring 5-6 groove A; drop in, then the rod
+assembly 13  keeper
+tool keeper entry      M3  clear
+tool keeper exit       M3  clear
+assembly 14  curve motor
+tool curve m4 lower    M4  2.25 mm to curve_motor
+tool curve m4 upper    M4  2.25 mm to curve_motor
+assembly 15  s1 bed, rollers, belt
+assembly 16  s1 return guide, driven stub, plain plate
+tool s1 tie in plain   M3  3.31 mm to s1_plate_plain
+tool s1 tie out plain  M3  3.31 mm to s1_plate_plain
+assembly 17  s1 tensioners
+tool s1 jack motor     M3  1.50 mm to s1_plate_motor
+tool s1 jack plain     M3  1.50 mm to s1_plate_plain
+assembly 18  s2 bed, rollers, belt
+assembly 19  s2 return guide, driven stub, plain plate
+tool s2 tie in plain   M3  3.31 mm to s2_plate_plain
+tool s2 tie out plain  M3  3.31 mm to s2_plate_plain
+assembly 20  s2 tensioners
+tool s2 jack motor     M3  1.50 mm to s2_plate_motor
+tool s2 jack plain     M3  1.50 mm to s2_plate_plain
+--- export ---
+print bracket_straight_motor  s1_plate_motor  sym 0.0000 mm^3
+print bracket_straight_motor  s2_plate_motor  sym 0.0000 mm^3
+print bracket_straight_motor solid 1  z 0.0000 .. 46.500
 export: bracket_straight_motor
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
+print bracket_straight_plain  s1_plate_plain  sym 0.0000 mm^3
+print bracket_straight_plain  s2_plate_plain  sym 0.0000 mm^3
+print bracket_straight_plain solid 1  z 0.0000 .. 35.000
 export: bracket_straight_plain
-bracket: len=70.0 t=2.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-export: bracket_corner_motor
-bracket: len=70.0 t=2.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-bracket: cut down to z=30.0 (open transfer face)
-export: bracket_corner_infeed
-roller: Ø10 idler (plain bore)
+print roller_idler  s1_roller_idler  sym 0.0000 mm^3
+print roller_idler  s2_roller_idler  sym 0.0000 mm^3
+print roller_idler solid 1  z -0.0000 .. 53.000
 export: roller_idler
-roller: Ø10 driven (D-bore)
+print roller_driven  s1_roller_driven  sym 0.0000 mm^3
+print roller_driven  s2_roller_driven  sym 0.0000 mm^3
+print roller_driven solid 1  z -0.0000 .. 56.500
 export: roller_driven
-slider bed: plate + lead-in chamfers, len=120.0
+print roller_cone_idler  cone_1  sym 0.0000 mm^3
+print roller_cone_idler  cone_2  sym 0.0000 mm^3
+print roller_cone_idler  cone_4  sym 0.0000 mm^3
+print roller_cone_idler  cone_5  sym 0.0000 mm^3
+print roller_cone_idler  cone_6  sym 0.0000 mm^3
+print roller_cone_idler solid 1  z -0.0000 .. 60.694
+export: roller_cone_idler
+print roller_cone_driven  cone_3  sym 0.0000 mm^3
+print roller_cone_driven solid 1  z -0.0000 .. 68.740
+export: roller_cone_driven
+print slider_bed_straight  s1_bed  sym 0.0000 mm^3
+print slider_bed_straight  s2_bed  sym 0.0000 mm^3
+print slider_bed_straight solid 1  z -0.0000 .. 3.000
 export: slider_bed_straight
-return guide: crowned bar, len=120.0
+print return_guide_straight  s1_guide  sym 0.0000 mm^3
+print return_guide_straight  s2_guide  sym 0.0000 mm^3
+print return_guide_straight solid 1  z 0.0000 .. 3.000
 export: return_guide_straight
-return guide: crowned bar, len=70.0
-export: return_guide_corner
-guide rail: L-section
-export: guide_rail
-motor: GA12-N20 reference envelope
+print tie_bar  s1_tie_in  sym 0.0000 mm^3
+print tie_bar  s1_tie_out  sym 0.0000 mm^3
+print tie_bar  s2_tie_in  sym 0.0000 mm^3
+print tie_bar  s2_tie_out  sym 0.0000 mm^3
+print tie_bar solid 1  z 0.0000 .. 8.000
+export: tie_bar
+print tensioner_block_left  s1_block_near  sym 0.0000 mm^3
+print tensioner_block_left  s2_block_near  sym 0.0000 mm^3
+print tensioner_block_right  s1_block_far  sym 0.0000 mm^3
+print tensioner_block_right  s2_block_far  sym 0.0000 mm^3
+print tensioner_block_left solid 1  z 0.0000 .. 18.000
+export: tensioner_block_left
+print tensioner_block_right solid 1  z 0.0000 .. 18.000
+export: tensioner_block_right
+joiner
+print joiner  joiner_1  sym 0.0000 mm^3
+print joiner  joiner_2  sym 0.0000 mm^3
+print joiner solid 1  z 0.0000 .. 3.000
+export: joiner
+print curve_frame  frame  sym 0.0000 mm^3
+print curve_frame solid 1  z 0.0000 .. 35.000
+export: curve_frame
+print curve_keeper  keeper  sym 0.0000 mm^3
+print curve_keeper solid 1  z 0.0000 .. 20.803
+export: curve_keeper
 export: ref_motor
-coupon: discharge end of the motor-side bracket
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
+coupon: discharge end of the motor plate
+print coupon_bracket_end solid 1  z 0.0000 .. 46.500
 export: coupon_bracket_end
-assembly: len=120.0 t=3.0 open_face=False
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-slider bed: plate + lead-in chamfers, len=120.0
-return guide: crowned bar, len=120.0
+coupon: infeed end, with the tensioner seat
+print coupon_infeed_end solid 1  z 0.0000 .. 35.000
+print coupon_infeed_end solid 2  z 0.0000 .. 18.000
+export: coupon_infeed_end
+export: tensioner_plate
+export: tensioner_block_seated
+coupon_curve: sector -66.571 .. -29.296 deg (pad cover 13.719)
+export: coupon_curve_view
+print coupon_curve solid 1  z 0.0000 .. 35.000
+export: coupon_curve
+assembly: straight, then mirror onto the left plate
 export: assembly_straight
-assembly: len=70.0 t=2.0 open_face=True
-bracket: len=70.0 t=2.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=70.0 t=2.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-bracket: cut down to z=30.0 (open transfer face)
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-slider bed: plate + lead-in chamfers, len=70.0
-return guide: crowned bar, len=70.0
-export: assembly_corner
+export: assembly_v0
 components: cs
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
 export: cs_brackets
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
 export: cs_rollers
-motor: GA12-N20 reference envelope
 export: cs_motor
-slider bed: plate + lead-in chamfers, len=120.0
 export: cs_bed
-return guide: crowned bar, len=120.0
 export: cs_return
 export: cs_belt
-components: cc
-bracket: len=70.0 t=2.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=70.0 t=2.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-bracket: cut down to z=30.0 (open transfer face)
-export: cc_brackets
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-export: cc_rollers
-motor: GA12-N20 reference envelope
-export: cc_motor
-slider bed: plate + lead-in chamfers, len=70.0
-export: cc_bed
-return guide: crowned bar, len=70.0
-export: cc_return
-export: cc_belt
 components: s2
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
 export: s2_brackets
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
 export: s2_rollers
-motor: GA12-N20 reference envelope
 export: s2_motor
-slider bed: plate + lead-in chamfers, len=120.0
 export: s2_bed
-return guide: crowned bar, len=120.0
 export: s2_return
 export: s2_belt
-assembly: v0 line = straight + corner + straight
-assembly: len=120.0 t=3.0 open_face=False
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-slider bed: plate + lead-in chamfers, len=120.0
-return guide: crowned bar, len=120.0
-assembly: len=70.0 t=2.0 open_face=True
-bracket: len=70.0 t=2.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=70.0 t=2.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-bracket: cut down to z=30.0 (open transfer face)
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-slider bed: plate + lead-in chamfers, len=70.0
-return guide: crowned bar, len=70.0
-assembly: len=120.0 t=3.0 open_face=False
-bracket: len=120.0 t=3.0 motor_side=True
-bracket: infeed take-up slot
-bracket: motor saddle + boss clearance at the driven nose
-bracket: saddle clamp screw
-bracket: cross-member mounting holes
-bracket: len=120.0 t=3.0 motor_side=False
-bracket: infeed take-up slot
-bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
-roller: Ø10 idler (plain bore)
-roller: Ø10 driven (D-bore)
-slider bed: plate + lead-in chamfers, len=120.0
-return guide: crowned bar, len=120.0
-export: assembly_L
-export: assembly_v0
-belt (neutral axis, D/t=10.0): straight=250.6 mm -> print cyl mean dia 79.8 | corner=150.6 mm -> 47.9
-JOINT A straight->corner (side entry): 6.0 + 1.5 + 4.5 = 12.0 mm
-JOINT B corner->straight (end entry): 6.0 + 1.5 + 6.0 = 13.5 mm
+export: cs_tiebars
+export: cs_tension
+export: s2_tiebars
+export: s2_tension
+export: jn_1
+export: jn_2
+export: j1_view
+export: cv_frame
+export: cv_rollers
+export: cv_orings
+export: cv_motor
+export: cv_keeper
+hardware tensioner jacks  M3 x 16 mm  x4  nuts 8
+hardware tie bars  M3 x 8 mm  x8  nuts 8
+hardware motor ears  M4 x 8 mm  x6  nuts 6
+hardware curve keeper  M3 x 10 mm  x2  nuts 2
+hardware joiners  M3 x 12 mm  x8  nuts 8
 export: geometry.json
 === build complete ===

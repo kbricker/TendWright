@@ -40,8 +40,8 @@ Total: about $225 before shipping. **All ordered, 2026-09-26:** ServoCity, Adafr
   - It's the same Pico 2 W with headers already soldered. Both bridges then use one MicroPython build.
   - It rides in the Amazon cart instead of a separate PiShop order.
 - **Motors.** Out of Darts' 300 RPM motor, the original pick, is sold out in every variant.
-  - ServoCity's 270 RPM motor runs the belt at 141 mm/s top.
-  - Stall is 17 oz-in (1.2 kg·cm) and 1.6 A per motor. Three stalled at once draw 4.8 A, inside the supply's 5 A.
+  - ServoCity's 270 RPM motor runs the belt at about 155 mm/s top. The belt moves at its neutral axis, Ø11 on the Ø10 roller: π × 11 mm × 270 / 60.
+  - Stall is 17 oz-in (1.2 kg·cm) and 1.6 A per motor. Three stalled at once draw 4.8 A, inside the supply's 10 A.
   - The terminals are spade tabs. Solder an input board onto each one. After that, the motor plugs in with a female/male jumper, so motors swap without the iron.
   - The enclosure covers the open gearbox, which is where TPU strings and debris would jam it. It holds the input board inside and bolts on through 4 mm holes, so the side plate's printed clamp becomes an M4 bolt pattern.
 - **Four drivers** cover the loop; v0 uses two. Each one needs its header soldered on.
@@ -50,7 +50,8 @@ Total: about $225 before shipping. **All ordered, 2026-09-26:** ServoCity, Adafr
   - The rollers are evenly spaced, so every link is the same size.
   - The CAD sizes the grooves to a ring picked from the kit. Caliper it rather than trusting the chart.
   - Printed drive rings are dropped.
-- **The TPU is for the straights' belts.** A 50 mm closed loop isn't something you can buy, so they're printed.
+- **The TPU is for the straights' belts and the curve's cones.** A 50 mm closed loop isn't something you can buy, so the belts are printed.
+  - The cones are TPU so the part grips them as well as it grips the belt. In sim, PLA cones left parts 5–14° short of square (Kyle, 2026-09-26).
   - YOUSU's 95A has the same hardness as Bambu's TPU 95A HF for $25 less.
   - It has no Bambu-tuned profile. Print it with Bambu Studio's generic TPU profile, slower.
   - It feeds from the A1's own side spool holder. No feed-assist module is needed; the one on Amazon doesn't list the A1 anyway.
