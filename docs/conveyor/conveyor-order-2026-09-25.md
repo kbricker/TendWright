@@ -21,14 +21,13 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | TB6612FNG motor driver, headers loose | [Adafruit 2448](https://www.adafruit.com/product/2448) | 4 | $6.95 ea | in stock |
 | Bench supply, 0–30 V / 0–10 A, switching, current limit, output on/off, 4-digit display | [WANPTEK TPS-C3010 (Amazon B0DR12RNPY)](https://www.amazon.com/dp/B0DR12RNPY) | 1 | $54.13 | in stock |
 | Female/male jumper wires, 20 × 12" | [Adafruit 1952](https://www.adafruit.com/product/1952) | 1 | $3.95 | in stock |
-| Raspberry Pi Pico 2, for the nest bridge | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-2/) | 1 | $5.00 | in stock |
-| Pico header set, solder-on | [PiShop](https://www.pishop.us/product/raspberry-pi-pico-header-set/) | 1 | $2.45 | in stock |
+| Freenove Pico 2 W, headers pre-soldered, for the nest bridge | [Amazon B0DRJXPPWL](https://www.amazon.com/dp/B0DRJXPPWL) | 1 | $18.95 | in stock |
 | TPU 95A HF, 1 kg | [Bambu Lab](https://us.store.bambulab.com/products/tpu-95a-hf) | 1 | $41.99 | in stock |
 | 4 mm × 300 mm 304 stainless rod, 5-pack | [Amazon B0G791YZKV](https://www.amazon.com/dp/B0G791YZKV) | 1 | $6.99 | in stock |
 | 3 mm × 300 mm 304 stainless rod, 12-pack | [Amazon B0DCBCRB1C](https://www.amazon.com/dp/B0DCBCRB1C) | 1 | $8.99 | in stock |
 | M2 / M2.5 / M3 / M4 socket-head screws, 6–20 mm, with nuts (mxuteuk 888 pc) | [Amazon B0G8F366MV](https://www.amazon.com/dp/B0G8F366MV) | 1 kit | $8.99 | in stock |
 | Nitrile O-ring kit, 20 sizes incl. 16×2, 18×2, 20×2, 22×2, 25×2.4 mm (XBVV) | [Amazon B0CBTYXVCV](https://www.amazon.com/dp/B0CBTYXVCV) | 1 kit | $7.59 | in stock |
-Total: about $238 before shipping. Kyle ordered the ServoCity part ($69.88) on 2026-09-25 and put the bench supply in his Amazon cart; the rods, screws and O-rings go in the same Amazon cart.
+Total: about $250 before shipping. Kyle ordered the ServoCity part ($69.88) on 2026-09-25 and put the bench supply in his Amazon cart; the rods, screws and O-rings go in the same Amazon cart.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
   - **Before first use, set the rear 115V/230V switch to 115V.** The listing says so for US use.
@@ -37,7 +36,9 @@ Total: about $238 before shipping. Kyle ordered the ServoCity part ($69.88) on 2
   - Set a low current limit for the first power-up, so a wiring mistake trips the limit instead of burning out a driver or the Pico.
   - Its current display gives the motors' measured stall current, which sizes the loop's supply (#840).
   - The Pico still runs from USB. Tie the supply's − terminal to the Pico's GND, not the green earth post.
-- **The second Pico 2 goes to the cell project's nest bridge (#717.1).** The conveyor runs on the kit's Pico 2 W, so both can be built. PiShop's Pico 2 ships without headers; the $2.45 set solders on.
+- **The second board goes to the cell project's nest bridge (#717.1).** The conveyor runs on the kit's Pico 2 W, so both can be built.
+  - It's the same Pico 2 W with headers already soldered. Both bridges then use one MicroPython build.
+  - It rides in the Amazon cart instead of a separate PiShop order.
 - **Motors.** Out of Darts' 300 RPM motor, the original pick, is sold out in every variant.
   - ServoCity's 270 RPM motor runs the belt at 141 mm/s top.
   - Stall is 17 oz-in (1.2 kg·cm) and 1.6 A per motor. Three stalled at once draw 4.8 A, inside the supply's 5 A.
