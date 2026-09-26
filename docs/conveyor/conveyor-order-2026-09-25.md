@@ -27,7 +27,7 @@ Plan #835: two straight modules and one tapered-roller curve, three motors. Stoc
 | 3 mm × 300 mm 304 stainless rod, 12-pack | [Amazon B0DCBCRB1C](https://www.amazon.com/dp/B0DCBCRB1C) | 1 | $8.99 | in stock |
 | M2 / M2.5 / M3 / M4 socket-head screws, 6–20 mm, with nuts (mxuteuk 888 pc) | [Amazon B0G8F366MV](https://www.amazon.com/dp/B0G8F366MV) | 1 kit | $8.99 | in stock |
 | Nitrile O-ring kit, 20 sizes incl. 16×2, 18×2, 20×2, 22×2, 25×2.4 mm (XBVV) | [Amazon B0CBTYXVCV](https://www.amazon.com/dp/B0CBTYXVCV) | 1 kit | $7.59 | in stock |
-Total: about $225 before shipping. Kyle ordered the ServoCity and Adafruit parts on 2026-09-25/26. Everything left is one Amazon cart: bench supply, rods, screws, O-rings, Pico 2 W, TPU.
+Total: about $225 before shipping. **All ordered, 2026-09-26:** ServoCity, Adafruit and one Amazon cart.
 
 - **The bench supply powers every motor** through the drivers' shared motor rail, set to 12 V. It replaces a $25 12 V brick and its barrel-jack adapter.
   - **Before first use, set the rear 115V/230V switch to 115V.** The listing says so for US use.
