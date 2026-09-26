@@ -387,7 +387,11 @@ s_gA = r_gA * ca
 s_gB = r_gB * ca
 s_spool_end = spool_end_r * ca
 s_hole_bottom = r_iw0_s + blind_remain
-idler_rod_len = r_ow1_s - s_hole_bottom
+# The end is square and the axle tilts, so the rim — not the centre — is what
+# meets the keeper. Seat the inner end on the blind hole and stop the rim
+# 0.2 mm inside the keeper's inner face.
+s_idler_end = (r_ow1 - 0.2 - (curve_axle_d / 2.0) * sa) / ca
+idler_rod_len = s_idler_end - s_hole_bottom
 stub_len = (s_a + stub_bore_depth - stub_bore_air) - s_hole_bottom
 
 c_A = 2.0 * r_gA * ca * ca * math.sin(pitch_rad / 2.0)
@@ -433,6 +437,11 @@ id_lo, id_hi = passing_id_window()
 # Curve enclosure: 16 mm side vertical, 24 mm side horizontal, ears ±pitch.
 u_drv, e_th_drv, e_up_drv = axis_frame(thetas[curve_driven - 1])
 s_face = s_on_cylinder(r_ow1, encl_ear_pitch, 0.0) + pad_bolt_t
+# An M4×8 crosses the 2.5 mm ear and a 3.4 mm nut and still has to come out
+# the back. That leaves 2.1 mm, so the land is nut_land and the rest is the
+# tip past the nut. Deeper than that, the same screw ends short of the pocket.
+s_nut_near = s_face - nut_land
+s_nut_far = s_nut_near - m4_nut_depth
 m4_Rv = hex_Rv(m4_nut_af)
 # Worst corner of the hex, so the pocket face is entirely in the gutter and
 # not buried in the curved inner wall.
@@ -549,6 +558,11 @@ def main():
     step("clearance small-end cones %.3f mm; spool A at s_b %.3f; spool B at mid %.3f"
          % (small_end_clear, spool_clear_A, spool_clear_B))
     step("rod cut mm: idler %.3f  driven stub %.3f" % (idler_rod_len, stub_len))
+    idler_rim_r = s_idler_end * ca + (curve_axle_d / 2.0) * sa
+    idler_rim_in = r_ow1 - idler_rim_r
+    step("curve idler end rim %.3f mm inside the keeper" % idler_rim_in)
+    require(idler_rim_in >= 0.2 - 1e-9,
+            "curve idler rim is %.3f mm inside the keeper, need 0.2" % idler_rim_in)
     step("shaft engagement %.3f mm (bore %.1f)" % (shaft_engagement(), motor_bore_depth))
     step("straight bosses: protrusion %.3f mm, inboard face y=%.3f after mirror (both ears)"
          % (boss_extra, outer_width - boss_y1))
@@ -590,8 +604,8 @@ def main():
     require(face_r_min >= r_ow1 + 1.0 - 1e-6,
             "pad face plan radius %.3f is not 1 mm outboard of r=%.3f" % (face_r_min, r_ow1))
     # Nut pocket leaves land behind it.
-    land_curve = s_face - (s_boss_in + m4_nut_depth)
-    require(land_curve >= nut_land,
+    land_curve = s_face - s_nut_near
+    require(land_curve >= nut_land - 1e-9,
             "curve nut pocket leaves %.3f mm, need %.1f" % (land_curve, nut_land))
     step("curve nut land behind pocket: %.3f mm" % land_curve)
 
@@ -641,6 +655,9 @@ def main():
 
     e_tight, e_slack = jack_engage(tip), jack_engage(tip + nose_travel)
     step("jack-screw engagement tensioned %.2f mm, slack %.2f mm" % (e_tight, e_slack))
+    dx_in = bed_dx(roller_flange_d / 2.0)
+    step("take-up %.1f mm, belt slack %.1f mm, unsupported carry %.3f mm"
+         % (nose_travel, 2.0 * nose_travel, nose_travel + dx_in))
     step("straight idler rod cut %.3f mm" % idler_axle_len)
     y_stub_in, y_stub_out = straight_driven_stub_ys()
     stub_cut = y_stub_out - y_stub_in
@@ -720,7 +737,10 @@ def main():
     bolt_angles = [0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[4] + thetas[5])]
     z_bolt = 0.5 * (wall + 1.0 + 10.0)
     for ang in bolt_angles:
-        cutter = radial_hole(ang, z_bolt, m3_clear / 2.0, r_ow0 - 1.0, r_ow1 + keeper_t + 1.0)
+        # Boss first, then the clearance hole, so the boss cannot plug the hole.
+        frame = add_keeper_nut(frame, ang, z_bolt)
+        cutter = radial_hole(ang, z_bolt, m3_clear / 2.0, r_ow0 - 0.05,
+                             r_ow1 + keeper_t + 1.0)
         frame = frame.cut(cutter)
         keeper = keeper.cut(cutter)
         step("keeper bolt at theta %.3f deg, z=%.2f" % (ang, z_bolt))
@@ -788,45 +808,57 @@ def main():
         ("rod", rod), ("driven_stub", drv_stub), ("motor", encl_straight),
     ] + fasteners
 
-    def placed_straight(tag, rot, offset):
-        out = []
-        for name, shape in local_parts:
-            out.append((tag + "_" + name, place_module(shape, rot, offset)))
-        return out
-
+    moving_names = {"roller_idler", "block_near", "block_far", "rod",
+                    "scr_jack", "scr_jack_far"}
     s2_off = Vector(s2_ox, s2_oy, 0)
-    world = placed_straight("s1", 0.0, None) + placed_straight("s2", 90.0, s2_off)
-    for i, sol in enumerate(placed):
-        world.append(("cone_%d" % (i + 1), sol))
-    for i, link in enumerate(links):
-        world.append(("oring_%d" % (i + 1), link))
-    world.append(("frame", frame))
-    world.append(("keeper", keeper))
-    world.append(("curve_motor", encl_curve))
-    for i, th in enumerate(thetas):
-        if (i + 1) == curve_driven:
-            world.append(("stub", curve_rod(th, s_hole_bottom,
-                                             s_a + stub_bore_depth - stub_bore_air, curve_axle_d)))
-        else:
-            # The cut length reaches the outer face. A square end on a tilted
-            # axis would poke through that cylinder into the keeper, so the
-            # model stops 0.4 mm short and the keeper can sit flush.
-            world.append(("crod_%d" % (i + 1),
-                           curve_rod(th, s_hole_bottom, r_ow1_s - 0.4, curve_axle_d)))
-    for ang in bolt_angles:
-        world.append(("keep_screw", keeper_screw(ang, z_bolt)))
-    for sign in (-1.0, 1.0):
-        world.append(("cv_m4", curve_ear_screw(sign)))
+
+    def world_at(shift):
+        # Roller, rod, blocks and the jack screws walk together. The screw is
+        # what pushes the block, so a slack check with the screw left behind
+        # buries the screw in the block.
+        def maybe(name, shape):
+            if shift and name in moving_names:
+                moved = shape.copy()
+                moved.translate(Vector(shift, 0, 0))
+                return moved
+            return shape
+
+        def placed_straight(tag, rot, offset):
+            out = []
+            for name, shape in local_parts:
+                out.append((tag + "_" + name, place_module(maybe(name, shape), rot, offset)))
+            return out
+
+        w = placed_straight("s1", 0.0, None) + placed_straight("s2", 90.0, s2_off)
+        for i, sol in enumerate(placed):
+            w.append(("cone_%d" % (i + 1), sol))
+        for i, link in enumerate(links):
+            w.append(("oring_%d" % (i + 1), link))
+        w.append(("frame", frame))
+        w.append(("keeper", keeper))
+        w.append(("curve_motor", encl_curve))
+        for i, th in enumerate(thetas):
+            if (i + 1) == curve_driven:
+                w.append(("stub", curve_stub_rod(th)))
+            else:
+                w.append(("crod_%d" % (i + 1), curve_idler_rod(th)))
+        for ang in bolt_angles:
+            w.append(("keep_screw", keeper_screw(ang, z_bolt)))
+        for sign in (-1.0, 1.0):
+            w.append(("cv_m4", curve_ear_screw(sign)))
+        w.append(("joiner_1", j1))
+        w.append(("joiner_2", j2))
+        for name, shape in joiner_screw_shapes:
+            w.append((name, shape))
+        return w
 
     j1 = place_joiner_j1()
     j2 = place_joiner_j2()
-    world.append(("joiner_1", j1))
-    world.append(("joiner_2", j2))
     o1 = xform_point(x_tie_out, y_loc_pre, z_j, 0.0, None)
     o2 = xform_point(x_tie_in, y_loc_pre, z_j, 90.0, s2_off)
-    for name, shape in (joiner_screws(o1, Vector(1, 0, 0), Vector(0, 1, 0), "j1")
-                        + joiner_screws(o2, Vector(0, -1, 0), Vector(-1, 0, 0), "j2")):
-        world.append((name, shape))
+    joiner_screw_shapes = (joiner_screws(o1, Vector(1, 0, 0), Vector(0, 1, 0), "j1")
+                           + joiner_screws(o2, Vector(0, -1, 0), Vector(-1, 0, 0), "j2"))
+    world = world_at(0.0)
 
     # The boss is on the plain plate's outer face. s1's faces away from the
     # curve; s2's faces the outside of the turn. Either one meeting the frame
@@ -838,42 +870,36 @@ def main():
         require(d_pf >= 0.5, "%s plain plate meets the curve frame (%.3f mm)" % (tag, d_pf))
 
     check_holes()
-    step("interference: %d solids" % len(world))
-    tested = 0
-    for i in range(len(world)):
-        ni, ai = world[i]
-        require(ai.BoundBox.ZMin >= -1.0e-3,
-                "%s drops below the table (z=%.4f)" % (ni, ai.BoundBox.ZMin))
-        for j in range(i + 1, len(world)):
-            nj, aj = world[j]
-            if not bb_hit(ai, aj):
-                continue
-            tested += 1
-            vol = overlap_volume(ai, aj)
-            if vol > 1.0e-3:
-                require(False, "%s overlaps %s by %.4f mm^3" % (ni, nj, vol))
-    step("interference pairs tested %d, none over 1e-3 mm^3" % tested)
+    check_published_rods(world)
+    # The belt solid is the tensioned path. At slack that shape is not on the
+    # machine yet — the loop is being slid on — so it is not a collision.
+    stations = (("take-up", 0.0), ("mid", nose_travel / 2.0), ("slack", nose_travel))
+    for label, shift in stations:
+        station = world_at(shift)
+        moving = shift > 1e-9
+        interfere(station, label, skip_belt=moving, moving_only=moving)
+        check_screws(station, screw_specs(shift, s2_off), jacks_only=moving)
 
     # ---------------------------------------------------------------- export
     step("--- export ---")
-    export(br_motor, "bracket_straight_motor")
-    export(br_plain, "bracket_straight_plain")
-    export(rol_id, "roller_idler")
-    export(rol_dr, "roller_driven")
-    export(to_print(cone_id), "roller_cone_idler")
-    export(to_print(cone_dr), "roller_cone_driven")
-    export(drop_to_bed(bed), "slider_bed_straight")
-    export(drop_to_bed(ret), "return_guide_straight")
-    export(print_tie(tie_in), "tie_bar")
-    export(drop_to_bed(block), "tensioner_block")
-    export(drop_to_bed(make_joiner()), "joiner")
+    export_print(br_motor, "bracket_straight_motor")
+    export_print(br_plain, "bracket_straight_plain")
+    export_print(roller_to_print(rol_id), "roller_idler")
+    export_print(roller_to_print(rol_dr), "roller_driven")
+    export_print(to_print(cone_id), "roller_cone_idler")
+    export_print(to_print(cone_dr), "roller_cone_driven")
+    export_print(drop_to_bed(bed), "slider_bed_straight")
+    export_print(drop_to_bed(ret), "return_guide_straight")
+    export_print(print_tie(tie_in), "tie_bar")
+    export_print(drop_to_bed(block), "tensioner_block")
+    export_print(drop_to_bed(make_joiner()), "joiner")
     export(encl_straight, "ref_motor")
 
     step("coupon: discharge end of the motor plate")
     coupon = br_motor.common(Part.makeBox(
         coupon_len, boss_y1 + 8.0, tab_z1 + 10.0,
         Vector(straight_len - coupon_len, -2.0, -2.0)))
-    export(coupon, "coupon_bracket_end")
+    export_print(coupon, "coupon_bracket_end")
     step("coupon: infeed end, with the tensioner seat")
     coupon_in = br_motor.common(Part.makeBox(
         30.0, block_out + wall + 6.0, bracket_h + 4.0,
@@ -883,13 +909,13 @@ def main():
     plate_print = drop_to_bed(coupon_in)
     blk_print = drop_to_bed(block)
     blk_print.translate(Vector(plate_print.BoundBox.XMax + 4.0, 0.0, 0.0))
-    export(Part.makeCompound([plate_print, blk_print]), "coupon_infeed_end")
+    export_print(Part.makeCompound([plate_print, blk_print]), "coupon_infeed_end")
     # Close-up stays in the assembled pose. These two are not print files.
     export(coupon_in, "tensioner_plate")
     export(block, "tensioner_block_seated")
 
-    export(drop_to_bed(frame), "curve_frame")
-    export(drop_to_bed(keeper), "curve_keeper")
+    export_print(drop_to_bed(frame), "curve_frame")
+    export_print(drop_to_bed(keeper), "curve_keeper")
 
     # The pitch-half sector clips the ear toward roller 2. Open that side until
     # both ear holes and their nut pockets sit inside the coupon.
@@ -899,12 +925,15 @@ def main():
     step("coupon_curve: sector %.3f .. %.3f deg (pad cover %.3f)" % (a0, a1, cover))
     coupon_frame = clip_angles(frame, a0, a1)
     coupon_oring = link_spec[curve_driven - 1][2]
+    # The cones and the ring are TPU and nitrile. The print file is the PETG
+    # sector alone; the render uses the assembled view.
     export(Part.makeCompound([
         coupon_frame,
         placed[curve_driven - 1],
         placed[curve_driven],
         coupon_oring,
-    ]), "coupon_curve")
+    ]), "coupon_curve_view")
+    export_print(drop_to_bed(coupon_frame), "coupon_curve")
 
     def straight_compound(rot, offset):
         parts = [place_module(s, rot, offset) for _, s in local_parts
@@ -1012,29 +1041,7 @@ def main():
         },
         "spans": {"entry": spans, "exit": dict(spans)},
         # v0 line only. The README reads this; the sim does not.
-        "hardware": {
-            "screws": [
-                {"size": "M3", "length_mm": m3_tie_len, "count": 8, "where": "tie bars"},
-                {"size": "M3", "length_mm": m3_jack_len, "count": 4, "where": "tensioner jacks"},
-                {"size": "M3", "length_mm": m3_join_len, "count": 8, "where": "joiners"},
-                {"size": "M3", "length_mm": m3_keep_len, "count": 2, "where": "curve keeper"},
-                {"size": "M4", "length_mm": m4_ear_len, "count": 6, "where": "motor ears"},
-            ],
-            "nuts": [
-                {"size": "M3", "count": 26},
-                {"size": "M4", "count": 6},
-            ],
-            "rods": [
-                {"diameter_mm": nose_axle_dia, "cut_mm": idler_axle_len, "count": 2,
-                 "where": "straight idler"},
-                {"diameter_mm": nose_axle_dia, "cut_mm": stub_cut, "count": 2,
-                 "where": "straight driven stub"},
-                {"diameter_mm": curve_axle_d, "cut_mm": idler_rod_len, "count": curve_n - 1,
-                 "where": "curve idler"},
-                {"diameter_mm": curve_axle_d, "cut_mm": stub_len, "count": 1,
-                 "where": "curve driven stub"},
-            ],
-        },
+        "hardware": hardware_block(s2_off, stub_cut),
     }
     with open(os.path.join(OUT, "geometry.json"), "w", encoding="utf-8") as fh:
         json.dump(geom, fh, indent=2)
@@ -1055,9 +1062,13 @@ def guide_x_span():
 
 
 def bed_x_span(module_len):
+    # Infeed end clears the flange at full slack. The flange sweeps every
+    # station between take-up and slack, and the slack end is the far one.
+    # The discharge roller does not travel, so that end stays on the barrel.
     ax0, nose = roller_axis_x(module_len)
-    dx = bed_dx(nose_dia / 2.0)
-    return ax0 + dx, nose - dx
+    dx_in = bed_dx(roller_flange_d / 2.0)
+    dx_out = bed_dx(nose_dia / 2.0)
+    return ax0 + nose_travel + dx_in, nose - dx_out
 
 
 def hex_along_z(af, z0, z1, x, y):
@@ -1234,11 +1245,13 @@ def jack_boss(y0, y1):
     z = nose_z
     # Wider than the screw axis span: an M3 nut's points are 6.7 mm across,
     # and the block is only 6 mm, so the boss has to grow or the pocket breaks out.
+    # The block's slack face lands on x = nut0. Starting the boss there keeps
+    # that face a shared plane instead of a bite into the boss.
     boss = Part.makeBox(nut1 - nut0 + 1.2, (y1 - y0) + 3.0, 10.0,
-                         Vector(nut0 - 0.4, y0 - 1.5, z - 5.0))
+                         Vector(nut0, y0 - 1.5, z - 5.0))
     # Pocket opens toward the block, which is off while the nuts go in.
     if nut1 >= nut0:
-        boss = boss.cut(hex_along_x(m3_nut_af, nut0 - 0.6, nut0 + jack_nut_depth,
+        boss = boss.cut(hex_along_x(m3_nut_af, nut0 - 0.2, nut0 + jack_nut_depth,
                                      (y0 + y1) / 2.0, z))
     boss = boss.cut(Part.makeCylinder(
         m3_clear / 2.0, (nut1 - nut0) + 4.0,
@@ -1452,13 +1465,9 @@ def place_joiner_j2():
 
 def joiner_screws(origin_xy, ax, ay, tag):
     out = []
-    across = 2.0 * hole_pitch
-    for i, (lx, ly) in enumerate(((0.0, 0.0), (0.0, across),
-                                  (join_span, 0.0), (join_span, across))):
-        p = Vector(origin_xy[0], origin_xy[1], z_j + join_standoff + joiner_t)
-        p = vadd(p, vadd(vmul(ax, lx), vmul(ay, ly)))
-        out.append((tag + "_scr", screw_along(p, Vector(0, 0, -1),
-                                                m3_join_len, 3.0, m3_head_d, m3_head_h)))
+    for tag_i, p, _near, _far in joiner_screw_defs(origin_xy, ax, ay, tag):
+        out.append((tag_i + "_scr", screw_along(p, Vector(0, 0, -1),
+                                                 m3_join_len, 3.0, m3_head_d, m3_head_h)))
     return out
 
 
@@ -1734,7 +1743,7 @@ def make_curve_frame():
         p0 = vadd(A, vadd(vmul(u_drv, s_boss_in - 0.4), vmul(e_th_drv, h)))
         frame = frame.cut(Part.makeCylinder(
             m4_clear / 2.0, s_face - s_boss_in + 1.2, p0, u_drv))
-        frame = frame.cut(hex_along_u(m4_nut_af, s_boss_in - 0.2, s_boss_in + m4_nut_depth, h, 0.0))
+        frame = frame.cut(hex_along_u(m4_nut_af, s_nut_far - 0.2, s_nut_near, h, 0.0))
 
     # s1's enclosure overhangs the discharge face into the empty centre. The
     # inner wall's entry end would meet it. Cut the bbox, grown, out of the frame.
@@ -1952,6 +1961,300 @@ def make_belt(module_len):
         return s.fuse(prism(grow))
 
     return loop(bt).cut(loop(0.0))
+
+
+def curve_idler_rod(theta):
+    return curve_rod(theta, s_hole_bottom, s_hole_bottom + idler_rod_len, curve_axle_d)
+
+
+def curve_stub_rod(theta):
+    return curve_rod(theta, s_hole_bottom, s_hole_bottom + stub_len, curve_axle_d)
+
+
+def check_rod_volume(shape, length, diameter, name):
+    # A shortened stand-in has the wrong volume. The published cut is the solid.
+    expected = math.pi * (diameter / 2.0) ** 2 * length
+    rel = abs(abs(shape.Volume) - expected) / expected
+    step("rod %s cut %.3f mm  volume err %.5f%%" % (name, length, 100.0 * rel))
+    require(rel < 1e-4, "%s is not its published cut of %.3f mm" % (name, length))
+
+
+def check_published_rods(world):
+    n_straight = n_stub_s = n_idler = n_stub_c = 0
+    for name, shape in world:
+        if name in ("s1_rod", "s2_rod"):
+            check_rod_volume(shape, idler_axle_len, nose_axle_dia, name)
+            n_straight += 1
+        elif name in ("s1_driven_stub", "s2_driven_stub"):
+            check_rod_volume(shape, y_stub_len(shape), nose_axle_dia, name)
+            n_stub_s += 1
+        elif name.startswith("crod_"):
+            check_rod_volume(shape, idler_rod_len, curve_axle_d, name)
+            n_idler += 1
+        elif name == "stub":
+            check_rod_volume(shape, stub_len, curve_axle_d, name)
+            n_stub_c += 1
+    require(n_straight == 2 and n_stub_s == 2 and n_idler == curve_n - 1 and n_stub_c == 1,
+            "rod count straight %d stub %d curve-idler %d curve-stub %d"
+            % (n_straight, n_stub_s, n_idler, n_stub_c))
+    step("straight stub %.2f mm short of the D-bore, seated on the blind floor" % stub_bore_air)
+    step("curve stub %.2f mm short of the cone bore bottom" % stub_bore_air)
+
+
+def y_stub_len(shape):
+    # The placed stub is a pure cylinder. Its volume names the cut, and this
+    # returns that cut so the checker compares the solid to the published one.
+    return stub_cut_length()
+
+
+def stub_cut_length():
+    y0, y1 = straight_driven_stub_ys()
+    return y1 - y0
+
+
+def hex_prism(af, origin, direction, length):
+    d = vnorm(direction)
+    tmp = Vector(0, 0, 1) if abs(d.z) < 0.9 else Vector(1, 0, 0)
+    x = vnorm(vcross(tmp, d))
+    y = vnorm(vcross(d, x))
+    rv = hex_Rv(af)
+    pts = []
+    for i in range(6):
+        ang = math.radians(30.0 + 60.0 * i)
+        pts.append(vadd(origin, vadd(vmul(x, rv * math.cos(ang)),
+                                      vmul(y, rv * math.sin(ang)))))
+    pts.append(pts[0])
+    return Part.Face(Part.makePolygon(pts)).extrude(vmul(d, length))
+
+
+def add_keeper_nut(frame, ang, z):
+    # The outer wall is 3 mm and the nut is 2.6, so the nut lives in a boss on
+    # the inner face. An M3×10 then crosses the keeper, the wall and the nut.
+    th = math.radians(ang)
+    er = Vector(math.cos(th), math.sin(th), 0.0)
+    r_far = r_ow0 - m3_nut_depth
+    origin = Vector(cx + er.x * r_far, cy + er.y * r_far, z)
+    boss_r = hex_Rv(m3_nut_af) + 1.2
+    frame = frame.fuse(Part.makeCylinder(boss_r, m3_nut_depth + 0.4, origin, er))
+    opened = Vector(cx + er.x * (r_far - 0.3), cy + er.y * (r_far - 0.3), z)
+    return frame.cut(hex_prism(m3_nut_af, opened, er, m3_nut_depth + 0.5))
+
+
+def _module_point(x, y, z, rot, offset, double_mirror):
+    if not double_mirror:
+        y = outer_width - y
+    if rot:
+        a = math.radians(rot)
+        c, s = math.cos(a), math.sin(a)
+        x, y = x * c - y * s, x * s + y * c
+    if offset is not None:
+        x += offset.x
+        y += offset.y
+    return Vector(x, y, z)
+
+
+def _module_dir(dx, dy, dz, rot, double_mirror):
+    if not double_mirror:
+        dy = -dy
+    if rot:
+        a = math.radians(rot)
+        c, s = math.cos(a), math.sin(a)
+        dx, dy = dx * c - dy * s, dx * s + dy * c
+    return Vector(dx, dy, dz)
+
+
+def _spec(name, p0, direction, length, dia, nut_near, nut_far, size, where, nuts):
+    return {"name": name, "p0": p0, "dir": direction, "length": length, "dia": dia,
+            "nut_near": nut_near, "nut_far": nut_far, "size": size, "where": where,
+            "nuts": nuts}
+
+
+def joiner_screw_defs(origin_xy, ax, ay, tag):
+    head_z = z_j + join_standoff + joiner_t
+    across = 2.0 * hole_pitch
+    out = []
+    for lx, ly in ((0.0, 0.0), (0.0, across), (join_span, 0.0), (join_span, across)):
+        p = vadd(Vector(origin_xy[0], origin_xy[1], head_z),
+                 vadd(vmul(ax, lx), vmul(ay, ly)))
+        if lx < join_span * 0.5:
+            top = tie_z0 + m3_nut_depth
+            bot = tie_z0
+        else:
+            top = (z_j - web) + m3_nut_depth
+            bot = z_j - web
+        out.append((tag, p, head_z - top, head_z - bot))
+    return out
+
+
+def screw_specs(shift, s2_off):
+    specs = []
+    tip0 = nose_edge + block_front
+    nut0 = tip0 + nose_travel
+    modules = ((0.0, None), (90.0, s2_off))
+    for rot, offset in modules:
+        for mirrored in (False, True):
+            p0x = tip0 + shift + m3_jack_len
+            p0 = _module_point(p0x, -block_out / 2.0, nose_z, rot, offset, mirrored)
+            d = _module_dir(-1.0, 0.0, 0.0, rot, mirrored)
+            specs.append(_spec("jack", p0, d, m3_jack_len, 3.0,
+                                p0x - (nut0 + jack_nut_depth), p0x - nut0,
+                                "M3", "tensioner jacks", 2))
+        for x in (x_tie_in, x_tie_out):
+            for mirrored in (False, True):
+                p0 = _module_point(x, 0.0, tie_bolt_z, rot, offset, mirrored)
+                d = _module_dir(0.0, 1.0, 0.0, rot, mirrored)
+                specs.append(_spec("tie", p0, d, m3_tie_len, 3.0,
+                                    wall, wall + m3_nut_depth,
+                                    "M3", "tie bars", 1))
+        for sign in (-1.0, 1.0):
+            p0 = _module_point(nose_x, -encl_ear_t, nose_z + sign * encl_ear_pitch,
+                               rot, offset, False)
+            d = _module_dir(0.0, 1.0, 0.0, rot, False)
+            near = (boss_y1 - m4_nut_depth) - (-encl_ear_t)
+            far = boss_y1 - (-encl_ear_t)
+            specs.append(_spec("m4", p0, d, m4_ear_len, 4.0, near, far,
+                                "M4", "motor ears", 1))
+    for sign in (-1.0, 1.0):
+        p0 = vadd(vadd(A, vmul(u_drv, s_face + encl_ear_t)),
+                  vmul(e_th_drv, sign * encl_ear_pitch))
+        near = encl_ear_t + nut_land
+        specs.append(_spec("cv_m4", p0, vmul(u_drv, -1.0), m4_ear_len, 4.0,
+                            near, near + m4_nut_depth, "M4", "motor ears", 1))
+    for ang in (0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[4] + thetas[5])):
+        th = math.radians(ang)
+        er = Vector(math.cos(th), math.sin(th), 0.0)
+        z = 0.5 * (wall + 1.0 + 10.0)
+        p0 = Vector(cx + er.x * (r_ow1 + keeper_t), cy + er.y * (r_ow1 + keeper_t), z)
+        near = keeper_t + outer_wall_t
+        specs.append(_spec("keeper", p0, vmul(er, -1.0), m3_keep_len, 3.0,
+                            near, near + m3_nut_depth, "M3", "curve keeper", 1))
+    o1 = xform_point(x_tie_out, y_loc_pre, z_j, 0.0, None)
+    o2 = xform_point(x_tie_in, y_loc_pre, z_j, 90.0, s2_off)
+    for origin, ax, ay, tag in (
+            (o1, Vector(1, 0, 0), Vector(0, 1, 0), "j1"),
+            (o2, Vector(0, -1, 0), Vector(-1, 0, 0), "j2")):
+        for _tag, p, near, far in joiner_screw_defs(origin, ax, ay, tag):
+            specs.append(_spec(tag, p, Vector(0, 0, -1), m3_join_len, 3.0,
+                                near, far, "M3", "joiners", 1))
+    return specs
+
+
+def is_screw_name(name):
+    return ("scr" in name) or name == "cv_m4"
+
+
+def check_screws(parts, specs, jacks_only):
+    if not jacks_only:
+        n = sum(1 for name, _shape in parts if is_screw_name(name))
+        require(n == len(specs), "placed screws %d, specs %d" % (n, len(specs)))
+    plastics = [(name, shape) for name, shape in parts if not is_screw_name(name)]
+    for spec in specs:
+        if jacks_only and spec["where"] != "tensioner jacks":
+            continue
+        nut_t = spec["nut_far"] - spec["nut_near"]
+        covered = min(spec["length"], spec["nut_far"]) - max(0.0, spec["nut_near"])
+        past = spec["length"] - spec["nut_far"]
+        step("screw %s engagement %.3f mm  nut %.3f mm  tip past far face %.3f mm"
+             % (spec["name"], covered, nut_t, past))
+        require(spec["nut_near"] >= -1e-6 and covered >= nut_t - 1e-6,
+                "%s does not cross its nut (%.3f of %.3f mm)"
+                % (spec["name"], covered, nut_t))
+        a = spec["nut_far"] + 0.05
+        b = spec["length"] - 0.05
+        if b <= a:
+            continue
+        d = vnorm(spec["dir"])
+        probe = Part.makeCylinder((spec["dia"] - 0.2) / 2.0, b - a,
+                                   vadd(spec["p0"], vmul(d, a)), d)
+        for pname, pshape in plastics:
+            if not bb_hit(probe, pshape):
+                continue
+            vol = overlap_volume(probe, pshape)
+            if vol > 1e-3:
+                require(False, "%s bottoms in %s (%.4f mm^3)" % (spec["name"], pname, vol))
+
+
+def interfere(parts, label, skip_belt, moving_only):
+    step("interference %s: %d solids" % (label, len(parts)))
+
+    def moves(name):
+        return ("roller_idler" in name or "block_near" in name or "block_far" in name
+                or name.endswith("_rod") or "scr_jack" in name)
+
+    tested = 0
+    for i, (ni, ai) in enumerate(parts):
+        if not moving_only:
+            require(ai.BoundBox.ZMin >= -1.0e-3,
+                    "%s drops below the table (z=%.4f)" % (ni, ai.BoundBox.ZMin))
+        for nj, aj in parts[i + 1:]:
+            if moving_only and not (moves(ni) or moves(nj)):
+                continue
+            if skip_belt and ("belt" in ni or "belt" in nj):
+                continue
+            if not bb_hit(ai, aj):
+                continue
+            tested += 1
+            vol = overlap_volume(ai, aj)
+            if vol > 1.0e-3:
+                require(False, "%s overlaps %s by %.4f mm^3 at %s" % (ni, nj, vol, label))
+    step("interference %s pairs %d, none over 1e-3 mm^3" % (label, tested))
+
+
+def hardware_block(s2_off, straight_stub):
+    specs = screw_specs(0.0, s2_off)
+    groups = []
+    index = {}
+    for spec in specs:
+        key = (spec["size"], spec["length"], spec["where"])
+        if key not in index:
+            index[key] = len(groups)
+            groups.append({"size": spec["size"], "length_mm": spec["length"],
+                           "count": 0, "where": spec["where"], "nuts": 0})
+        groups[index[key]]["count"] += 1
+        groups[index[key]]["nuts"] += spec["nuts"]
+    for g in groups:
+        step("hardware %s  %s x %.0f mm  x%d  nuts %d"
+             % (g["where"], g["size"], g["length_mm"], g["count"], g["nuts"]))
+    nut_m3 = sum(g["nuts"] for g in groups if g["size"] == "M3")
+    nut_m4 = sum(g["nuts"] for g in groups if g["size"] == "M4")
+    return {
+        "screws": [{"size": g["size"], "length_mm": g["length_mm"],
+                    "count": g["count"], "where": g["where"]} for g in groups],
+        "nuts": [{"size": "M3", "count": nut_m3}, {"size": "M4", "count": nut_m4}],
+        "rods": [
+            {"diameter_mm": nose_axle_dia, "cut_mm": idler_axle_len, "count": 2,
+             "where": "straight idler"},
+            {"diameter_mm": nose_axle_dia, "cut_mm": straight_stub, "count": 2,
+             "where": "straight driven stub"},
+            {"diameter_mm": curve_axle_d, "cut_mm": idler_rod_len, "count": curve_n - 1,
+             "where": "curve idler"},
+            {"diameter_mm": curve_axle_d, "cut_mm": stub_len, "count": 1,
+             "where": "curve driven stub"},
+        ],
+    }
+
+
+def roller_to_print(shape):
+    # Axis +Y stands up, spigot on top, so the D-flat's load stays in the
+    # plane of the layers and the bore is not a hole against the bed.
+    p = shape.copy()
+    p.rotate(Vector(0, 0, 0), Vector(1, 0, 0), -90.0)
+    p = drop_to_bed(p)
+    bb = p.BoundBox
+    require(bb.ZLength > bb.XLength and bb.ZLength > bb.YLength,
+            "roller print is not standing on its axis")
+    return p
+
+
+def export_print(shape, name):
+    solids = shape.Solids
+    require(len(solids) >= 1, "%s has no solid" % name)
+    for i, sol in enumerate(solids):
+        z0 = sol.BoundBox.ZMin
+        step("print %s solid %d  z %.4f .. %.3f" % (name, i + 1, z0, sol.BoundBox.ZMax))
+        require(z0 >= -1.0e-4, "%s solid %d is below the bed (z=%.4f)" % (name, i + 1, z0))
+        require(z0 <= 1.0e-3, "%s solid %d floats (zmin=%.4f)" % (name, i + 1, z0))
+    export(shape, name)
 
 
 # -------------------------------------------------------------------- export

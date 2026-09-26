@@ -58,6 +58,8 @@ A coupon is twenty minutes. A wrong bore in the full set is a day. Print these, 
 
 The infeed coupon is the plate and the block side by side on the bed, with a gap, so the slide can actually be tried. Nested on the rail, the block would print in mid-air.
 
+`coupon_curve.stl` is the PETG sector alone. The cones and the O-ring named in that row are their own files, in their own materials.
+
 **What to caliper, and the parameter it feeds**
 
 - The O-ring you pick: inside diameter → `oring_id`, cross-section → `oring_cs`. The grooves are cut for a placeholder (build.log: ID window 18.971–22.541 mm at a 2.00 mm section). The chart on the kit is not the measurement.
@@ -112,7 +114,7 @@ Both are held by a closed groove in each plate. The tongue is captured in X and 
 ### Tie bars, tensioners, joiners
 
 - Two tie bars per straight, one within 25 mm of each end. They set the plates at `inner_width` and keep the module square. M3 through the plate into a captive nut in the upright. The top face is the joint plane the joiner sits on. Print them pockets-up so the joiner nuts drop in; the plate-nut pockets stay horizontal holes.
-- A tensioner block on each plate's outer face, at the infeed. It slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span.
+- A tensioner block on each plate's outer face, at the infeed. It slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span. The 8 mm travel shortens the belt path by 16 mm, which is the slack for sliding the loop on from the open side. The bed stops short of the flange at full slack, so with the belt tensioned the carry is unsupported for 14.7 mm behind the infeed nose.
 - One joiner part for both joints. The two end tie bars mirror about the module centre, so the same plate sets the 1.5 mm frame gap at J1 (s1 → curve) and J2 (curve → s2). M3 down into nuts pocketed from below, so nothing hangs under the table. There is no straight-to-straight joint in v0.
 
 ---
@@ -132,10 +134,10 @@ From `geometry.json` → `hardware`. This is s1 + curve + s2 + the two joiners.
 | nut | M4 | — | 6 | motor ears |
 | rod | Ø4 | 73.0 mm | 2 | straight idler |
 | rod | Ø4 | 51.3 mm | 2 | straight driven stub |
-| rod | Ø3 | 70.358 mm | 5 | curve idler |
+| rod | Ø3 | 70.006 mm | 5 | curve idler |
 | rod | Ø3 | 24.239 mm | 1 | curve driven stub |
 
-The curve idler's cut length is face to face. The solid in the interference check stops 0.4 mm short, so a square end on the tilted axis does not enter the keeper.
+The curve idler is 70.006 mm, seated on the blind-hole bottom. Its square end, on the 5.739° tilt, stays 0.2 mm inside the keeper's inner face. The straight idler is flush with the outsides of the tensioner blocks, the straight stub is seated on the blind floor and 0.5 mm short of the D-bore, and the curve stub stops 0.5 mm short of the cone's bore bottom. Those cuts are the solids in the interference check.
 
 **O-rings.** Five, alternating grooves A and B, three of A and two of B (`curve.n` is 6). From `build.log`, for the placeholder section of 2.00 mm:
 
@@ -166,6 +168,7 @@ From `geometry.json` and `build.log`.
 | Shaft engagement | 6.300 mm into a 10 mm D-bore |
 | Straight belt | path 250.6 mm at the neutral axis, printed mean Ø 79.8 mm |
 | Jack-screw thread in the nuts | 5.20 mm at both ends of the 8 mm travel |
+| Take-up | 8 mm of travel, 16 mm of belt slack, 14.7 mm of carry unsupported behind the infeed nose |
 
 The outer span is the long one. A part entered on the outer edge has 15.5 mm of nothing at each joint. Parts load within 4 mm of the lane centre. Past that, an outer-edge part at full speed reaches s2's outer plate.
 
@@ -186,7 +189,7 @@ The belt goes on from one side, with one plate off. Nothing in the loop except t
 
 ### The curve
 
-Rods first, then the rollers on them, then the O-rings over the spools (groove A, B, A, B, A), then the keeper over the outer rod ends, then the motor on the outer wall. The keeper is what stops the idler rods walking out. The driven stub is the short Ø3 rod.
+Rods first, then the rollers on them, then the O-rings over the spools (groove A, B, A, B, A), then the keeper over the outer rod ends, then the motor on the outer wall. The keeper screws go into nuts pocketed on the inside of the outer wall. The keeper is what stops the idler rods walking out. The driven stub is the short Ø3 rod.
 
 ### The joints
 
@@ -219,7 +222,7 @@ Firmware is in [`hardware/conveyor/`](../../hardware/conveyor/README.md). `uv ru
 
 The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part is set to 0.05 so the drive's value is the one that acts. Rails and walls are 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
 
-The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.6 s on 15 workers.
+The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.2 s on 15 workers.
 
 A part set down at rest on the cones, drives held, meets two rollers, 17 contacts on each, spread 32.3 mm along the crown. Tilt is 0.010°. It sits 0.240 mm above the height it rests at on s1. Both surfaces are at 31 mm. The belt's four contacts sink 0.25 mm and the cones' 34 sink 0.01 mm, and that difference is the 0.24 mm.
 
@@ -232,7 +235,7 @@ The nominal run (0.155 m/s, µ 0.9 / 0.9, offset 0) **passes**. Exit code 0.
 | Entry offset | −0.00 mm |
 | Exit offset | −2.23 mm |
 | Exit yaw | 91.3° (limit is 90° ± 6°) |
-| Dip | 0.13 mm, on s2 |
+| Dip | −0.04 mm, on s2 |
 | Max tilt | 0.38°, on s1 |
 | Rail contacts | none |
 | Time to the exit station | 1.36 s, limit 3.03 s |
@@ -245,57 +248,57 @@ Yaw error against the path tangent: +2.45° at the entry face, −0.87° at mid-
 
 Parts load within 4 mm of the lane centre. Past that, an outer-edge part at full speed reaches s2's outer plate.
 
-A run passes when the exit yaw is inside 90 ± 6°, the exit offset has moved at most 3.0 mm from the entry offset, no rail is touched, the dip is at most 1.0 mm, the tilt is at most 5°, and the exit station is reached inside the time limit.
+A run passes when the exit yaw is inside 90 ± 6°, the exit offset has moved at most 3.0 mm from the entry offset, no rail is touched, the dip is at most 1.0 mm, the tilt is at most 5°, and the exit station is reached inside the time limit. The dip is measured from the mean height while the whole part is on s1's flat run: its back past the infeed nose, its front 2 mm short of the discharge nose.
 
 Per entry offset, the spread of exit offset and of exit yaw across speed and µ is printed below and stored in `sweep.json`. Kyle accepted the speed-dependent drift, so the spreads are reported and the exit code ignores them. The exit code is 0 only when every run passes the gates above.
 
 | speed | µ belt / curve | off | entry | exit | yaw | dip | tilt | rails | |
 |---|---|---|---|---|---|---|---|---|---|
-| 0.030 | 0.60/0.60 | −4 | −4.00 | −4.45 | 89.4 | 0.00 | 0.52 | 0 | PASS |
-| 0.030 | 0.90/0.90 | −4 | −4.00 | −4.45 | 89.6 | 0.00 | 0.56 | 0 | PASS |
-| 0.030 | 1.20/1.20 | −4 | −4.00 | −4.45 | 90.1 | 0.00 | 0.56 | 0 | PASS |
-| 0.030 | 0.90/0.70 | −4 | −4.00 | −4.52 | 87.6 | 0.00 | 0.57 | 0 | PASS |
-| 0.030 | 0.70/0.90 | −4 | −4.00 | −4.39 | 91.6 | 0.00 | 0.55 | 0 | PASS |
-| 0.080 | 0.60/0.60 | −4 | −4.00 | −5.45 | 88.5 | 0.00 | 0.42 | 0 | PASS |
-| 0.080 | 0.90/0.90 | −4 | −4.00 | −5.31 | 89.6 | 0.00 | 0.52 | 0 | PASS |
-| 0.080 | 1.20/1.20 | −4 | −4.00 | −5.43 | 90.1 | 0.00 | 0.58 | 0 | PASS |
-| 0.080 | 0.90/0.70 | −4 | −4.00 | −5.18 | 87.7 | 0.00 | 0.54 | 0 | PASS |
-| 0.080 | 0.70/0.90 | −4 | −4.00 | −5.45 | 91.9 | 0.00 | 0.46 | 0 | PASS |
-| 0.155 | 0.60/0.60 | −4 | −4.00 | −6.39 | 90.9 | 0.12 | 0.40 | 0 | PASS |
-| 0.155 | 0.90/0.90 | −4 | −4.00 | −6.56 | 90.8 | 0.12 | 0.38 | 0 | PASS |
-| 0.155 | 1.20/1.20 | −4 | −4.00 | −6.31 | 91.2 | 0.12 | 0.37 | 0 | PASS |
-| 0.155 | 0.90/0.70 | −4 | −4.00 | −6.41 | 90.2 | 0.12 | 0.38 | 0 | PASS |
-| 0.155 | 0.70/0.90 | −4 | −4.00 | −6.55 | 93.0 | 0.12 | 0.41 | 0 | PASS |
-| 0.030 | 0.60/0.60 | 0 | −0.00 | −0.45 | 89.2 | 0.00 | 0.53 | 0 | PASS |
-| 0.030 | 0.90/0.90 | 0 | −0.00 | −0.48 | 89.4 | 0.00 | 0.56 | 0 | PASS |
-| 0.030 | 1.20/1.20 | 0 | −0.00 | −0.46 | 88.3 | 0.00 | 0.55 | 0 | PASS |
-| 0.030 | 0.90/0.70 | 0 | −0.00 | −0.49 | 86.9 | 0.00 | 0.55 | 0 | PASS |
-| 0.030 | 0.70/0.90 | 0 | −0.00 | −0.35 | 91.1 | 0.00 | 0.56 | 0 | PASS |
-| 0.080 | 0.60/0.60 | 0 | 0.00 | −1.16 | 89.6 | 0.00 | 0.44 | 0 | PASS |
-| 0.080 | 0.90/0.90 | 0 | 0.00 | −1.05 | 90.0 | 0.00 | 0.53 | 0 | PASS |
-| 0.080 | 1.20/1.20 | 0 | 0.00 | −1.30 | 91.1 | 0.00 | 0.58 | 0 | PASS |
-| 0.080 | 0.90/0.70 | 0 | 0.00 | −1.17 | 88.2 | 0.00 | 0.53 | 0 | PASS |
-| 0.080 | 0.70/0.90 | 0 | 0.00 | −1.34 | 92.6 | 0.00 | 0.46 | 0 | PASS |
-| 0.155 | 0.60/0.60 | 0 | −0.00 | −2.26 | 91.4 | 0.12 | 0.40 | 0 | PASS |
-| 0.155 | 0.90/0.90 | 0 | −0.00 | −2.23 | 91.3 | 0.13 | 0.38 | 0 | PASS |
-| 0.155 | 1.20/1.20 | 0 | −0.00 | −2.28 | 92.7 | 0.13 | 0.38 | 0 | PASS |
-| 0.155 | 0.90/0.70 | 0 | −0.00 | −2.24 | 89.5 | 0.12 | 0.38 | 0 | PASS |
-| 0.155 | 0.70/0.90 | 0 | −0.00 | −2.22 | 92.9 | 0.12 | 0.40 | 0 | PASS |
-| 0.030 | 0.60/0.60 | +4 | 4.00 | 3.70 | 89.3 | 0.00 | 0.54 | 0 | PASS |
-| 0.030 | 0.90/0.90 | +4 | 4.00 | 3.54 | 88.7 | 0.00 | 0.55 | 0 | PASS |
-| 0.030 | 1.20/1.20 | +4 | 4.00 | 3.53 | 89.9 | 0.00 | 0.56 | 0 | PASS |
-| 0.030 | 0.90/0.70 | +4 | 4.00 | 3.55 | 87.5 | 0.00 | 0.57 | 0 | PASS |
-| 0.030 | 0.70/0.90 | +4 | 4.00 | 3.74 | 93.0 | 0.00 | 0.55 | 0 | PASS |
-| 0.080 | 0.60/0.60 | +4 | 4.00 | 2.90 | 90.6 | 0.00 | 0.41 | 0 | PASS |
-| 0.080 | 0.90/0.90 | +4 | 4.00 | 2.75 | 89.3 | 0.00 | 0.54 | 0 | PASS |
-| 0.080 | 1.20/1.20 | +4 | 4.00 | 2.87 | 91.4 | 0.00 | 0.57 | 0 | PASS |
-| 0.080 | 0.90/0.70 | +4 | 4.00 | 2.77 | 90.0 | 0.00 | 0.54 | 0 | PASS |
-| 0.080 | 0.70/0.90 | +4 | 4.00 | 2.80 | 93.4 | 0.00 | 0.45 | 0 | PASS |
-| 0.155 | 0.60/0.60 | +4 | 4.00 | 1.88 | 94.1 | 0.13 | 0.40 | 0 | PASS |
-| 0.155 | 0.90/0.90 | +4 | 4.00 | 1.50 | 90.2 | 0.13 | 0.37 | 0 | PASS |
-| 0.155 | 1.20/1.20 | +4 | 4.00 | 1.75 | 93.6 | 0.13 | 0.38 | 0 | PASS |
-| 0.155 | 0.90/0.70 | +4 | 4.00 | 1.65 | 88.7 | 0.13 | 0.41 | 0 | PASS |
-| 0.155 | 0.70/0.90 | +4 | 4.00 | 1.90 | 95.8 | 0.13 | 0.40 | 0 | PASS |
+| 0.030 | 0.60/0.60 | −4 | −4.00 | −4.45 | 89.4 | −0.01 | 0.52 | 0 | PASS |
+| 0.030 | 0.90/0.90 | −4 | −4.00 | −4.45 | 89.6 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 1.20/1.20 | −4 | −4.00 | −4.45 | 90.1 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 0.90/0.70 | −4 | −4.00 | −4.52 | 87.6 | −0.01 | 0.57 | 0 | PASS |
+| 0.030 | 0.70/0.90 | −4 | −4.00 | −4.39 | 91.6 | −0.01 | 0.55 | 0 | PASS |
+| 0.080 | 0.60/0.60 | −4 | −4.00 | −5.45 | 88.5 | −0.02 | 0.42 | 0 | PASS |
+| 0.080 | 0.90/0.90 | −4 | −4.00 | −5.31 | 89.6 | −0.02 | 0.52 | 0 | PASS |
+| 0.080 | 1.20/1.20 | −4 | −4.00 | −5.43 | 90.1 | −0.02 | 0.58 | 0 | PASS |
+| 0.080 | 0.90/0.70 | −4 | −4.00 | −5.18 | 87.7 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 0.70/0.90 | −4 | −4.00 | −5.45 | 91.9 | −0.02 | 0.46 | 0 | PASS |
+| 0.155 | 0.60/0.60 | −4 | −4.00 | −6.39 | 90.9 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | −4 | −4.00 | −6.56 | 90.8 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 1.20/1.20 | −4 | −4.00 | −6.31 | 91.2 | −0.04 | 0.37 | 0 | PASS |
+| 0.155 | 0.90/0.70 | −4 | −4.00 | −6.41 | 90.2 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.70/0.90 | −4 | −4.00 | −6.55 | 93.0 | −0.04 | 0.41 | 0 | PASS |
+| 0.030 | 0.60/0.60 | 0 | −0.00 | −0.45 | 89.2 | −0.01 | 0.53 | 0 | PASS |
+| 0.030 | 0.90/0.90 | 0 | −0.00 | −0.48 | 89.4 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 1.20/1.20 | 0 | −0.00 | −0.46 | 88.3 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 0.90/0.70 | 0 | −0.00 | −0.49 | 86.9 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 0.70/0.90 | 0 | −0.00 | −0.35 | 91.1 | −0.01 | 0.56 | 0 | PASS |
+| 0.080 | 0.60/0.60 | 0 | 0.00 | −1.16 | 89.6 | −0.02 | 0.44 | 0 | PASS |
+| 0.080 | 0.90/0.90 | 0 | 0.00 | −1.05 | 90.0 | −0.02 | 0.53 | 0 | PASS |
+| 0.080 | 1.20/1.20 | 0 | 0.00 | −1.30 | 91.1 | −0.02 | 0.58 | 0 | PASS |
+| 0.080 | 0.90/0.70 | 0 | 0.00 | −1.17 | 88.2 | −0.02 | 0.53 | 0 | PASS |
+| 0.080 | 0.70/0.90 | 0 | 0.00 | −1.34 | 92.6 | −0.02 | 0.46 | 0 | PASS |
+| 0.155 | 0.60/0.60 | 0 | −0.00 | −2.26 | 91.4 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | 0 | −0.00 | −2.23 | 91.3 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 1.20/1.20 | 0 | −0.00 | −2.28 | 92.7 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.90/0.70 | 0 | −0.00 | −2.24 | 89.5 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.70/0.90 | 0 | −0.00 | −2.22 | 92.9 | −0.04 | 0.40 | 0 | PASS |
+| 0.030 | 0.60/0.60 | +4 | 4.00 | 3.70 | 89.3 | −0.01 | 0.54 | 0 | PASS |
+| 0.030 | 0.90/0.90 | +4 | 4.00 | 3.54 | 88.7 | −0.01 | 0.55 | 0 | PASS |
+| 0.030 | 1.20/1.20 | +4 | 4.00 | 3.53 | 89.9 | −0.01 | 0.56 | 0 | PASS |
+| 0.030 | 0.90/0.70 | +4 | 4.00 | 3.55 | 87.5 | −0.01 | 0.57 | 0 | PASS |
+| 0.030 | 0.70/0.90 | +4 | 4.00 | 3.74 | 93.0 | −0.01 | 0.55 | 0 | PASS |
+| 0.080 | 0.60/0.60 | +4 | 4.00 | 2.90 | 90.6 | −0.02 | 0.41 | 0 | PASS |
+| 0.080 | 0.90/0.90 | +4 | 4.00 | 2.75 | 89.3 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 1.20/1.20 | +4 | 4.00 | 2.87 | 91.4 | −0.02 | 0.57 | 0 | PASS |
+| 0.080 | 0.90/0.70 | +4 | 4.00 | 2.77 | 90.0 | −0.02 | 0.54 | 0 | PASS |
+| 0.080 | 0.70/0.90 | +4 | 4.00 | 2.80 | 93.4 | −0.02 | 0.45 | 0 | PASS |
+| 0.155 | 0.60/0.60 | +4 | 4.00 | 1.88 | 94.1 | −0.03 | 0.40 | 0 | PASS |
+| 0.155 | 0.90/0.90 | +4 | 4.00 | 1.50 | 90.2 | −0.04 | 0.37 | 0 | PASS |
+| 0.155 | 1.20/1.20 | +4 | 4.00 | 1.75 | 93.6 | −0.04 | 0.38 | 0 | PASS |
+| 0.155 | 0.90/0.70 | +4 | 4.00 | 1.65 | 88.7 | −0.04 | 0.41 | 0 | PASS |
+| 0.155 | 0.70/0.90 | +4 | 4.00 | 1.90 | 95.8 | −0.04 | 0.40 | 0 | PASS |
 
 | entry offset | exit-offset spread | exit-yaw spread |
 |---|---|---|
@@ -303,7 +306,7 @@ Per entry offset, the spread of exit offset and of exit yaw across speed and µ 
 | 0 | 1.927 mm | 5.935° |
 | +4 mm | 2.242 mm | 8.265° |
 
-The yaw furthest from 90° is 95.8°, at 0.155 m/s, µ 0.70 / 0.90, offset +4. Its yaw error is +3.50° at the entry face, +1.05° at mid-curve, +0.17° at the exit face and +5.79° at the station. The largest offset change is 2.56 mm, at 0.155 m/s, µ 0.9 / 0.9, entry −4 mm, exit −6.56 mm. The largest dip is 0.13 mm and the largest tilt is 0.58°. No row touches a rail.
+The yaw furthest from 90° is 95.8°, at 0.155 m/s, µ 0.70 / 0.90, offset +4. Its yaw error is +3.50° at the entry face, +1.05° at mid-curve, +0.17° at the exit face and +5.79° at the station. The largest offset change is 2.56 mm, at 0.155 m/s, µ 0.9 / 0.9, entry −4 mm, exit −6.56 mm. The dip runs from −0.04 mm to −0.01 mm, so the part stays at the height it had on s1, and the largest tilt is 0.58°. No row touches a rail.
 
 ---
 

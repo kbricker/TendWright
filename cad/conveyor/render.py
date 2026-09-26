@@ -197,7 +197,7 @@ SCENES = {
     "tensioner": [(P("tensioner_plate"), BRACKET), (P("tensioner_block_seated"), TENSION)],
     "motor_mount": [(P("bracket_straight_motor"), BRACKET), (P("ref_motor"), MOTOR)],
     "coupon": [(P("coupon_bracket_end"), BRACKET), (P("ref_motor"), MOTOR)],
-    "coupon_curve": [(P("coupon_curve"), BRACKET)],
+    "coupon_curve": [(P("coupon_curve_view"), BRACKET)],
     # Print orientation, big end down. The idler is shifted so the two fit in one frame.
     "roller_cone": [(P("roller_cone_driven"), ROLLER),
                     (P("roller_cone_idler"), ROLLER, (42.0, 0.0, 0.0))],

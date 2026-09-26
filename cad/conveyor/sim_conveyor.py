@@ -931,14 +931,39 @@ def station_errors(samples):
     return out
 
 
+def _x_half(yaw_deg):
+    # Square in plan, so a little yaw still pushes a corner past the apex.
+    a = math.radians(yaw_deg)
+    return PART[0] / 2.0 * abs(math.cos(a)) + PART[1] / 2.0 * abs(math.sin(a))
+
+
+def on_flat_carry(samples):
+    # Position, not a clock. At 0.155 m/s the old 0.3–0.6 s window already
+    # includes the discharge nose, and that droop lowers the reference.
+    x_in = G["straight"]["drive_ax"]
+    x_out = G["straight"]["nose_ax"] - 2.0
+    kept = []
+    for samp in samples:
+        ext = _x_half(samp[4])
+        if samp[1] - ext >= x_in and samp[1] + ext <= x_out:
+            kept.append(samp)
+    return kept
+
+
+def flat_rest_z(samples):
+    kept = on_flat_carry(samples)
+    if not kept:
+        return None, None
+    return sum(s[3] for s in kept) / len(kept), kept[-1][0]
+
+
 def evaluate(samples, contacts, speed, limit):
     entry_x = CURVE["entry_face_x"] - 30.0
     exit_y = S2["offset"][1] + 40.0
     entry = crossed(samples, 1, entry_x)
     exit_ = crossed(samples, 2, exit_y)
-    on_s1 = [s for s in samples if 0.3 <= s[0] <= 0.6 and s[1] < CURVE["entry_face_x"]]
-    rest = sum(s[3] for s in on_s1) / len(on_s1) if on_s1 else None
-    after = [s for s in samples if rest is not None and s[0] > (on_s1[-1][0] if on_s1 else 0.6)]
+    rest, t_leave = flat_rest_z(samples)
+    after = [s for s in samples if rest is not None and s[0] > t_leave]
     if exit_ is not None:
         after = [s for s in after if s[0] <= exit_[0] + 1e-9]
     dip_at = min(after, key=lambda s: s[3]) if after else None
@@ -952,7 +977,9 @@ def evaluate(samples, contacts, speed, limit):
     reasons = []
     if not reached:
         reasons.append("exit not reached within %.2f s" % limit)
-    if dip is None or dip > 1.0:
+    if rest is None:
+        reasons.append("dip unmeasurable")
+    elif dip is None or dip > 1.0:
         reasons.append("dip %s mm" % ("?" if dip is None else "%.2f" % dip))
     if tilt is None or tilt > 5.0:
         reasons.append("tilt %s deg" % ("?" if tilt is None else "%.2f" % tilt))
@@ -1063,8 +1090,7 @@ def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, l
             shots.append(renderer.render().copy())
         x, y, z, yaw, tilt = pose(data, part_bid)
         if prove and proof is None and x >= CURVE["entry_face_x"] and polar_deg(x, y) >= -45.0:
-            on_s1 = [s for s in samples if 0.3 <= s[0] <= 0.6 and s[1] < CURVE["entry_face_x"]]
-            rest = sum(s[3] for s in on_s1) / len(on_s1) if on_s1 else None
+            rest, _t_leave = flat_rest_z(samples)
             proof = cone_support(model, data, part_gid, part_bid, rest)
         if y >= exit_y and x > CURVE["entry_face_x"]:
             if not samples or abs(samples[-1][0] - data.time) > 1e-9:

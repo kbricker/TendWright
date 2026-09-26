@@ -13,11 +13,12 @@ oring B: c=23.669 D=9.132 crown_clear=3.140 stretch=0.100
 oring id window at cs=2.00: 18.971 .. 22.541 mm
 spool OD radius A=5.510 B=5.166
 clearance small-end cones 2.045 mm; spool A at s_b 10.890; spool B at mid 12.796
-rod cut mm: idler 70.358  driven stub 24.239
+rod cut mm: idler 70.006  driven stub 24.239
+curve idler end rim 0.200 mm inside the keeper
 shaft engagement 6.300 mm (bore 10.0)
 straight bosses: protrusion 1.600 mm, inboard face y=56.400 after mirror (both ears)
 pad: s_face=98.095 s_slab_in=90.658 s_boss_in=88.350 h_half=21.215 v_half=9.000
-curve nut land behind pocket: 6.345 mm
+curve nut land behind pocket: 1.200 mm
 blind-hole remaining plan thickness 0.830 mm
 keeper cap half-width 3.250 mm, gap to pad 1.219 mm
 --- solids ---
@@ -33,6 +34,7 @@ bracket: infeed take-up slot
 bracket: blind bore for the driven stub
 bracket: bed and guide grooves, tensioner seat
 jack-screw engagement tensioned 5.20 mm, slack 5.20 mm
+take-up 8.0 mm, belt slack 16.0 mm, unsupported carry 14.723 mm
 straight idler rod cut 73.000 mm
 straight driven stub cut 51.300 mm
 roller: Ø10 idler
@@ -81,31 +83,101 @@ joiner
 s1 plain plate to curve frame 1.500 mm
 s2 plain plate to curve frame 1.500 mm
 joiner holes within 0.05 mm of the tie-bar and pad holes
-interference: 78 solids
-interference pairs tested 250, none over 1e-3 mm^3
+rod s1_rod cut 73.000 mm  volume err 0.00000%
+rod s1_driven_stub cut 51.300 mm  volume err 0.00000%
+rod s2_rod cut 73.000 mm  volume err 0.00000%
+rod s2_driven_stub cut 51.300 mm  volume err 0.00000%
+rod crod_1 cut 70.006 mm  volume err 0.00000%
+rod crod_2 cut 70.006 mm  volume err 0.00000%
+rod stub cut 24.239 mm  volume err 0.00000%
+rod crod_4 cut 70.006 mm  volume err 0.00000%
+rod crod_5 cut 70.006 mm  volume err 0.00000%
+rod crod_6 cut 70.006 mm  volume err 0.00000%
+straight stub 0.50 mm short of the D-bore, seated on the blind floor
+curve stub 0.50 mm short of the cone bore bottom
+interference take-up: 78 solids
+interference take-up pairs 248, none over 1e-3 mm^3
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 8.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 8.000 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 8.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 8.000 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw tie engagement 2.600 mm  nut 2.600 mm  tip past far face 2.400 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw cv_m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw cv_m4 engagement 3.400 mm  nut 3.400 mm  tip past far face 0.900 mm
+screw keeper engagement 2.600 mm  nut 2.600 mm  tip past far face 1.900 mm
+screw keeper engagement 2.600 mm  nut 2.600 mm  tip past far face 1.900 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j1 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
+interference mid: 78 solids
+interference mid pairs 24, none over 1e-3 mm^3
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 4.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 4.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 4.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 4.000 mm
+interference slack: 78 solids
+interference slack pairs 24, none over 1e-3 mm^3
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 0.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 0.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 0.000 mm
+screw jack engagement 5.200 mm  nut 5.200 mm  tip past far face 0.000 mm
 --- export ---
+print bracket_straight_motor solid 1  z 0.0000 .. 46.500
 export: bracket_straight_motor
+print bracket_straight_plain solid 1  z 0.0000 .. 35.000
 export: bracket_straight_plain
+print roller_idler solid 1  z -0.0000 .. 53.000
 export: roller_idler
+print roller_driven solid 1  z -0.0000 .. 56.500
 export: roller_driven
+print roller_cone_idler solid 1  z -0.0000 .. 60.694
 export: roller_cone_idler
+print roller_cone_driven solid 1  z -0.0000 .. 68.740
 export: roller_cone_driven
+print slider_bed_straight solid 1  z -0.0000 .. 3.000
 export: slider_bed_straight
+print return_guide_straight solid 1  z 0.0000 .. 3.000
 export: return_guide_straight
+print tie_bar solid 1  z 0.0000 .. 8.000
 export: tie_bar
+print tensioner_block solid 1  z 0.0000 .. 18.000
 export: tensioner_block
 joiner
+print joiner solid 1  z 0.0000 .. 3.000
 export: joiner
 export: ref_motor
 coupon: discharge end of the motor plate
+print coupon_bracket_end solid 1  z 0.0000 .. 46.500
 export: coupon_bracket_end
 coupon: infeed end, with the tensioner seat
+print coupon_infeed_end solid 1  z 0.0000 .. 35.000
+print coupon_infeed_end solid 2  z 0.0000 .. 18.000
 export: coupon_infeed_end
 export: tensioner_plate
 export: tensioner_block_seated
+print curve_frame solid 1  z 0.0000 .. 35.000
 export: curve_frame
+print curve_keeper solid 1  z 0.0000 .. 20.803
 export: curve_keeper
 coupon_curve: sector -66.571 .. -29.296 deg (pad cover 13.719)
+export: coupon_curve_view
+print coupon_curve solid 1  z 0.0000 .. 35.000
 export: coupon_curve
 assembly: straight, then mirror onto the left plate
 export: assembly_straight
@@ -136,5 +208,10 @@ export: cv_rollers
 export: cv_orings
 export: cv_motor
 export: cv_keeper
+hardware tensioner jacks  M3 x 16 mm  x4  nuts 8
+hardware tie bars  M3 x 8 mm  x8  nuts 8
+hardware motor ears  M4 x 8 mm  x6  nuts 6
+hardware curve keeper  M3 x 10 mm  x2  nuts 2
+hardware joiners  M3 x 12 mm  x8  nuts 8
 export: geometry.json
 === build complete ===
