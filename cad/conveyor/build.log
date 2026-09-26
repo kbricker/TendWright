@@ -26,15 +26,18 @@ bracket: infeed take-up slot
 bracket: enclosure face, tab, M4 nuts
 bracket: lower boss inboard to y=4.60, centred z=9.00
 bracket: upper boss inboard to y=4.60, centred z=41.00
-bracket: cross-member mounting holes
+bracket: bed and guide grooves, tensioner seat
 bracket: len=120.0 motor_side=False
 bracket: infeed take-up slot
 bracket: stub-axle bore at the driven nose
-bracket: cross-member mounting holes
+bracket: bed and guide grooves, tensioner seat
+jack-screw engagement tensioned 5.20 mm, slack 5.20 mm
+straight idler rod cut 73.000 mm
 roller: Ø10 idler
 roller: Ø10 driven
-slider bed: plate + lead-in chamfers, len=120.0
-return guide: crowned bar, len=120.0
+slider bed: len=120.0
+return guide: len=120.0
+return guide: chamfer skipped (class StdFail_NotDone BRep_API: command not done)
 cone rollers
 cone roller: idler
 cone roller: driven
@@ -46,6 +49,7 @@ motor enclosure: reference, ears along x
 curve frame
 curve frame: base, walls, pad, axle holes
 keep-out x 105.00..123.00 y 60.00..94.00 z 4.00..46.00
+curve joint pads at z=10.0
 keeper
 curve keeper
 keeper bolt at theta -76.409 deg, z=7.00
@@ -62,11 +66,20 @@ roller 4 distance to frame 0.420 mm
 roller 5 distance to frame 0.420 mm
 roller 6 distance to frame 0.420 mm
 o-rings
-oring 1-2 groove A zmax 29.056
-oring 2-3 groove B zmax 28.288
-oring 3-4 groove A zmax 29.056
-oring 4-5 groove B zmax 28.288
-oring 5-6 groove A zmax 29.056
+oring 1-2 groove A zmax 28.464
+oring 2-3 groove B zmax 27.695
+oring 3-4 groove A zmax 28.464
+oring 4-5 groove B zmax 27.695
+oring 5-6 groove A zmax 28.464
+--- placed line ---
+tie bar: x=18.0
+tie bar: x=102.0
+tensioner block
+joiner
+joiner
+joiner holes within 0.05 mm of the tie-bar and pad holes
+interference: 76 solids
+interference pairs tested 244, none over 1e-3 mm^3
 --- export ---
 export: bracket_straight_motor
 export: bracket_straight_plain
@@ -76,12 +89,20 @@ export: roller_cone_idler
 export: roller_cone_driven
 export: slider_bed_straight
 export: return_guide_straight
+export: tie_bar
+export: tensioner_block
+joiner
+export: joiner
 export: ref_motor
 coupon: discharge end of the motor plate
 export: coupon_bracket_end
+coupon: infeed end, with the tensioner seat
+export: coupon_infeed_end
+export: tensioner_plate
+export: tensioner_block_seated
 export: curve_frame
 export: curve_keeper
-coupon_curve: sector -60.704 .. -29.296 deg
+coupon_curve: sector -66.571 .. -29.296 deg (pad cover 13.719)
 export: coupon_curve
 assembly: straight, then mirror onto the left plate
 export: assembly_straight
@@ -100,6 +121,13 @@ export: s2_motor
 export: s2_bed
 export: s2_return
 export: s2_belt
+export: cs_tiebars
+export: cs_tension
+export: s2_tiebars
+export: s2_tension
+export: jn_1
+export: jn_2
+export: j1_view
 export: cv_frame
 export: cv_rollers
 export: cv_orings

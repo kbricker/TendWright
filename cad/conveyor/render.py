@@ -172,12 +172,16 @@ BELT = (58, 58, 62)
 MOTOR = (118, 120, 124)
 ORING = (42, 40, 38)
 KEEPER = (186, 148, 96)
+TIE = (96, 108, 112)
+TENSION = (176, 132, 86)
+JOIN = (150, 158, 132)
 SOLO = (196, 194, 186)
 
 STRAIGHT = lambda pfx: [
     (P(pfx + "_brackets"), BRACKET), (P(pfx + "_rollers"), ROLLER),
     (P(pfx + "_bed"), BED), (P(pfx + "_return"), RETURN),
     (P(pfx + "_belt"), BELT), (P(pfx + "_motor"), MOTOR),
+    (P(pfx + "_tiebars"), TIE), (P(pfx + "_tension"), TENSION),
 ]
 CURVE = [
     (P("cv_frame"), BRACKET), (P("cv_rollers"), ROLLER),
@@ -187,7 +191,10 @@ CURVE = [
 SCENES = {
     "straight": STRAIGHT("cs"),
     "curve": CURVE,
-    "v0": STRAIGHT("cs") + CURVE + STRAIGHT("s2"),
+    "v0": STRAIGHT("cs") + CURVE + STRAIGHT("s2") + [
+        (P("jn_1"), JOIN), (P("jn_2"), JOIN)],
+    "joint": [(P("j1_view"), BRACKET)],
+    "tensioner": [(P("tensioner_plate"), BRACKET), (P("tensioner_block_seated"), TENSION)],
     "motor_mount": [(P("bracket_straight_motor"), BRACKET), (P("ref_motor"), MOTOR)],
     "coupon": [(P("coupon_bracket_end"), BRACKET), (P("ref_motor"), MOTOR)],
     "coupon_curve": [(P("coupon_curve"), BRACKET)],
@@ -209,6 +216,8 @@ VIEWS = {
     "motor_mount": (0.72, 0.45, 0.40),
     "coupon": (0.78, 0.35, 0.42),
     "coupon_curve": (0.15, -0.40, -0.88),
+    "joint": (0.35, -0.75, -0.55),
+    "tensioner": (0.55, 0.70, -0.40),
     "roller_cone": (-0.45, 0.55, -0.70),
     "roller_driven": (-0.55, 0.75, -0.38),
     "roller_idler": (-0.55, 0.75, -0.38),
@@ -222,6 +231,8 @@ SIZES = {
     "motor_mount": (1100, 860),
     "coupon": (1100, 860),
     "coupon_curve": (1200, 1000),
+    "joint": (1100, 860),
+    "tensioner": (1000, 800),
     "roller_cone": (1200, 780),
     "roller_driven": (800, 620),
     "roller_idler": (800, 620),

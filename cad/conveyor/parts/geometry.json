@@ -117,5 +117,69 @@
       "centre": 13.0,
       "outer": 15.5
     }
+  },
+  "hardware": {
+    "screws": [
+      {
+        "size": "M3",
+        "length_mm": 8.0,
+        "count": 8,
+        "where": "tie bars"
+      },
+      {
+        "size": "M3",
+        "length_mm": 16.0,
+        "count": 4,
+        "where": "tensioner jacks"
+      },
+      {
+        "size": "M3",
+        "length_mm": 12.0,
+        "count": 8,
+        "where": "joiners"
+      },
+      {
+        "size": "M3",
+        "length_mm": 10.0,
+        "count": 2,
+        "where": "curve keeper"
+      },
+      {
+        "size": "M4",
+        "length_mm": 8.0,
+        "count": 6,
+        "where": "motor ears"
+      }
+    ],
+    "nuts": [
+      {
+        "size": "M3",
+        "count": 26
+      },
+      {
+        "size": "M4",
+        "count": 6
+      }
+    ],
+    "rods": [
+      {
+        "diameter_mm": 4.0,
+        "cut_mm": 73.0,
+        "count": 2,
+        "where": "straight idler"
+      },
+      {
+        "diameter_mm": 3.0,
+        "cut_mm": 70.35768488340406,
+        "count": 5,
+        "where": "curve idler"
+      },
+      {
+        "diameter_mm": 3.0,
+        "cut_mm": 24.238765925130103,
+        "count": 1,
+        "where": "curve driven stub"
+      }
+    ]
   }
 }
