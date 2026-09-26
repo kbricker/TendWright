@@ -2,6 +2,7 @@
 layout: C=(121.500, 85.500) z_top=31.000 belt y 5.500..55.500
 layout: s2 rot=90 offset=(207.000, 87.000) entry_face_x=121.500 exit_face_y=85.500
 curve: k=0.20000 alpha=5.7392 deg pitch=15.7043 deg n=6 driven=3
+cone_bore_d 3.70 mm
 curve theta deg: -84.2608, -68.5565, -52.8522, -37.1478, -21.4435, -5.7392
 cone plan r 29.000..81.000  spool grooves 83.500 87.500 end 90.000
 walls inner 23.000..28.000 outer 91.000..94.000

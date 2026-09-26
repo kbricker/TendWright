@@ -167,6 +167,12 @@ curve_n         = 6
 curve_pitch_deg = (curve_angle - 2.0 * math.degrees(curve_alpha)) / (curve_n - 1)
 curve_driven    = 3        # middle of the chain, so no O-ring run is longer than 3 links
 curve_axle_d    = 3.0      # the 3 mm 304 rod already ordered
+# Idler and driven cones both print in TPU 95A. TPU grips steel, so the plain
+# bore — the idler's bore on the rod, and the driven cone's small-end stub
+# bore — is a looser running fit than the Ø3.4 PLA bore. The coupon confirms
+# it. The D-bore keeps the printed-hole allowance, because grip on the shaft
+# is what drives the roller.
+cone_bore_d     = 3.7
 cone_past_lane  = 1.0      # cone runs this far past each lane edge, so a part never sees the end face
 stub_bore_depth = 20.0     # driven cone, small end, plain bore for the stub axle
 stub_bore_air   = 0.5      # stub stops this short of that bore's bottom
@@ -524,6 +530,7 @@ def main():
          % (s2_ox, s2_oy, cx, cy))
     step("curve: k=%.5f alpha=%.4f deg pitch=%.4f deg n=%d driven=%d"
          % (curve_k, alpha_deg, curve_pitch_deg, curve_n, curve_driven))
+    step("cone_bore_d %.2f mm" % cone_bore_d)
     step("curve theta deg: %s" % ", ".join("%.4f" % t for t in thetas))
     step("cone plan r %.3f..%.3f  spool grooves %.3f %.3f end %.3f"
          % (r_a, r_b, r_gA, r_gB, spool_end_r))
@@ -991,6 +998,7 @@ def main():
             "theta_deg": thetas,
             "cone_r": [r_a, r_b],
             "driven": curve_driven,
+            "cone_bore_d": cone_bore_d,
             "inner_wall": [r_iw0, r_iw1],
             "outer_wall": [r_ow0, r_ow1],
             "wall_top": bracket_h,
@@ -1612,7 +1620,7 @@ def make_cone_roller(driven):
     minor = oring_cs / 2.0 + groove_extra
     body = body.cut(groove_torus(s_gA, D_A / 2.0, minor))
     body = body.cut(groove_torus(s_gB, D_B / 2.0, minor))
-    bore_r = (curve_axle_d + 0.4) / 2.0
+    bore_r = cone_bore_d / 2.0
     if not driven:
         return body.cut(Part.makeCylinder(
             bore_r, s_spool_end - s_a + 2.0, Vector(s_a - 1.0, 0, 0), Vector(1, 0, 0)))

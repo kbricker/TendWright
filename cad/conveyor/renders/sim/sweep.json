@@ -2,24 +2,24 @@
   "runs": [
     {
       "speed": 0.03,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -8.51,
-      "exit_yaw_deg": 88.409,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -4.445,
+      "exit_yaw_deg": 89.427,
       "dip_mm": 0.0,
-      "max_tilt_deg": 0.487,
+      "max_tilt_deg": 0.515,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 6.887,
+      "t_exit": 6.903,
       "t_limit": 11.47,
       "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.188,
-        "mid_curve": -1.034,
-        "exit_face": -2.973,
-        "exit_station": -1.591
+        "entry_face": 2.136,
+        "mid_curve": -0.267,
+        "exit_face": -2.306,
+        "exit_station": -0.573
       },
       "dip_where": "on s2",
       "tilt_where": "on s2"
@@ -27,501 +27,47 @@
     {
       "speed": 0.03,
       "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -8.543,
-      "exit_yaw_deg": 81.872,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -4.445,
+      "exit_yaw_deg": 89.609,
       "dip_mm": 0.0,
-      "max_tilt_deg": 0.494,
+      "max_tilt_deg": 0.559,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 6.92,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.199,
-        "mid_curve": -4.821,
-        "exit_face": -8.414,
-        "exit_station": -8.128
-      },
-      "dip_where": "on s1",
-      "tilt_where": "exit transfer"
-    },
-    {
-      "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -8.415,
-      "exit_yaw_deg": 83.197,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.499,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.921,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.499,
-        "mid_curve": -3.735,
-        "exit_face": -7.365,
-        "exit_station": -6.803
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -8.717,
-      "exit_yaw_deg": 79.433,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.497,
-      "rail_contacts": [
-        {
-          "t": 5.299,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 5.3055,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 5.3155,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 5.3255,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 5.3355,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 6.922,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": -0.052,
-        "mid_curve": -5.805,
-        "exit_face": -10.587,
-        "exit_station": -10.567
-      },
-      "dip_where": "on s1",
-      "tilt_where": "exit transfer"
-    },
-    {
-      "speed": 0.08,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -9.385,
-      "exit_yaw_deg": 88.744,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.436,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.599,
-      "t_limit": 4.926,
-      "pass": true,
-      "yaw_error_deg": {
-        "entry_face": 1.497,
-        "mid_curve": -1.255,
-        "exit_face": -3.126,
-        "exit_station": -1.256
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.08,
-      "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -9.405,
-      "exit_yaw_deg": 83.646,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.447,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.611,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.692,
-        "mid_curve": -3.6,
-        "exit_face": -7.198,
-        "exit_station": -6.354
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -9.433,
-      "exit_yaw_deg": 84.325,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.456,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.614,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.77,
-        "mid_curve": -2.869,
-        "exit_face": -6.503,
-        "exit_station": -5.675
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -8.542,
-      "exit_yaw_deg": 78.634,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.441,
-      "rail_contacts": [
-        {
-          "t": 1.9975,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0055,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0155,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0255,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0355,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0455,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 2.0555,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 2.617,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.336,
-        "mid_curve": -5.574,
-        "exit_face": -11.441,
-        "exit_station": -11.366
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.155,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -10.339,
-      "exit_yaw_deg": 90.183,
-      "dip_mm": 0.114,
-      "max_tilt_deg": 0.441,
-      "rail_contacts": [
-        {
-          "t": 1.0495,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0555,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0655,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0755,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0855,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 1.364,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 1.042,
-        "mid_curve": -2.822,
-        "exit_face": -4.038,
-        "exit_station": 0.183
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.155,
-      "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -4.686,
-      "exit_yaw_deg": 35.885,
-      "dip_mm": 0.083,
-      "max_tilt_deg": 0.498,
-      "rail_contacts": [
-        {
-          "t": 1.043,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0455,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0555,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0655,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0755,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0855,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0955,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1055,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1155,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1255,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1355,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1475,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1555,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.167,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1755,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 1.417,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.582,
-        "mid_curve": -6.252,
-        "exit_face": -44.403,
-        "exit_station": -54.115
-      },
-      "dip_where": "on s2",
-      "tilt_where": "exit transfer"
-    },
-    {
-      "speed": 0.155,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -9.423,
-      "exit_yaw_deg": 83.506,
-      "dip_mm": 0.085,
-      "max_tilt_deg": 0.359,
-      "rail_contacts": [
-        {
-          "t": 1.039,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0455,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0555,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0655,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0755,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0855,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0955,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 1.361,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 1.141,
-        "mid_curve": -4.634,
-        "exit_face": -8.5,
-        "exit_station": -6.494
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.155,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": -8.0,
-      "entry_offset_mm": -8.0,
-      "exit_offset_mm": -4.396,
-      "exit_yaw_deg": 39.519,
-      "dip_mm": 0.083,
-      "max_tilt_deg": 0.362,
-      "rail_contacts": [
-        {
-          "t": 1.043,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0455,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0555,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0655,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0755,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0855,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.0955,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1055,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1225,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1255,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1355,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1455,
-          "geom": "s2_rail0"
-        },
-        {
-          "t": 1.1555,
-          "geom": "s2_rail0"
-        }
-      ],
-      "reached": true,
-      "t_exit": 1.407,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.388,
-        "mid_curve": -5.975,
-        "exit_face": -43.096,
-        "exit_station": -50.481
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.03,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -0.441,
-      "exit_yaw_deg": 86.837,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.468,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.884,
+      "t_exit": 6.903,
       "t_limit": 11.47,
       "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.498,
-        "mid_curve": -1.698,
-        "exit_face": -4.363,
-        "exit_station": -3.163
+        "entry_face": 2.1,
+        "mid_curve": -0.323,
+        "exit_face": -2.456,
+        "exit_station": -0.391
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -4.448,
+      "exit_yaw_deg": 90.093,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.557,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.914,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.044,
+        "mid_curve": 0.045,
+        "exit_face": -2.088,
+        "exit_station": 0.093
       },
       "dip_where": "on s2",
       "tilt_where": "on s2"
@@ -529,479 +75,239 @@
     {
       "speed": 0.03,
       "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -0.594,
-      "exit_yaw_deg": 81.902,
+      "mu_curve": 0.7,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -4.521,
+      "exit_yaw_deg": 87.632,
       "dip_mm": 0.0,
-      "max_tilt_deg": 0.563,
+      "max_tilt_deg": 0.568,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 6.887,
+      "t_exit": 6.9,
       "t_limit": 11.47,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 0.419,
-        "mid_curve": -4.397,
-        "exit_face": -9.031,
-        "exit_station": -8.098
+        "entry_face": 1.42,
+        "mid_curve": -1.432,
+        "exit_face": -3.893,
+        "exit_station": -2.368
       },
       "dip_where": "on s2",
-      "tilt_where": "exit transfer"
+      "tilt_where": "on s2"
     },
     {
       "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -0.599,
-      "exit_yaw_deg": 82.847,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -4.391,
+      "exit_yaw_deg": 91.648,
       "dip_mm": 0.0,
       "max_tilt_deg": 0.548,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 6.882,
+      "t_exit": 6.912,
       "t_limit": 11.47,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 0.751,
-        "mid_curve": -4.285,
-        "exit_face": -8.205,
-        "exit_station": -7.153
+        "entry_face": 2.447,
+        "mid_curve": 0.547,
+        "exit_face": -1.064,
+        "exit_station": 1.648
       },
       "dip_where": "on s2",
       "tilt_where": "on s2"
     },
     {
-      "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -0.785,
-      "exit_yaw_deg": 76.879,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.564,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.87,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.001,
-        "mid_curve": -7.132,
-        "exit_face": -13.659,
-        "exit_station": -13.121
-      },
-      "dip_where": "on s2",
-      "tilt_where": "exit transfer"
-    },
-    {
       "speed": 0.08,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -1.203,
-      "exit_yaw_deg": 87.628,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -5.452,
+      "exit_yaw_deg": 88.521,
       "dip_mm": 0.0,
-      "max_tilt_deg": 0.437,
+      "max_tilt_deg": 0.425,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 2.599,
+      "t_exit": 2.597,
       "t_limit": 4.926,
       "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.679,
-        "mid_curve": -2.553,
-        "exit_face": -5.051,
-        "exit_station": -2.372
+        "entry_face": 1.561,
+        "mid_curve": -1.322,
+        "exit_face": -3.655,
+        "exit_station": -1.479
       },
       "dip_where": "on s2",
-      "tilt_where": "on s1"
+      "tilt_where": "on s2"
     },
     {
       "speed": 0.08,
       "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 0.0,
-      "entry_offset_mm": 0.0,
-      "exit_offset_mm": -1.28,
-      "exit_yaw_deg": 84.659,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -5.307,
+      "exit_yaw_deg": 89.643,
       "dip_mm": 0.0,
-      "max_tilt_deg": 0.538,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.607,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.905,
-        "mid_curve": -3.424,
-        "exit_face": -6.938,
-        "exit_station": -5.341
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 0.0,
-      "entry_offset_mm": 0.0,
-      "exit_offset_mm": -1.223,
-      "exit_yaw_deg": 86.531,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.605,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.613,
-      "t_limit": 4.926,
-      "pass": true,
-      "yaw_error_deg": {
-        "entry_face": 1.341,
-        "mid_curve": -2.47,
-        "exit_face": -5.329,
-        "exit_station": -3.469
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": 0.0,
-      "exit_offset_mm": -1.405,
-      "exit_yaw_deg": 81.221,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.596,
+      "max_tilt_deg": 0.524,
       "rail_contacts": [],
       "reached": true,
       "t_exit": 2.606,
       "t_limit": 4.926,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 0.526,
-        "mid_curve": -5.727,
-        "exit_face": -9.451,
-        "exit_station": -8.779
+        "entry_face": 1.842,
+        "mid_curve": -1.067,
+        "exit_face": -2.998,
+        "exit_station": -0.357
       },
-      "dip_where": "on s1",
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -5.434,
+      "exit_yaw_deg": 90.109,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.584,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.61,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.837,
+        "mid_curve": -0.277,
+        "exit_face": -2.439,
+        "exit_station": 0.109
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -5.177,
+      "exit_yaw_deg": 87.681,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.539,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.605,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.574,
+        "mid_curve": -1.949,
+        "exit_face": -4.415,
+        "exit_station": -2.319
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -5.447,
+      "exit_yaw_deg": 91.896,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.464,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.597,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.566,
+        "mid_curve": 0.511,
+        "exit_face": -1.126,
+        "exit_station": 1.896
+      },
+      "dip_where": "on s2",
       "tilt_where": "on s2"
     },
     {
       "speed": 0.155,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": 0.0,
-      "exit_offset_mm": -2.418,
-      "exit_yaw_deg": 89.071,
-      "dip_mm": 0.114,
-      "max_tilt_deg": 0.448,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 1.367,
-      "t_limit": 3.026,
-      "pass": true,
-      "yaw_error_deg": {
-        "entry_face": 1.175,
-        "mid_curve": -3.13,
-        "exit_face": -4.937,
-        "exit_station": -0.929
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.155,
-      "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -2.465,
-      "exit_yaw_deg": 84.661,
-      "dip_mm": 0.125,
-      "max_tilt_deg": 0.381,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 1.356,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.569,
-        "mid_curve": -4.734,
-        "exit_face": -7.474,
-        "exit_station": -5.339
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.155,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -2.54,
-      "exit_yaw_deg": 83.783,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -6.395,
+      "exit_yaw_deg": 90.938,
       "dip_mm": 0.124,
-      "max_tilt_deg": 0.376,
+      "max_tilt_deg": 0.403,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 1.355,
+      "t_exit": 1.351,
       "t_limit": 3.026,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 0.476,
-        "mid_curve": -5.434,
-        "exit_face": -8.538,
-        "exit_station": -6.217
+        "entry_face": 1.635,
+        "mid_curve": -2.193,
+        "exit_face": -3.244,
+        "exit_station": 0.938
       },
       "dip_where": "on s2",
       "tilt_where": "on s1"
     },
     {
       "speed": 0.155,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 0.0,
-      "entry_offset_mm": -0.0,
-      "exit_offset_mm": -2.455,
-      "exit_yaw_deg": 81.265,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -6.563,
+      "exit_yaw_deg": 90.75,
       "dip_mm": 0.124,
-      "max_tilt_deg": 0.376,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 1.355,
-      "t_limit": 3.026,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.25,
-        "mid_curve": -6.98,
-        "exit_face": -9.557,
-        "exit_station": -8.735
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.03,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 7.712,
-      "exit_yaw_deg": 86.9,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.473,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.863,
-      "t_limit": 11.47,
-      "pass": true,
-      "yaw_error_deg": {
-        "entry_face": 2.008,
-        "mid_curve": -2.668,
-        "exit_face": -5.801,
-        "exit_station": -3.1
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.03,
-      "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 7.345,
-      "exit_yaw_deg": 81.309,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.548,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.837,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.791,
-        "mid_curve": -5.995,
-        "exit_face": -11.554,
-        "exit_station": -8.691
-      },
-      "dip_where": "on s1",
-      "tilt_where": "exit transfer"
-    },
-    {
-      "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 7.782,
-      "exit_yaw_deg": 80.037,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.535,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.823,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 1.263,
-        "mid_curve": -4.152,
-        "exit_face": -12.255,
-        "exit_station": -9.963
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.03,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 7.37,
-      "exit_yaw_deg": 76.122,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.532,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 6.797,
-      "t_limit": 11.47,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.148,
-        "mid_curve": -7.708,
-        "exit_face": -15.123,
-        "exit_station": -13.878
-      },
-      "dip_where": "on s1",
-      "tilt_where": "exit transfer"
-    },
-    {
-      "speed": 0.08,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 6.93,
-      "exit_yaw_deg": 91.979,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.437,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.604,
-      "t_limit": 4.926,
-      "pass": true,
-      "yaw_error_deg": {
-        "entry_face": 2.717,
-        "mid_curve": -1.144,
-        "exit_face": -2.57,
-        "exit_station": 1.979
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s1"
-    },
-    {
-      "speed": 0.08,
-      "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 6.76,
-      "exit_yaw_deg": 83.923,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.535,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.589,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.751,
-        "mid_curve": -4.843,
-        "exit_face": -9.047,
-        "exit_station": -6.077
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 6.718,
-      "exit_yaw_deg": 83.821,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.545,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.592,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.752,
-        "mid_curve": -4.622,
-        "exit_face": -8.918,
-        "exit_station": -6.179
-      },
-      "dip_where": "on s2",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.08,
-      "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 6.915,
-      "exit_yaw_deg": 81.051,
-      "dip_mm": 0.0,
-      "max_tilt_deg": 0.54,
-      "rail_contacts": [],
-      "reached": true,
-      "t_exit": 2.583,
-      "t_limit": 4.926,
-      "pass": false,
-      "yaw_error_deg": {
-        "entry_face": 0.689,
-        "mid_curve": -5.387,
-        "exit_face": -12.398,
-        "exit_station": -8.949
-      },
-      "dip_where": "on s1",
-      "tilt_where": "on s2"
-    },
-    {
-      "speed": 0.155,
-      "mu": 0.3,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 5.862,
-      "exit_yaw_deg": 86.715,
-      "dip_mm": 0.114,
-      "max_tilt_deg": 0.441,
+      "max_tilt_deg": 0.384,
       "rail_contacts": [],
       "reached": true,
       "t_exit": 1.357,
       "t_limit": 3.026,
       "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.396,
-        "mid_curve": -4.615,
-        "exit_face": -6.737,
-        "exit_station": -3.285
+        "entry_face": 1.939,
+        "mid_curve": -1.063,
+        "exit_face": -2.783,
+        "exit_station": 0.75
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -6.313,
+      "exit_yaw_deg": 91.208,
+      "dip_mm": 0.124,
+      "max_tilt_deg": 0.371,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.356,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.632,
+        "mid_curve": -1.583,
+        "exit_face": -2.733,
+        "exit_station": 1.208
       },
       "dip_where": "on s2",
       "tilt_where": "on s1"
@@ -1009,47 +315,335 @@
     {
       "speed": 0.155,
       "mu": 0.9,
-      "mu_curve": 0.35,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 6.135,
-      "exit_yaw_deg": 83.631,
-      "dip_mm": 0.122,
-      "max_tilt_deg": 0.504,
+      "mu_curve": 0.7,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -6.411,
+      "exit_yaw_deg": 90.225,
+      "dip_mm": 0.123,
+      "max_tilt_deg": 0.384,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 1.348,
+      "t_exit": 1.359,
       "t_limit": 3.026,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.095,
-        "mid_curve": -3.616,
-        "exit_face": -8.117,
-        "exit_station": -6.369
+        "entry_face": 1.617,
+        "mid_curve": -1.657,
+        "exit_face": -3.12,
+        "exit_station": 0.225
       },
       "dip_where": "on s2",
-      "tilt_where": "entry transfer"
+      "tilt_where": "on s1"
     },
     {
       "speed": 0.155,
-      "mu": 1.2,
-      "mu_curve": 0.5,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 5.916,
-      "exit_yaw_deg": 81.948,
-      "dip_mm": 0.125,
-      "max_tilt_deg": 0.353,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": -4.0,
+      "entry_offset_mm": -4.0,
+      "exit_offset_mm": -6.551,
+      "exit_yaw_deg": 93.017,
+      "dip_mm": 0.123,
+      "max_tilt_deg": 0.408,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 1.345,
+      "t_exit": 1.356,
       "t_limit": 3.026,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 1.247,
-        "mid_curve": -6.699,
-        "exit_face": -10.182,
-        "exit_station": -8.052
+        "entry_face": 2.567,
+        "mid_curve": 0.045,
+        "exit_face": -1.293,
+        "exit_station": 3.017
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -0.445,
+      "exit_yaw_deg": 89.22,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.532,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.905,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.655,
+        "mid_curve": -1.09,
+        "exit_face": -3.088,
+        "exit_station": -0.78
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -0.484,
+      "exit_yaw_deg": 89.393,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.558,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.907,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.245,
+        "mid_curve": -0.264,
+        "exit_face": -2.689,
+        "exit_station": -0.607
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -0.461,
+      "exit_yaw_deg": 88.307,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.551,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.898,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.738,
+        "mid_curve": -1.339,
+        "exit_face": -3.957,
+        "exit_station": -1.693
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -0.486,
+      "exit_yaw_deg": 86.934,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.554,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.904,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.327,
+        "mid_curve": -2.272,
+        "exit_face": -4.871,
+        "exit_station": -3.066
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -0.354,
+      "exit_yaw_deg": 91.134,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.56,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.909,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.062,
+        "mid_curve": -0.226,
+        "exit_face": -2.21,
+        "exit_station": 1.134
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 0.0,
+      "entry_offset_mm": 0.0,
+      "exit_offset_mm": -1.158,
+      "exit_yaw_deg": 89.553,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.442,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.596,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.891,
+        "mid_curve": -1.757,
+        "exit_face": -3.707,
+        "exit_station": -0.447
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": 0.0,
+      "exit_offset_mm": -1.05,
+      "exit_yaw_deg": 89.965,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.527,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.603,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.258,
+        "mid_curve": -1.659,
+        "exit_face": -3.208,
+        "exit_station": -0.035
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": 0.0,
+      "entry_offset_mm": 0.0,
+      "exit_offset_mm": -1.303,
+      "exit_yaw_deg": 91.069,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.579,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.617,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.396,
+        "mid_curve": 0.087,
+        "exit_face": -2.135,
+        "exit_station": 1.069
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 0.0,
+      "entry_offset_mm": 0.0,
+      "exit_offset_mm": -1.168,
+      "exit_yaw_deg": 88.173,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.532,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.607,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.885,
+        "mid_curve": -2.35,
+        "exit_face": -4.617,
+        "exit_station": -1.827
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": 0.0,
+      "exit_offset_mm": -1.341,
+      "exit_yaw_deg": 92.579,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.46,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.606,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.873,
+        "mid_curve": 0.992,
+        "exit_face": -0.946,
+        "exit_station": 2.579
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -2.257,
+      "exit_yaw_deg": 91.377,
+      "dip_mm": 0.123,
+      "max_tilt_deg": 0.403,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.359,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.373,
+        "mid_curve": -1.276,
+        "exit_face": -2.962,
+        "exit_station": 1.377
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -2.228,
+      "exit_yaw_deg": 91.312,
+      "dip_mm": 0.131,
+      "max_tilt_deg": 0.381,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.359,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.451,
+        "mid_curve": -0.873,
+        "exit_face": -2.444,
+        "exit_station": 1.312
       },
       "dip_where": "on s2",
       "tilt_where": "on s1"
@@ -1057,45 +651,450 @@
     {
       "speed": 0.155,
       "mu": 1.2,
-      "mu_curve": 0.25,
-      "offset_mm": 8.0,
-      "entry_offset_mm": 8.0,
-      "exit_offset_mm": 5.957,
-      "exit_yaw_deg": 75.054,
-      "dip_mm": 0.087,
-      "max_tilt_deg": 0.424,
+      "mu_curve": 1.2,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -2.281,
+      "exit_yaw_deg": 92.657,
+      "dip_mm": 0.126,
+      "max_tilt_deg": 0.376,
       "rail_contacts": [],
       "reached": true,
-      "t_exit": 1.334,
+      "t_exit": 1.359,
       "t_limit": 3.026,
-      "pass": false,
+      "pass": true,
       "yaw_error_deg": {
-        "entry_face": 0.242,
-        "mid_curve": -8.642,
-        "exit_face": -15.669,
-        "exit_station": -14.946
+        "entry_face": 2.404,
+        "mid_curve": -0.187,
+        "exit_face": -1.242,
+        "exit_station": 2.657
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -2.243,
+      "exit_yaw_deg": 89.543,
+      "dip_mm": 0.124,
+      "max_tilt_deg": 0.381,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.359,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.79,
+        "mid_curve": -2.43,
+        "exit_face": -4.019,
+        "exit_station": -0.457
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 0.0,
+      "entry_offset_mm": -0.0,
+      "exit_offset_mm": -2.22,
+      "exit_yaw_deg": 92.869,
+      "dip_mm": 0.124,
+      "max_tilt_deg": 0.404,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.356,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.647,
+        "mid_curve": -0.274,
+        "exit_face": -1.528,
+        "exit_station": 2.869
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 3.703,
+      "exit_yaw_deg": 89.259,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.54,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.909,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.361,
+        "mid_curve": -1.408,
+        "exit_face": -3.64,
+        "exit_station": -0.741
       },
       "dip_where": "on s2",
       "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 3.542,
+      "exit_yaw_deg": 88.711,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.552,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.902,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.801,
+        "mid_curve": -1.006,
+        "exit_face": -3.502,
+        "exit_station": -1.289
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 3.528,
+      "exit_yaw_deg": 89.948,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.563,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.911,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.428,
+        "mid_curve": -0.494,
+        "exit_face": -3.209,
+        "exit_station": -0.052
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 3.55,
+      "exit_yaw_deg": 87.53,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.567,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.9,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.675,
+        "mid_curve": -2.319,
+        "exit_face": -5.72,
+        "exit_station": -2.47
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.03,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 3.739,
+      "exit_yaw_deg": 92.982,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.553,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 6.932,
+      "t_limit": 11.47,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 3.23,
+        "mid_curve": 0.542,
+        "exit_face": -1.307,
+        "exit_station": 2.982
+      },
+      "dip_where": "on s2",
+      "tilt_where": "exit transfer"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 2.904,
+      "exit_yaw_deg": 90.563,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.415,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.607,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.358,
+        "mid_curve": -0.995,
+        "exit_face": -3.268,
+        "exit_station": 0.563
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 2.749,
+      "exit_yaw_deg": 89.267,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.536,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.605,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.656,
+        "mid_curve": -2.362,
+        "exit_face": -4.513,
+        "exit_station": -0.733
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 2.87,
+      "exit_yaw_deg": 91.387,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.568,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.617,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.84,
+        "mid_curve": 0.035,
+        "exit_face": -2.191,
+        "exit_station": 1.387
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 2.768,
+      "exit_yaw_deg": 90.011,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.535,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.612,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.457,
+        "mid_curve": -1.201,
+        "exit_face": -3.206,
+        "exit_station": 0.011
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.08,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 2.8,
+      "exit_yaw_deg": 93.395,
+      "dip_mm": 0.0,
+      "max_tilt_deg": 0.453,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 2.608,
+      "t_limit": 4.926,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.787,
+        "mid_curve": 0.797,
+        "exit_face": -0.795,
+        "exit_station": 3.395
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s2"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.6,
+      "mu_curve": 0.6,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 1.883,
+      "exit_yaw_deg": 94.132,
+      "dip_mm": 0.127,
+      "max_tilt_deg": 0.403,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.365,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.565,
+        "mid_curve": 0.446,
+        "exit_face": -0.68,
+        "exit_station": 4.132
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.9,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 1.497,
+      "exit_yaw_deg": 90.222,
+      "dip_mm": 0.126,
+      "max_tilt_deg": 0.373,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.356,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 2.099,
+        "mid_curve": -1.401,
+        "exit_face": -3.438,
+        "exit_station": 0.222
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
+    },
+    {
+      "speed": 0.155,
+      "mu": 1.2,
+      "mu_curve": 1.2,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 1.754,
+      "exit_yaw_deg": 93.647,
+      "dip_mm": 0.13,
+      "max_tilt_deg": 0.383,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.361,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 3.285,
+        "mid_curve": 1.251,
+        "exit_face": -0.617,
+        "exit_station": 3.647
+      },
+      "dip_where": "on s2",
+      "tilt_where": "entry transfer"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.9,
+      "mu_curve": 0.7,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 1.65,
+      "exit_yaw_deg": 88.731,
+      "dip_mm": 0.127,
+      "max_tilt_deg": 0.411,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.357,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 1.425,
+        "mid_curve": -2.898,
+        "exit_face": -5.285,
+        "exit_station": -1.269
+      },
+      "dip_where": "on s2",
+      "tilt_where": "exit transfer"
+    },
+    {
+      "speed": 0.155,
+      "mu": 0.7,
+      "mu_curve": 0.9,
+      "offset_mm": 4.0,
+      "entry_offset_mm": 4.0,
+      "exit_offset_mm": 1.895,
+      "exit_yaw_deg": 95.795,
+      "dip_mm": 0.129,
+      "max_tilt_deg": 0.404,
+      "rail_contacts": [],
+      "reached": true,
+      "t_exit": 1.365,
+      "t_limit": 3.026,
+      "pass": true,
+      "yaw_error_deg": {
+        "entry_face": 3.504,
+        "mid_curve": 1.054,
+        "exit_face": 0.174,
+        "exit_station": 5.795
+      },
+      "dip_where": "on s2",
+      "tilt_where": "on s1"
     }
   ],
   "summary": {
-    "all_pass": false,
+    "all_pass": true,
     "by_offset": {
-      "-8": {
-        "exit_offset_spread_mm": 5.943,
-        "exit_yaw_spread_deg": 54.298,
-        "pass": false
+      "-4": {
+        "exit_offset_spread_mm": 2.172,
+        "exit_yaw_spread_deg": 5.385
       },
       "0": {
-        "exit_offset_spread_mm": 2.099,
-        "exit_yaw_spread_deg": 12.192,
-        "pass": false
+        "exit_offset_spread_mm": 1.927,
+        "exit_yaw_spread_deg": 5.935
       },
-      "8": {
-        "exit_offset_spread_mm": 1.92,
-        "exit_yaw_spread_deg": 16.925,
-        "pass": false
+      "4": {
+        "exit_offset_spread_mm": 2.242,
+        "exit_yaw_spread_deg": 8.265
       }
     }
   }
