@@ -97,7 +97,7 @@ v1 counts belong to #840. PETG where the part is loaded and shares holes with th
 
 The curve has no belt. Five O-rings, from the kit, link its rollers.
 
-The six cones are 38.2 g of TPU 95A, beside the two belt cylinders: 6.22 g for each idler and 7.04 g for the driven cone. That is the STL volume, 31.54 cm³, times 1.21 g/cm³, and it is a solid upper bound.
+The six cones are 38.3 g of TPU 95A, beside the two belt cylinders: 6.25 g for each idler and 7.06 g for the driven cone. That is the STL volume, 31.66 cm³, times 1.21 g/cm³, and it is a solid upper bound.
 
 ### Why the rollers print vertical
 
@@ -113,7 +113,7 @@ Both are held by a closed groove in each plate. The tongue is captured in X and 
 
 ### Tie bars, tensioners, joiners
 
-- Two tie bars per straight, one within 25 mm of each end. They set the plates at `inner_width` and keep the module square. M3 through the plate into a captive nut in the upright. Slide that nut in from the end of the upright before the plate goes on; 1.2 mm of the bar stays between the nut and the plate, so the plates cannot pull apart and let the bed tongues out of their grooves. The top face is the joint plane the joiner sits on. Print them pockets-up so the joiner nuts drop in.
+- Two tie bars per straight, one within 25 mm of each end. They set the plates at `inner_width` and keep the module square. M3 through the plate into a captive nut in the upright. Slide that nut in from the end of the upright before the plate goes on. The channel is the nut across flats, 5.8 mm, so the flats bear on the walls and the nut cannot spin while the screw is turned. 1.2 mm of the bar stays between the nut and the plate, so the plates cannot pull apart and let the bed tongues out of their grooves. The top face is the joint plane the joiner sits on. Print them pockets-up so the joiner nuts drop in.
 - A tensioner block on each plate's outer face, at the infeed. It slides on a rail and carries the idler rod. An M3×16 through two captive nuts in a fixed boss pushes the block toward the module face. A web between the nuts takes the screw's reaction: the block-side nut slides in along the screw, and the head-side nut drops in from the top. Belt tension keeps the block on the screw tip. The outer end of the slot is the hard stop: at full take-up the idler axis is at `nose_edge`, which is the design span. The 8 mm travel shortens the belt path by 16 mm, which is the slack for sliding the loop on from the open side. The bed stops short of the flange at full slack, so with the belt tensioned the carry is unsupported for 14.7 mm behind the infeed nose.
 - One joiner part for both joints. The two end tie bars mirror about the module centre, so the same plate sets the 1.5 mm frame gap at J1 (s1 → curve) and J2 (curve → s2). M3 down into the nuts. The tie-bar nuts drop in from below, and the pad nuts slide in from the joint face before the straight module is set against the curve, so nothing hangs under the table. There is no straight-to-straight joint in v0.
 
@@ -146,7 +146,7 @@ The curve idler is 70.006 mm, seated on the blind-hole bottom. Its square end, o
 | A | 22.587 mm | 9.821 mm | 2.398 mm |
 | B | 23.669 mm | 9.132 mm | 3.140 mm |
 
-The axles are skewed by about 15.7°, so each tangent leaves the groove plane at 0.136 mm of axial offset per millimetre of span. The centre clears the rim after 2.5 mm, 0.343 mm off the plane and 0.60 mm out to the flange. That 0.60 mm is the climb to the lip, not a deeper seat. The groove keeps the original round section, radius 1.15 mm, so the floor stays at the pitch radius minus 1.15 mm. The section is swept ±0.443 mm along the axle (the axial drift plus 0.10 mm). A tensioned cord still sits on the pitch circle in the wraps.
+The axles are skewed by about 15.7°, so each tangent leaves the groove plane at 0.136 mm of axial offset per millimetre of span. The centre clears the rim after 2.5 mm, 0.343 mm off the plane on A and 0.332 mm on B, and 0.60 mm out to the flange. That 0.60 mm is the climb to the lip. The groove section is still a 1.15 mm radius circle, with its centre 0.15 mm outside the pitch circle, so the floor is exactly one cord radius under the pitch circle. A cord resting on the floor is centred on the pitch circle, and the stretch of that seated path is 0.100. The section is swept ±0.443 mm along the axle.
 
 Replace these by calipering the ring and rebuilding. Do not order a printed drive ring.
 
@@ -182,7 +182,7 @@ The belt goes on from one side, with one plate off. Nothing in the loop except t
 
 ### A straight
 
-1. **Captive nuts, then the motor enclosure, on the left plate.** Slide the tie-bar nuts in from the end of each upright before the plate goes on. Two M3 nuts go into the jack boss before the block is on: the block-side nut along the screw from the open face, the head-side nut down the slot in the top. M4 nuts go into the straight ear bosses from the inboard face. The enclosure bolts on through those ears.
+1. **Captive nuts, then the motor enclosure, on the left plate.** Slide the tie-bar nuts in from the end of each upright before the plate goes on, flats against the channel walls. Two M3 nuts go into the jack boss before the block is on: the block-side nut along the screw from the open face, the head-side nut down the slot in the top. M4 nuts go into the straight ear bosses from the inboard face. The enclosure bolts on through those ears.
 2. **Rollers, bed, and both tie bars on that plate.** The bed's tongues drop into the grooves from the open side. One plate then holds the bed in X and Z. The tie bars bolt through the plate and set the width.
 3. **Belt, from the open side,** over both rollers and the bed as one loop.
 4. **Return guide, under the return run,** into its own grooves. It is outside the loop, so it can follow the belt. It still has to be in before the second plate, because that plate closes the groove.

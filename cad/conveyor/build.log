@@ -12,16 +12,16 @@ oring A: c=22.587 D=9.821 crown_clear=2.398 stretch=0.100
 oring B: c=23.669 D=9.132 crown_clear=3.140 stretch=0.100
 oring id window at cs=2.00: 18.971 .. 22.541 mm
 oring 1-2 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 1-2  pitch r 4.910  seat r 3.760  stretch 0.1000
+oring 1-2  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
 oring 2-3 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
-oring 2-3  pitch r 4.566  seat r 3.416  stretch 0.1000
+oring 2-3  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
 oring 3-4 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 3-4  pitch r 4.910  seat r 3.760  stretch 0.1000
+oring 3-4  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
 oring 4-5 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
-oring 4-5  pitch r 4.566  seat r 3.416  stretch 0.1000
+oring 4-5  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
 oring 5-6 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 5-6  pitch r 4.910  seat r 3.760  stretch 0.1000
-groove section r 1.150 mm  axial sweep +/- 0.443 mm  floor at pitch r - 1.150
+oring 5-6  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
+groove floor at pitch r - 1.000  section centre outward 0.150  axial sweep +/- 0.443
 spool OD radius A=5.510 B=5.166
 clearance small-end cones 2.045 mm; spool A at s_b 10.890; spool B at mid 12.796
 rod cut mm: idler 70.006  driven stub 24.239
@@ -99,42 +99,42 @@ joiner
 s1 plain plate to curve frame 1.500 mm
 s2 plain plate to curve frame 1.500 mm
 joiner holes within 0.05 mm of the tie-bar and pad holes
-nut s1 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3
-nut s1 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3
-nut s2 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3
-nut s2 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3
-nut s1 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s1 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut s2 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3
-nut curve ear lower  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3
-nut curve ear upper  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3
-nut keeper entry  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3
-nut keeper exit  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3
-nut pad joiner 1  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut pad joiner 2  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut pad joiner 3  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3
-nut pad joiner 4  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3
+nut s1 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s1 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s2 ear lower  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s2 ear upper  insert 9.4 mm  web 1.20 mm  probe 35/35 mm^3  turn 11.3 mm^3
+nut s1 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 jack motor block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 jack motor head-side  insert 27.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 jack plain block-side  insert 23.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 jack plain head-side  insert 17.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s1 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s1 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie infeed plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie infeed plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie infeed joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie infeed joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie discharge plate near  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie discharge plate far  insert 12.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut s2 tie discharge joiner locating  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut s2 tie discharge joiner clearance  insert 8.6 mm  web 1.20 mm  probe 23/23 mm^3  turn 5.4 mm^3
+nut curve ear lower  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3  turn 3.8 mm^3
+nut curve ear upper  insert 18.2 mm  web 1.20 mm  probe 35/35 mm^3  turn 3.8 mm^3
+nut keeper entry  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut keeper exit  insert 40.0 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 1  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 2  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 3  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
+nut pad joiner 4  insert 23.3 mm  web 1.20 mm  probe 23/23 mm^3  turn 1.8 mm^3
 rod s1_rod cut 73.000 mm  volume err 0.00000%
 rod s1_driven_stub cut 51.300 mm  volume err 0.00000%
 rod s2_rod cut 73.000 mm  volume err 0.00000%

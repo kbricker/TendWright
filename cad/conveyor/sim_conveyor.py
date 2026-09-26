@@ -815,6 +815,9 @@ def path_length_m():
 
 
 def time_limit(speed):
+    if speed <= 0.0:
+        raise SystemExit(
+            "usage: a stopped belt needs --seconds N; without it there is no travel time")
     return path_length_m() / speed * 1.5 + 1.0
 
 
@@ -1064,8 +1067,12 @@ def simulate(straight_speed, curve_speed, mu_belt, mu_curve, offset, frames=0, l
         cam.azimuth = 145
         cam.elevation = -32
         # Spread across the travel, not the padded limit. The limit runs past
-        # the exit, and shots parked out there never get taken.
-        travel_steps = max(1, int(path_length_m() / straight_speed / dt))
+        # the exit, and shots parked out there never get taken. A stopped belt
+        # has no travel, so the shots span the requested duration instead.
+        if straight_speed > 0.0:
+            travel_steps = max(1, int(path_length_m() / straight_speed / dt))
+        else:
+            travel_steps = max(1, steps)
         shot_at = set(int(round(travel_steps * k / max(1, frames - 1))) for k in range(frames))
     for i in range(steps):
         kick(data, drives)
@@ -1191,10 +1198,15 @@ def resting_contacts(model, data, drives, part_gid, part_bid):
 
 def run_nominal():
     # --seconds replaces the acceptance limit. A cap that misses the exit fails;
-    # it is not a different, easier test.
-    limit = time_limit(STRAIGHT_SPEED)
+    # it is not a different, easier test. A stopped belt has no path time, so
+    # the duration has to be given.
     if "--seconds" in sys.argv:
-        limit = _argv("--seconds", limit)
+        limit = _argv("--seconds", 1.0)
+    elif STRAIGHT_SPEED <= 0.0 or CURVE_SPEED <= 0.0:
+        print("usage: a stopped belt needs --seconds N; without it there is no travel time")
+        return False
+    else:
+        limit = time_limit(STRAIGHT_SPEED)
     frames = _argv("--frames", 6)
     print_spans()
     print("nominal  speed %.3f  curve %.3f  mu %.2f / %.2f  offset %.1f mm  "

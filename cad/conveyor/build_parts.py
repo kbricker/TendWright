@@ -665,13 +665,13 @@ def main():
     for n1, n2, groove, radius, h_a, dr_a, h_b, dr_b, stretch in wrap_rows:
         step("oring %d-%d groove %s  axial drift %.3f / %.3f mm  radial at rim %.3f"
              % (n1, n2, groove, h_a, h_b, max(dr_a, dr_b)))
-        step("oring %d-%d  pitch r %.3f  seat r %.3f  stretch %.4f"
-             % (n1, n2, radius, radius - groove_section_r, stretch))
+        step("oring %d-%d  pitch r %.3f  floor r %.3f  seat r %.3f  stretch %.4f"
+             % (n1, n2, radius, radius - oring_cs / 2.0, radius, stretch))
         require(abs(stretch - oring_stretch) <= 0.01,
                 "oring %d-%d stretch %.4f is outside %.2f ± 0.01"
                 % (n1, n2, stretch, oring_stretch))
-    step("groove section r %.3f mm  axial sweep +/- %.3f mm  floor at pitch r - %.3f"
-         % (groove_section_r, groove_axial, groove_section_r))
+    step("groove floor at pitch r - %.3f  section centre outward %.3f  axial sweep +/- %.3f"
+         % (oring_cs / 2.0, groove_extra, groove_axial))
     shoulder = min(s_gA - (s_b - 0.15), s_mid - s_gA,
                    s_gB - (s_mid - 0.05), s_spool_end - s_gB)
     flank = groove_axial + groove_section_r
@@ -1400,8 +1400,8 @@ def jack_boss(y0, y1):
     # Head-side nut is between two webs, so it comes in from above.
     boss = boss.cut(hex_along_x(m3_nut_af, b0, b1, y, z))
     # Up and out of the plate's bounding box. The head-side nut is between webs.
-    boss = boss.cut(Part.makeBox(b1 - b0, 2.0 * rv, (bracket_h + 25.0) - (z - rv),
-                                  Vector(b0, y - rv, z - rv)))
+    boss = boss.cut(Part.makeBox(b1 - b0, m3_nut_af, (bracket_h + 25.0) - (z - rv),
+                                  Vector(b0, y - m3_nut_af / 2.0, z - rv)))
     boss = boss.cut(Part.makeCylinder(
         m3_clear / 2.0, (b1 + nut_land) - a0 + 1.0,
         Vector(a0 - 0.5, y, z), Vector(1, 0, 0)))
@@ -1515,11 +1515,14 @@ def make_tie_bar(x_c):
         y_load = y_face + inward * nut_land
         y_far = y_load + inward * m3_nut_depth
         y_lo, y_hi = (y_load, y_far) if y_load < y_far else (y_far, y_load)
-        bar = bar.cut(hex_along_y(m3_nut_af, y_lo, y_hi, x_c, tie_bolt_z))
-        # Out the upright's +X end. The channel is the whole hex, points included.
+        # Flats on the top and bottom of the channel. Across corners the nut
+        # would turn while the screw is driven.
+        bar = bar.cut(hex_prism(
+            m3_nut_af, Vector(x_c, y_load, tie_bolt_z), Vector(0, inward, 0),
+            m3_nut_depth, turn=30.0))
         bar = bar.cut(Part.makeBox(
-            tie_half + 2.0 * rv + 2.4, y_hi - y_lo, 2.0 * rv + 0.4,
-            Vector(x_c - rv - 0.2, y_lo, tie_bolt_z - rv - 0.2)))
+            tie_half + 2.0 * rv + 2.4, y_hi - y_lo, m3_nut_af,
+            Vector(x_c - rv - 0.2, y_lo, tie_bolt_z - m3_nut_af / 2.0)))
         # Past the nut the hole is clearance: an M3×8 tip must not hit plastic.
         reach = m3_tie_len - wall
         hy0 = y_face - 0.4 if inward > 0 else y_face - reach - 0.4
@@ -1689,16 +1692,17 @@ def _pad_exit(x, y, x0, x1, y0, y1):
 
 
 def pad_nut_slot(x, y, z0, z1, rv, x0, x1, y0, y1):
+    # Width is across flats. The points face along the slot, the flats face the walls.
     direction, _align, dist = _pad_exit(x, y, x0, x1, y0, y1)
     span = dist + rv + 2.0
-    wide = 2.0 * rv + 0.4
+    af = m3_nut_af
     if direction.x > 0:
-        return Part.makeBox(span, wide, z1 - z0, Vector(x - rv, y - rv - 0.2, z0))
+        return Part.makeBox(span, af, z1 - z0, Vector(x - rv, y - af / 2.0, z0))
     if direction.x < 0:
-        return Part.makeBox(span, wide, z1 - z0, Vector(x + rv - span, y - rv - 0.2, z0))
+        return Part.makeBox(span, af, z1 - z0, Vector(x + rv - span, y - af / 2.0, z0))
     if direction.y > 0:
-        return Part.makeBox(wide, span, z1 - z0, Vector(x - rv - 0.2, y - rv, z0))
-    return Part.makeBox(wide, span, z1 - z0, Vector(x - rv - 0.2, y + rv - span, z0))
+        return Part.makeBox(af, span, z1 - z0, Vector(x - af / 2.0, y - rv, z0))
+    return Part.makeBox(af, span, z1 - z0, Vector(x - af / 2.0, y + rv - span, z0))
 
 
 def pad_slot_dir(x, y, x0, x1, y0, y1):
@@ -1720,12 +1724,17 @@ def add_joint_pads(frame):
     for i, (x_h, y_h, dia) in enumerate(holes):
         frame = frame.cut(Part.makeCylinder(5.0, z_open + 0.2, Vector(x_h, y_h, -0.2),
                                              Vector(0, 0, 1)))
-        frame = frame.cut(hex_along_z(m3_nut_af, z_open, z_open + m3_nut_depth, x_h, y_h))
+        x0, x1, y0, y1 = bounds[0 if i < 2 else 1]
+        direction, _length = pad_slot_dir(x_h, y_h, x0, x1, y0, y1)
+        # Flats face the slot walls. The other hex would be the spun nut, and
+        # cutting that too would leave it free to turn.
+        turn = 30.0 if abs(direction.x) > 0.5 else 0.0
+        frame = frame.cut(hex_prism(
+            m3_nut_af, Vector(x_h, y_h, z_open + m3_nut_depth), Vector(0, 0, -1),
+            m3_nut_depth, turn))
         frame = frame.cut(Part.makeCylinder(dia / 2.0, web + 2.0,
                                              Vector(x_h, y_h, z_open + m3_nut_depth - 0.3),
                                              Vector(0, 0, 1)))
-        # The pad is solid below the pocket, so the nut slides in from the side.
-        x0, x1, y0, y1 = bounds[0 if i < 2 else 1]
         frame = frame.cut(pad_nut_slot(x_h, y_h, z_open, z_open + m3_nut_depth,
                                         rv, x0, x1, y0, y1))
     return frame
@@ -1854,17 +1863,19 @@ def groove_torus(s_g, major, minor):
     return face.revolve(Vector(0, 0, 0), Vector(1, 0, 0), 360)
 
 
-def groove_stadium(s_g, major, section_r, axial):
-    # Circle of the original section, swept ±axial. Floor radius is
-    # major - section_r on the whole flat, and the end bulbs do not go deeper.
-    inner = major - section_r
-    outer = major + section_r
+def groove_stadium(s_g, pitch_r, section_r, axial):
+    # The section circle sits the clearance further out than the pitch circle,
+    # so the floor is pitch_r - cord radius and a cord on the floor is centred
+    # on the pitch circle. Swept along the axis; the bulbs do not go deeper.
+    centre_r = pitch_r + (section_r - oring_cs / 2.0)
+    inner = centre_r - section_r
+    outer = centre_r + section_r
     span = 2.0 * axial + 0.2
     tube = Part.makeCylinder(outer, span, Vector(s_g - axial - 0.1, 0, 0), Vector(1, 0, 0))
     tube = tube.cut(Part.makeCylinder(inner, span + 0.4,
                                        Vector(s_g - axial - 0.3, 0, 0), Vector(1, 0, 0)))
-    return tube.fuse(groove_torus(s_g - axial, major, section_r)).fuse(
-        groove_torus(s_g + axial, major, section_r))
+    return tube.fuse(groove_torus(s_g - axial, centre_r, section_r)).fuse(
+        groove_torus(s_g + axial, centre_r, section_r))
 
 
 def place_cone(shape, theta_deg):
@@ -1955,8 +1966,8 @@ def make_curve_frame():
         frame = frame.cut(hex_along_u(m4_nut_af, s_nut_far, s_nut_near, h, 0.0))
         # The bore is the only axial opening, so the nut drops in from above.
         frame = frame.cut(apply_frame(
-            Part.makeBox(s_nut_near - s_nut_far, 2.0 * m4_Rv + 0.4, 40.0 + m4_Rv,
-                         Vector(s_nut_far, h - m4_Rv - 0.2, -m4_Rv)),
+            Part.makeBox(s_nut_near - s_nut_far, m4_nut_af, 40.0 + m4_Rv,
+                         Vector(s_nut_far, h - m4_nut_af / 2.0, -m4_Rv)),
             A, u_drv, e_th_drv, e_up_drv))
 
     # s1's enclosure overhangs the discharge face into the empty centre. The
@@ -2224,9 +2235,10 @@ def stub_cut_length():
     return y1 - y0
 
 
-def hex_prism(af, origin, direction, length):
+def hex_prism(af, origin, direction, length, turn=0.0):
     # Vertical pockets are cut with a vertex up. The same basis here, so the
-    # sweep prism is the pocket and not a 30° turn of it.
+    # sweep prism is the pocket and not a 30° turn of it. `turn` puts flats
+    # on a side-entry slot.
     d = vnorm(direction)
     tmp = Vector(0, 0, 1) if abs(d.z) < 0.9 else Vector(0, 1, 0)
     x = vnorm(vcross(tmp, d))
@@ -2234,7 +2246,7 @@ def hex_prism(af, origin, direction, length):
     rv = hex_Rv(af)
     pts = []
     for i in range(6):
-        ang = math.radians(30.0 + 60.0 * i)
+        ang = math.radians(30.0 + turn + 60.0 * i)
         pts.append(vadd(origin, vadd(vmul(x, rv * math.cos(ang)),
                                       vmul(y, rv * math.sin(ang)))))
     pts.append(pts[0])
@@ -2249,8 +2261,8 @@ def keeper_top_slot(ang, z):
     et = Vector(-math.sin(th), math.cos(th), 0.0)
     rv = hex_Rv(m3_nut_af)
     r0 = r_ow0 - m3_nut_depth
-    box = Part.makeBox(m3_nut_depth, 2.0 * rv, (bracket_h + 20.0) - (z - rv),
-                        Vector(0.0, -rv, z - rv))
+    box = Part.makeBox(m3_nut_depth, m3_nut_af, (bracket_h + 20.0) - (z - rv),
+                        Vector(0.0, -m3_nut_af / 2.0, z - rv))
     return apply_frame(box, Vector(cx + er.x * r0, cy + er.y * r0, 0.0),
                         er, et, Vector(0, 0, 1))
 
@@ -2406,25 +2418,26 @@ def check_screws(parts, specs, jacks_only):
                 require(False, "%s bottoms in %s (%.4f mm^3)" % (spec["name"], pname, vol))
 
 
-def _nut_samples(origin, axis, depth, af, direction, length):
+def _nut_samples(origin, axis, depth, af, direction, length, turn):
     step_mm = 1.0
     n = max(1, int(math.ceil(length / step_mm)))
     out = []
     for i in range(n + 1):
-        h = hex_prism(af, vadd(origin, vmul(direction, length * i / n)), axis, depth)
+        h = hex_prism(af, vadd(origin, vmul(direction, length * i / n)), axis, depth, turn)
         out.append(h)
     return out
 
 
-def check_one_nut(part, name, origin, axis, depth, af, bore_r, insert_dir, insert_len, load_dir):
+def check_one_nut(part, name, origin, axis, depth, af, bore_r, insert_dir, insert_len, load_dir,
+                  turn=0.0):
     # Insertion: the hex, walked from the pocket until it is outside the part.
     length = insert_len
-    end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth)
+    end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth, turn)
     while bb_hit(end, part) and length < 400.0:
         length += 5.0
-        end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth)
+        end = hex_prism(af, vadd(origin, vmul(insert_dir, length)), axis, depth, turn)
     require(length < 400.0, "%s insertion stays inside the part" % name)
-    samples = _nut_samples(origin, axis, depth, af, insert_dir, length)
+    samples = _nut_samples(origin, axis, depth, af, insert_dir, length, turn)
     for h in samples[:-1]:
         if not bb_hit(h, part):
             continue
@@ -2432,16 +2445,22 @@ def check_one_nut(part, name, origin, axis, depth, af, bore_r, insert_dir, inser
         require(vol <= 1.0e-2, "%s insertion hits material (%.3f mm^3)" % (name, vol))
     require(not bb_hit(samples[-1], part), "%s insertion does not leave the part" % name)
     # Backing: 1.2 mm behind the loaded face, aside from the screw hole.
-    web = hex_prism(af, origin, load_dir, nut_land)
+    web = hex_prism(af, origin, load_dir, nut_land, turn)
     hole = Part.makeCylinder(bore_r, nut_land + 1.0,
                               vadd(origin, vmul(load_dir, -0.4)), load_dir)
     probe = web.cut(hole)
     inside = overlap_volume(probe, part)
     need = abs(probe.Volume)
-    step("nut %s  insert %.1f mm  web %.2f mm  probe %.0f/%.0f mm^3"
-         % (name, length, nut_land, inside, need))
+    # Thirty degrees about the screw puts the corners into the pocket wall.
+    # A slot wider than the flats lets this prism through with no overlap.
+    turned = hex_prism(af, origin, axis, depth, turn + 30.0)
+    turn_vol = overlap_volume(turned, part)
+    step("nut %s  insert %.1f mm  web %.2f mm  probe %.0f/%.0f mm^3  turn %.1f mm^3"
+         % (name, length, nut_land, inside, need, turn_vol))
     require(need > 1.0 and inside >= 0.95 * need,
             "%s backing web is short (%.0f of %.0f mm^3)" % (name, inside, need))
+    require(turn_vol >= 1.0,
+            "%s can turn in its pocket (overlap %.2f mm^3)" % (name, turn_vol))
 
 
 def audit_nuts(motor, plain, tie, frame):
@@ -2476,7 +2495,8 @@ def audit_nuts(motor, plain, tie, frame):
             axis = Vector(0, inward, 0)
             check_one_nut(tie, "%s tie %s plate %s" % (mod, bar_name, end),
                           origin, axis, m3_nut_depth, m3_nut_af, m3_clear / 2.0,
-                          Vector(1, 0, 0), tie_half + rv3 + 3.0, Vector(0, -inward, 0))
+                          Vector(1, 0, 0), tie_half + rv3 + 3.0, Vector(0, -inward, 0),
+                          turn=30.0)
         for y_h, kind in ((y_loc_pre, "locating"), (y_clr_pre, "clearance")):
             origin = Vector(x_tie_in, y_h, tie_z0 + m3_nut_depth)
             check_one_nut(tie, "%s tie %s joiner %s" % (mod, bar_name, kind),
@@ -2503,10 +2523,12 @@ def audit_nuts(motor, plain, tie, frame):
     for i, (x_h, y_h, _dia) in enumerate(holes):
         x0, x1, y0, y1 = bounds[0 if i < 2 else 1]
         direction, length = pad_slot_dir(x_h, y_h, x0, x1, y0, y1)
+        # Travel along X has the slot walls on Y, so the flats face Y.
+        turn = 30.0 if abs(direction.x) > 0.5 else 0.0
         origin = Vector(x_h, y_h, (z_j - web) + m3_nut_depth)
         check_one_nut(frame, "pad joiner %d" % (i + 1), origin, Vector(0, 0, -1),
                       m3_nut_depth, m3_nut_af, m3_clear / 2.0,
-                      direction, length, Vector(0, 0, 1))
+                      direction, length, Vector(0, 0, 1), turn=turn)
 
 
 def make_oring_real(theta_a, theta_b, r_g, D):
