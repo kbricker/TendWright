@@ -31,22 +31,25 @@ reason a provisioning script pays for itself — see plan #744.
 
 ### USB layout
 
-Recorded 2026-09-27 from `cameras.json` and Kyle. cell1 did not answer a wake
-that day, so this is not yet a full port map.
+Recorded 2026-09-27 from `cameras.json` and Kyle; cell1 was off, so nothing
+here has been read with `lsusb -t` yet.
 
 - **Cameras** — `bench` and `low` share one **powered USB hub**, on hub ports 4
   and 3. The hub is on root port 1 of the USB controller at PCI `05:00.4`, as
   both `by-path` entries in `cameras.json` show. Re-cabling the hub changes
   both camera identities.
-- **Arm servo adapter** — CH340-family, `1a86:55d3`, `/dev/ttyACM<N>`. It is
-  plugged into cell1; whether it goes direct or through a hub is not recorded.
-- **Keyboard and mouse** — the desktop is used at the bench, so they likely
-  take ports. Not recorded.
-- **Picos (nest bridge, conveyor)** — plug them straight into cell1, **not
-  into the camera hub**, so a glitch on that hub cannot drop the conveyor.
-  Bandwidth is no constraint: each Pico sends a few kB/s.
-- **Still open** — on the next boot, fill in the port map from `lsusb -t` and
-  count the free ports before the conveyor is wired.
+- **Arm servo adapter** — CH340-family, `1a86:55d3`, `/dev/ttyACM<N>`. It
+  takes the **USB-C port**, over a USB-C cable (Kyle, from memory).
+- **Keyboard and mouse** — one USB-A port each.
+- That leaves **one USB-A port free.**
+- **Picos (nest bridge, conveyor)** — both are Pico 2 W boards with
+  **micro-USB**. Use data cables; a charge-only cable powers the board but
+  never shows up as a port. Plug them straight into cell1, **not into the
+  camera hub**, so a glitch on that hub cannot drop the conveyor. Bandwidth
+  is no constraint: each Pico sends a few kB/s.
+- **Still open** — the two Picos need two ports and only one is free. Free
+  another before the conveyor is wired, then confirm the whole map with
+  `lsusb -t`.
 
 ## Mains power — TP-Link Kasa, local protocol, no cloud
 
