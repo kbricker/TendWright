@@ -24,9 +24,29 @@ goes in the repo. Addresses, MACs, wiring and calibration qualify.
 | Access | `ssh cell1`, repo at `~/TendWright`, `uv` at `~/.local/bin/uv` |
 | Power | off when idle; wake from the desk with `uv run python -m hardware.bench.wake cell1` (~24 s to sshd), shut down over ssh with the scoped sudoers grant |
 | Display | **Not headless.** Boots to `graphical.target`; Kyle uses the GNOME desktop at the bench. ~280 MB resident, and it is not to be "reclaimed" |
+| USB | Five ports: four USB-A (two front, two rear) and one USB-C on the front, which also carries DisplayPort. What is in each one is under **USB layout** below |
 
 Two more identical UM350s are unimaged spares (future MES box). They are the
 reason a provisioning script pays for itself — see plan #744.
+
+### USB layout
+
+Recorded 2026-09-27 from `cameras.json` and Kyle. cell1 did not answer a wake
+that day, so this is not yet a full port map.
+
+- **Cameras** — `bench` and `low` share one **powered USB hub**, on hub ports 4
+  and 3. The hub is on root port 1 of the USB controller at PCI `05:00.4`, as
+  both `by-path` entries in `cameras.json` show. Re-cabling the hub changes
+  both camera identities.
+- **Arm servo adapter** — CH340-family, `1a86:55d3`, `/dev/ttyACM<N>`. It is
+  plugged into cell1; whether it goes direct or through a hub is not recorded.
+- **Keyboard and mouse** — the desktop is used at the bench, so they likely
+  take ports. Not recorded.
+- **Picos (nest bridge, conveyor)** — plug them straight into cell1, **not
+  into the camera hub**, so a glitch on that hub cannot drop the conveyor.
+  Bandwidth is no constraint: each Pico sends a few kB/s.
+- **Still open** — on the next boot, fill in the port map from `lsusb -t` and
+  count the free ports before the conveyor is wired.
 
 ## Mains power — TP-Link Kasa, local protocol, no cloud
 
