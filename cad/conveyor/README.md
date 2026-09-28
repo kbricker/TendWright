@@ -68,7 +68,7 @@ The infeed coupon is the plate and the block side by side on the bed, with a gap
 - Each cone, idler and driven, turns freely on the Ø3 rod and on the stub. If it drags or rocks, change `cone_bore_d` and rebuild. That bore is Ø3.7, looser than the +0.15 rule, because TPU grips steel.
 - The O-ring must seat in groove A. The spool under it is TPU.
 
-**Plate 2 — belt test**, once TPU arrives. One straight belt: a cylinder **Ø79.8 mean × 50 mm tall × 1.0 mm wall**, standing upright. That diameter is `straight.print_cyl_dia` in `geometry.json`, the neutral-axis length divided by π. The 1.0 mm wall is what keeps belt-thickness / pulley-diameter at 10 on a Ø10 roller; 1.5 mm would fight the wrap.
+**Plate 2 — belt test**, once TPU arrives. One straight belt, `belt_straight.stl`: a cylinder **Ø79.8 mean × 50 mm tall × 1.0 mm wall**, standing upright. That diameter is `straight.print_cyl_dia` in `geometry.json`, the neutral-axis length divided by π. The 1.0 mm wall is what keeps belt-thickness / pulley-diameter at 10 on a Ø10 roller; 1.5 mm would fight the wrap.
 
 Rollers and cones on these plates print in the orientation in the table below.
 
@@ -94,7 +94,7 @@ v1 counts belong to #840. PETG where the part is loaded and shares holes with th
 | `joiner.stl` | 2 | PETG | flat, holes vertical |
 | `curve_frame.stl` | 1 | PETG | base down |
 | `curve_keeper.stl` | 1 | PETG | as exported, base down |
-| straight belt cylinder | 2 | **TPU 95A** | upright |
+| `belt_straight.stl` | 2 | **TPU 95A** | upright |
 
 The curve has no belt. Five O-rings, from the kit, link its rollers.
 

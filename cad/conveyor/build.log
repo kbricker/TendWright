@@ -301,6 +301,9 @@ print return_guide_straight  s1_guide  sym 0.0000 mm^3
 print return_guide_straight  s2_guide  sym 0.0000 mm^3
 print return_guide_straight solid 1  z 0.0000 .. 3.000
 export: return_guide_straight
+belt tube: mean dia 79.755  outer 80.755  inner 78.755 mm  circ 250.5575  path 250.5575
+print belt_straight solid 1  z 0.0000 .. 50.000
+export: belt_straight
 print tie_bar  s1_tie_in  sym 0.0000 mm^3
 print tie_bar  s1_tie_out  sym 0.0000 mm^3
 print tie_bar  s2_tie_in  sym 0.0000 mm^3
