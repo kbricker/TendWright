@@ -1110,6 +1110,33 @@ def main():
     ])
     export_print(ret_print, "return_guide_straight")
 
+    # Closed tube, no seam. The mean diameter is the neutral-axis path, so
+    # the printed loop is the length the rollers were designed around.
+    belt_tube = make_belt_straight(straight_len)
+    bb = belt_tube.BoundBox
+    require(len(belt_tube.Solids) == 1, "belt tube is not a single solid")
+    outer_d = bb.XLength
+    height = bb.ZLength
+    require(abs(height - belt_width) <= 0.01,
+            "belt tube height %.4f mm is not the belt width" % height)
+    require(abs(bb.YLength - outer_d) <= 0.01,
+            "belt tube is not round (%.4f x %.4f mm)" % (outer_d, bb.YLength))
+    require(abs(bb.XMin + bb.XMax) <= 0.01 and abs(bb.YMin + bb.YMax) <= 0.01,
+            "belt tube is not centred on the origin")
+    vol = abs(belt_tube.Volume)
+    inner_d = math.sqrt(max(0.0, outer_d * outer_d - 4.0 * vol / (math.pi * height)))
+    mean_d = (outer_d + inner_d) / 2.0
+    circ = math.pi * mean_d
+    path = belt_path_length(straight_len)
+    step("belt tube: mean dia %.3f  outer %.3f  inner %.3f mm  circ %.4f  path %.4f"
+         % (mean_d, outer_d, inner_d, circ, path))
+    require(abs(circ - path) <= 0.01,
+            "belt tube mean circumference %.4f mm is not the belt path %.4f (limit 0.01)"
+            % (circ, path))
+    require(abs((outer_d - inner_d) / 2.0 - belt_thickness) <= 0.01,
+            "belt tube wall %.4f mm is not belt_thickness" % ((outer_d - inner_d) / 2.0))
+    export_print(belt_tube, "belt_straight")
+
     # Joiner-nut pockets open downward in use. Flip so they open upward.
     tie = placed_by["s1_tie_in"]
     tie_print, undo_tie, _tie_shift = pose_spin_drop(tie, Vector(1, 0, 0), 180.0)
@@ -2320,6 +2347,21 @@ def make_belt(module_len):
         return s.fuse(prism(grow))
 
     return loop(bt).cut(loop(0.0))
+
+
+def make_belt_straight(module_len):
+    # Print file, not the loop on the rollers. Mean diameter is the neutral
+    # axis, so this tube is the length that loop has to be, with no seam.
+    mean_d = printed_cylinder_dia(module_len)
+    outer_r = (mean_d + belt_thickness) / 2.0
+    inner_r = (mean_d - belt_thickness) / 2.0
+    require(inner_r > 0.0, "belt wall is thicker than the mean radius")
+    wall = Part.makeCylinder(outer_r, belt_width)
+    # The cutter passes both rims. A face shared with the cut leaves a skin,
+    # and the belt would not be an open tube.
+    bore = Part.makeCylinder(inner_r, belt_width + 2.0 * belt_thickness,
+                             Vector(0, 0, -belt_thickness))
+    return wall.cut(bore)
 
 
 def curve_idler_rod(theta):
