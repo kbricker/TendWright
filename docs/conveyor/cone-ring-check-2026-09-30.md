@@ -15,10 +15,15 @@ Each cone lies with its wide end at the wedge's wide-end wall. The long cone's p
 
 ## You need
 
-- One Ø3 rod.
-- A 24 mm piece cut off the end of that rod, with the cut end filed smooth. A hair short is fine, but don't cut it long. The rest of the rod is for the short cone.
+- Two pieces cut from one Ø3 rod. Cut each a little long, then file it down to the number. A hair short is fine, but long is not.
+  - **70.0 mm** for the short cone.
+  - **24.2 mm** for the long cone. The steps call it the short piece.
 - Two M4 nuts and an M4 screw.
 - One 20 × 2 O-ring from the kit.
+
+Both rod pieces are real parts: the finished corner uses five 70.0 mm rods and this one 24.2 mm piece.
+
+Once the 70 mm rod is all the way in, its end sits just inside the wall, with nothing to grab. So each cone goes into the wedge only once, and check 2 spins them in your hand first.
 
 ## 1. M4 nuts
 
@@ -26,32 +31,31 @@ Drop an M4 nut into each hex slot on the wide-end wall. Then put the M4 screw th
 - Pass: each nut drops in and sits, and the screw threads in.
 - Fail, measure: the slot across its flats (CAD 7.3) and the nut across its flats (7.0).
 
-## 2. Short cone, no ring
+## 2. Rods and cones, in your hand
 
-1. Set the short cone between the walls.
-2. Slide the rod in from outside the wide-end wall, through the cone, and into the narrow-end wall until it stops.
-3. Spin the cone with a finger on top.
+1. Slide the 70 mm rod into each small hole in the wedge, then pull it back out. That's the two in the narrow-end wall, which stop partway, and the one in the wide-end wall with no slot.
+2. Slide the short cone onto the 70 mm rod. Hold the rod's ends and spin the cone.
+3. Push the short piece into the long cone's narrow-end hole until it stops. About 4 mm sticks out. Hold the piece and spin the cone, then leave the piece in.
 
-- Pass: the rod goes in snug with no wobble, and the cone spins freely.
-- Fail, measure: the cone's hole (CAD 3.7), the wall's small hole (CAD 3.3) and the rod (3.0).
+- Pass: the rod goes into each hole snug, with no wobble. Each cone spins freely, and the short cone doesn't rock on the rod.
+- Fail, measure: the wall's small hole (CAD 3.3), the cone's hole (CAD 3.7) and the rod (3.0).
 
-Then pull the rod and take the cone out.
+Then slide the short cone back off the rod.
 
-## 3. Long cone, ring on
+## 3. Long cone in, ring on
 
 1. Roll the O-ring onto the long cone's groove A, over the peg and the end groove. Half the ring hangs loose.
-2. Push the 24 mm piece into the narrow-end hole until it stops. About 4 mm sticks out.
-3. Put the peg into the big round hole from the inside. Push the cone toward the wide-end wall about 4 mm, until the 24 mm piece clears the narrow-end wall.
-4. Lower the narrow end, line the piece up with its hole, and slide the cone back until the piece bottoms in the hole.
-5. Hold the ring's loose half up out of the way, and spin the cone with a finger on top.
+2. Put the peg into the big round hole from the inside. Push the cone toward the wide-end wall about 4 mm, until the short piece clears the narrow-end wall.
+3. Lower the narrow end, line the short piece up with its hole, and slide the cone back until the piece bottoms in the hole.
+4. Hold the ring's loose half up out of the way, and spin the cone with a finger on top.
 
 - Pass: the cone spins freely.
-- Fail, measure: the cone's hole (CAD 3.7), the big round hole (CAD 8.0) and the peg (CAD 7.0).
+- Fail, measure: the big round hole (CAD 8.0) and the peg (CAD 7.0).
 
-## 4. Both cones, ring linking them
+## 4. Short cone in, ring linking them
 
 1. Push the short cone's collar end through the ring's loose half, so the ring sits in its groove A.
-2. Set the short cone between the walls and slide the rod in, as in check 2.
+2. Set the short cone between the walls. Slide the 70 mm rod in from outside the wide-end wall, through the cone, and into the narrow-end wall until it stops. Its end ends up just inside the wall's outside face.
 3. Turn the long cone with a finger on top, both ways.
 
 - Pass: the ring stays in both grooves, the short cone turns with the long one, and nothing binds.
