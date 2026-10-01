@@ -1,6 +1,6 @@
 # Cone rollers and O-ring check — 2026-09-30
 
-Plan 835.2. This replaces checks 8–11 in the coupon fit check. Try each check by hand, and get the calipers out only when one fails.
+Plan 835.2. This replaces checks 8–11 in the coupon fit check. Try each check by hand. Apart from cutting the rods, get the calipers out only when a check fails.
 
 ## The pieces
 
@@ -15,15 +15,27 @@ Each cone lies with its wide end at the wedge's wide-end wall. The long cone's p
 
 ## You need
 
-- Two pieces cut from one Ø3 rod. Cut each a little long, then file it down to the number. A hair short is fine, but long is not.
-  - **70.0 mm** for the short cone.
-  - **24.2 mm** for the long cone. The steps call it the short piece.
+- One Ø3 rod, cut into the two pieces below.
+- Calipers and a file.
 - Two M4 nuts and an M4 screw.
 - One 20 × 2 O-ring from the kit.
 
-Both rod pieces are real parts: the finished corner uses five 70.0 mm rods and this one 24.2 mm piece.
+## First, cut the rods
 
-Once the 70 mm rod is all the way in, its end sits just inside the wall, with nothing to grab. So each cone goes into the wedge only once, and check 2 spins them in your hand first.
+Cut two pieces from the one rod:
+- **70.0 mm**, for the short cone.
+- **24.2 mm**, for the long cone. The steps call it the short piece.
+
+For each piece:
+1. Mark the rod 0.5 mm past the length, and cut there.
+2. File the cut end flat and square until the piece measures the length end to end, using the calipers' big jaws.
+3. File the sharp edge off both ends, so the piece slides into the holes without catching.
+
+A hair short is fine, but long is not.
+
+Both pieces are real parts. The finished corner uses five 70.0 mm rods and this one 24.2 mm piece, so the other four 70.0 mm rods can be cut now too.
+
+Once the 70 mm rod is all the way in the wedge, its end sits just inside the wall, with nothing to grab. So each cone goes into the wedge only once, and check 2 spins them in your hand first.
 
 ## 1. M4 nuts
 
@@ -55,7 +67,7 @@ Then slide the short cone back off the rod.
 ## 4. Short cone in, ring linking them
 
 1. Push the short cone's collar end through the ring's loose half, so the ring sits in its groove A.
-2. Set the short cone between the walls. Slide the 70 mm rod in from outside the wide-end wall, through the cone, and into the narrow-end wall until it stops. Its end ends up just inside the wall's outside face.
+2. Set the short cone between the walls. Slide the 70 mm rod in from outside the wide-end wall, through the cone, and into the narrow-end wall until it stops. Its end stops just inside the wall's outside face.
 3. Turn the long cone with a finger on top, both ways.
 
 - Pass: the ring stays in both grooves, the short cone turns with the long one, and nothing binds.
