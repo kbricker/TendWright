@@ -80,8 +80,8 @@ v1 counts belong to #840. PETG where the part is loaded and shares holes with th
 
 | file | qty | material | orientation |
 |---|---|---|---|
-| `bracket_straight_motor.stl` | 2 | PETG | flat |
-| `bracket_straight_plain.stl` | 2 | PETG | flat |
+| `bracket_straight_motor.stl` | 2 | PETG | standing, as exported |
+| `bracket_straight_plain.stl` | 2 | PETG | standing, as exported |
 | `roller_driven.stl` | 2 | PLA+ | **axis vertical**, brim |
 | `roller_idler.stl` | 2 | PLA+ | **axis vertical**, brim |
 | `roller_cone_driven.stl` | 1 | **TPU 95A** | **big end down**, brim |
@@ -206,7 +206,7 @@ The free half of a ring is a loop of radius 8.72 mm. Left beside the spool it me
 
 ### Each straight, after its joiner
 
-1. **Bed, both rollers, the idler rod, then the belt** from the open side, over the rollers and the bed as one loop. The bed's tongues drop into the motor plate's grooves.
+1. **Bed and driven roller together, then the idler roller, the idler rod and the belt** from the open side, over the rollers and the bed as one loop. The bed's end notches take the driven roller's flanges, so neither can slide past the other along the axle. Hold the flanges in the notches and push both home at once: the roller onto the shaft, and the bed's tongue into the motor plate's groove.
 2. **Return guide**, under the return run, into its own grooves. It has to be in before the plain plate, because that plate closes the groove.
 3. **Driven stub, then the plain plate.** The stub drops into the roller's far bore and stops 0.5 mm short of the D-bore step. The plain plate's bore is blind. Its two tie screws come in from the outboard face.
 4. **Tensioners.** Block on each rail, jack screw through the two nuts, taken up until the idler rod is against the outer end of the slot. The hex key comes in along the screw from the head, outboard of the plate.
