@@ -155,25 +155,49 @@ curve_angle     = 90.0
 curve_r_in      = 30.0    # lane inner edge from C
 curve_r_out     = curve_r_in + belt_width
 curve_r_c       = (curve_r_in + curve_r_out) / 2.0
-# Cone diameter = k·r. The straight belt moves at ω·(nose_dia+belt_thickness)/2,
-# its neutral axis; the cone surface moves at ω·k·r/2. Equal RPM is then equal
-# speed on the centreline: Ø6 at the inner edge, Ø16 at the outer.
-curve_k         = (nose_dia + belt_thickness) / curve_r_c
-curve_alpha     = math.asin(curve_k / 2.0)   # cone half-angle, and the axle tilt down toward the outside
-curve_n         = 6
-# End rollers tangent to the faces, so the fan occupies (angle − 2α) and the
-# pitch is what is left. 6 leaves ~2 mm between cones at the small end;
-# 7 leaves 0.8 mm and 8 interferes.
-curve_pitch_deg = (curve_angle - 2.0 * math.degrees(curve_alpha)) / (curve_n - 1)
-curve_driven    = 3        # middle of the chain, so no O-ring run is longer than 3 links
+cone_past_lane  = 1.0      # cone runs this far past each lane edge, so a part never sees the end face
+cone_bore_d     = 3.7
 curve_axle_d    = 3.0      # the 3 mm 304 rod already ordered
+# Radial play of a cone on its rod. Neighbouring cones can close by twice this.
+cone_play       = (cone_bore_d - curve_axle_d) / 2.0
+cone_wall_min   = 0.7     # TPU around the bore at the thin end
+cone_gap_min    = 0.45    # designed clearance anywhere along the cone
+cone_gap_centre = 1.0     # neighbouring cones at the lane centre, r = curve_r_c
+# k is the cone diameter / plan radius. It comes from the wall and the gaps,
+# not from matching the straight belt. Equal RPM then makes the curve slower
+# than the belt: the N20s can share a duty only if the straights slow down.
+# n is the most that still leaves cone_gap_min at the small end with that k.
+
+
+def _k_for_gap(n, r, gap):
+    # Bisection: fatter cones (larger k) close the gap. End rollers stay
+    # tangent to the faces, so the pitch shrinks with α(k) as well.
+    lo, hi = 0.05, 0.40
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        alpha = math.asin(mid / 2.0)
+        pitch = math.radians((curve_angle - 2.0 * math.degrees(alpha)) / (n - 1))
+        ca, sa = math.cos(alpha), math.sin(alpha)
+        g = 2.0 * r * (ca * ca * math.sin(pitch / 2.0) - sa)
+        if g > gap:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+curve_n         = 8
+curve_k         = _k_for_gap(curve_n, curve_r_c, cone_gap_centre)
+curve_alpha     = math.asin(curve_k / 2.0)   # cone half-angle, and the axle tilt down toward the outside
+# End rollers tangent to the faces, so the fan occupies (angle − 2α) and the
+# pitch is what is left.
+curve_pitch_deg = (curve_angle - 2.0 * math.degrees(curve_alpha)) / (curve_n - 1)
+curve_driven    = (curve_n + 1) // 2   # middle of the chain, N20 on the outer wall
 # Idler and driven cones both print in TPU 95A. TPU grips steel, so the plain
 # bore — the idler's bore on the rod, and the driven cone's small-end stub
 # bore — is a looser running fit than the Ø3.4 PLA bore. The coupon confirms
 # it. The D-bore keeps the printed-hole allowance, because grip on the shaft
 # is what drives the roller.
-cone_bore_d     = 3.7
-cone_past_lane  = 1.0      # cone runs this far past each lane edge, so a part never sees the end face
 stub_bore_depth = 20.0     # driven cone, small end, plain bore for the stub axle
 stub_bore_air   = 0.5      # stub stops this short of that bore's bottom
 axle_hole_d     = 3.3      # +0.15 on radius over the rod; the machine prints holes undersize, so this is a snug slip
@@ -183,11 +207,13 @@ inner_wall_inset_near = 2.0
 outer_wall_gap  = 1.0      # outer wall starts this far past spool_end, in plan radius
 outer_wall_t    = 3.0
 
-# O-rings are real parts from a metric kit. The two sizes are PLACEHOLDERS —
-# Kyle calipers the ring he picks and changes these. Grooves are cut to suit.
-oring_id        = 20.0
+# O-rings from Kyle's metric kit: 16×2, 18×2, 20×2, 22×2, 25×2.4.
+# An 18×2 at ~21% stretch drove on the printed coupon; a 20×2 at 10% slipped.
+# Size each link to about 20% seated stretch, no tighter.
+oring_kit       = ((16.0, 2.0), (18.0, 2.0), (20.0, 2.0), (22.0, 2.0), (25.0, 2.4))
+oring_id        = 16.0
 oring_cs        = 2.0
-oring_stretch   = 0.10     # installed stretch on the centreline; nitrile, lightly loaded, window 0.06–0.15
+oring_stretch   = 0.18     # 16×2; 18×2 at this n lifts the crown through the carry surface
 spool_shoulder  = 2.5      # plan-radius land ahead of groove A and past groove B
 spool_groove_gap = 4.0     # plan radius between groove A and groove B
 groove_extra    = 0.15     # under a centred cord; the floor stays at the pitch radius minus this and the cord radius
@@ -359,8 +385,8 @@ def hex_Rv(af):
 
 
 def groove_pitch_D(c_g, oid):
-    # Belt length is two straight runs plus two half-wraps. The 15.7° skew
-    # between neighbouring axles is ignored; the ring twists that little.
+    # Belt length is two straight runs plus two half-wraps. The axle skew
+    # (curve_pitch_deg) is ignored; the ring twists that little.
     free = math.pi * (oid + oring_cs)
     installed = free * (1.0 + oring_stretch)
     return (installed - 2.0 * c_g) / math.pi
@@ -402,6 +428,27 @@ D_B = groove_pitch_D(c_B, oring_id)
 R_spool_A = D_A / 2.0 + groove_flange * oring_cs / 2.0
 R_spool_B = D_B / 2.0 + groove_flange * oring_cs / 2.0
 s_mid = 0.5 * (s_gA + s_gB)
+motor_rpm = 270.0
+# Surface speed at the lane centre, same RPM as the N20. Smaller than the
+# straight belt at this RPM because k is no longer (nose_dia+belt_thickness)/r_c.
+curve_centreline_speed = (motor_rpm / 60.0) * math.pi * curve_k * curve_r_c / 1000.0
+straight_belt_speed = (motor_rpm / 60.0) * math.pi * (nose_dia + belt_thickness) / 1000.0
+
+
+def cone_gap_at(r):
+    return 2.0 * r * (ca * ca * math.sin(pitch_rad / 2.0) - sa)
+
+
+def cone_wall_at(r):
+    return r * sa - cone_bore_d / 2.0
+
+
+def cone_dia_at(r):
+    return 2.0 * r * sa
+
+
+def keeper_bolt_angles():
+    return (0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[-2] + thetas[-1]))
 
 
 def ring_clearance(r_g, D):
@@ -544,19 +591,36 @@ groove_axial = wrap_axial + groove_margin
 
 # Curve enclosure: 16 mm side vertical, 24 mm side horizontal, ears ±pitch.
 u_drv, e_th_drv, e_up_drv = axis_frame(thetas[curve_driven - 1])
+m4_Rv = hex_Rv(m4_nut_af)
+h_half = encl_ear_pitch + m4_Rv + pad_rim
+v_half = encl_narrow / 2.0 + pad_rim
+cap_half_mm = axle_hole_d / 2.0 + keeper_cap_extra
 s_face = s_on_cylinder(r_ow1, encl_ear_pitch, 0.0) + pad_bolt_t
+s_slab_in = r_ow0_s - 0.8
+# At n=8 the N20 pad is wider than the cone pitch at the outer wall. A full
+# rectangular pad would bury the neighbouring keeper caps and rod holes.
+# Neck the pad at the wall and, if needed, push the ear slab outboard of
+# the keeper so the nuts sit in the wide part.
+axle_spacing_ow = 2.0 * r_ow1 * math.sin(pitch_rad / 2.0)
+pad_wall_half = h_half
+s_wide0 = s_slab_in
+if axle_spacing_ow - h_half - cap_half_mm < 0.8 - 1e-9:
+    pad_wall_half = axle_spacing_ow - cap_half_mm - 0.8
+    s_wide0 = s_on_cylinder(r_ow1 + keeper_t, 0.0, 0.0)
+    s_face_min = s_wide0 + m4_nut_depth + nut_land
+    if s_face < s_face_min:
+        s_face = s_face_min
 # An M4×8 crosses the 2.5 mm ear and a 3.4 mm nut and still has to come out
 # the back. That leaves 2.1 mm, so the land is nut_land and the rest is the
 # tip past the nut. Deeper than that, the same screw ends short of the pocket.
 s_nut_near = s_face - nut_land
 s_nut_far = s_nut_near - m4_nut_depth
-m4_Rv = hex_Rv(m4_nut_af)
 # Worst corner of the hex, so the pocket face is entirely in the gutter and
 # not buried in the curved inner wall.
 s_boss_in = s_on_cylinder(r_ow0, encl_ear_pitch + m4_Rv, m4_Rv) - 0.4
-s_slab_in = r_ow0_s - 0.8
-h_half = encl_ear_pitch + m4_Rv + pad_rim
-v_half = encl_narrow / 2.0 + pad_rim
+if s_wide0 > s_slab_in + 1e-6:
+    # Bosses stay in the outboard slab so they do not run through a neighbour's spool.
+    s_boss_in = max(s_boss_in, s_wide0)
 boss_r_curve = m4_Rv + 1.2
 
 # Straight mount bosses. The plate is `wall` thick; the pocket needs depth + land.
@@ -647,7 +711,33 @@ def main():
          % (s2_ox, s2_oy, cx, cy))
     step("curve: k=%.5f alpha=%.4f deg pitch=%.4f deg n=%d driven=%d"
          % (curve_k, alpha_deg, curve_pitch_deg, curve_n, curve_driven))
-    step("cone_bore_d %.2f mm" % cone_bore_d)
+    step("cone_bore_d %.2f mm  play %.3f mm" % (cone_bore_d, cone_play))
+    step("cone dia mm: small %.3f centre %.3f big %.3f"
+         % (cone_dia_at(r_a), cone_dia_at(curve_r_c), cone_dia_at(r_b)))
+    step("cone gap mm: small %.3f centre %.3f big %.3f"
+         % (cone_gap_at(r_a), cone_gap_at(curve_r_c), cone_gap_at(r_b)))
+    step("cone thin-end wall %.3f mm (need >= %.2f)" % (cone_wall_at(r_a), cone_wall_min))
+    step("curve centreline %.4f m/s at %.0f RPM; straight belt %.4f m/s"
+         % (curve_centreline_speed, motor_rpm, straight_belt_speed))
+    require(cone_wall_at(r_a) >= cone_wall_min - 1e-9,
+            "thin-end wall %.3f mm, need >= %.2f around the Ø%.2f bore"
+            % (cone_wall_at(r_a), cone_wall_min, cone_bore_d))
+    require(cone_gap_at(r_a) >= cone_gap_min - 1e-9
+            and cone_gap_at(r_b) >= cone_gap_min - 1e-9,
+            "cone gap small %.3f big %.3f, need >= %.2f mm along the cone"
+            % (cone_gap_at(r_a), cone_gap_at(r_b), cone_gap_min))
+    require(abs(cone_gap_at(curve_r_c) - cone_gap_centre) <= 0.25,
+            "centre gap %.3f mm, want about %.1f mm at r=%.0f"
+            % (cone_gap_at(curve_r_c), cone_gap_centre, curve_r_c))
+    require(cone_gap_at(r_a) > cone_play,
+            "small-end gap %.3f mm is not more than one cone's radial play %.3f"
+            % (cone_gap_at(r_a), cone_play))
+    require(any(abs(oring_id - i) < 1e-9 and abs(oring_cs - c) < 1e-9
+                for i, c in oring_kit),
+            "oring %.1f x %.1f is not a kit size %s" % (oring_id, oring_cs, oring_kit))
+    require(0.17 <= oring_stretch <= 0.22,
+            "oring stretch %.3f is not about 20%% (coupon 18x2 drove at 21%%)"
+            % oring_stretch)
     step("curve theta deg: %s" % ", ".join("%.4f" % t for t in thetas))
     step("cone plan r %.3f..%.3f  spool grooves %.3f %.3f end %.3f"
          % (r_a, r_b, r_gA, r_gB, spool_end_r))
@@ -694,8 +784,9 @@ def main():
     step("shaft engagement %.3f mm (bore %.1f)" % (shaft_engagement(), motor_bore_depth))
     step("straight bosses: protrusion %.3f mm, inboard face y=%.3f after mirror (both ears)"
          % (boss_extra, outer_width - boss_y1))
-    step("pad: s_face=%.3f s_slab_in=%.3f s_boss_in=%.3f h_half=%.3f v_half=%.3f"
-         % (s_face, s_slab_in, s_boss_in, h_half, v_half))
+    step("pad: s_face=%.3f s_slab_in=%.3f s_wide0=%.3f s_boss_in=%.3f "
+         "h_half=%.3f pad_wall_half=%.3f v_half=%.3f"
+         % (s_face, s_slab_in, s_wide0, s_boss_in, h_half, pad_wall_half, v_half))
 
     require(id_lo < id_hi, "no oring_id passes at cs=%.2f" % oring_cs)
     require(id_lo - 1e-6 <= oring_id <= id_hi + 1e-6,
@@ -747,8 +838,10 @@ def main():
 
     # Keeper cap must cover the idler hole and still clear the pad.
     cap_half_mm = hole_r + keeper_cap_extra
-    neighbour_gap = r_ow1 * 2.0 * math.sin(pitch_rad / 2.0) - h_half - cap_half_mm
-    require(neighbour_gap >= 0.8,
+    neighbour_gap = axle_spacing_ow - pad_wall_half - cap_half_mm
+    require(pad_wall_half > 8.0,
+            "pad neck at the wall is %.3f mm, too thin to fuse" % pad_wall_half)
+    require(neighbour_gap >= 0.8 - 1e-9,
             "keeper cap meets the pad (gap %.3f mm)" % neighbour_gap)
     step("keeper cap half-width %.3f mm, gap to pad %.3f mm" % (cap_half_mm, neighbour_gap))
 
@@ -856,7 +949,7 @@ def main():
     keeper = make_keeper(cap_half_mm)
     # Bolt holes through the keeper and the outer wall, midway between idlers
     # at the two ends — the gutter there is below the spools.
-    bolt_angles = [0.5 * (thetas[0] + thetas[1]), 0.5 * (thetas[4] + thetas[5])]
+    bolt_angles = list(keeper_bolt_angles())
     z_bolt = 0.5 * (wall + 1.0 + 10.0)
     for ang in bolt_angles:
         # Boss first, then the clearance hole, so the boss cannot plug the hole.
@@ -1330,6 +1423,14 @@ def main():
             "cone_r": [r_a, r_b],
             "driven": curve_driven,
             "cone_bore_d": cone_bore_d,
+            "thin_wall": cone_wall_at(r_a),
+            "gaps": {
+                "small": cone_gap_at(r_a),
+                "centre": cone_gap_at(curve_r_c),
+                "big": cone_gap_at(r_b),
+            },
+            "motor_rpm": motor_rpm,
+            "centreline_speed": curve_centreline_speed,
             "inner_wall": [r_iw0, r_iw1],
             "outer_wall": [r_ow0, r_ow1],
             "wall_top": bracket_h,
@@ -1339,6 +1440,7 @@ def main():
                 "A": {"r": r_gA, "c": c_A, "D": D_A},
                 "B": {"r": r_gB, "c": c_B, "D": D_B},
             },
+            "oring": {"id": oring_id, "cs": oring_cs, "stretch": oring_stretch},
             "rod_cut_mm": {"idler": idler_rod_len, "stub": stub_len},
         },
         "spans": {"entry": spans, "exit": dict(spans)},
@@ -2079,13 +2181,29 @@ def make_curve_frame():
     frame = base.fuse(inner).fuse(outer)
 
     pad = apply_frame(
-        Part.makeBox(2 * h_half, s_face - s_slab_in, 2 * v_half,
-                     Vector(-h_half, s_slab_in, -v_half)),
+        Part.makeBox(2 * h_half, s_face - s_wide0, 2 * v_half,
+                     Vector(-h_half, s_wide0, -v_half)),
         A, e_th_drv, u_drv, e_up_drv)
+    if s_wide0 > s_slab_in + 1e-6:
+        neck = apply_frame(
+            Part.makeBox(2 * pad_wall_half, s_wide0 - s_slab_in, 2 * v_half,
+                         Vector(-pad_wall_half, s_slab_in, -v_half)),
+            A, e_th_drv, u_drv, e_up_drv)
+        pad = pad.fuse(neck)
     frame = frame.fuse(pad)
     for sign in (-1.0, 1.0):
         p0 = vadd(A, vadd(vmul(u_drv, s_boss_in), vmul(e_th_drv, sign * encl_ear_pitch)))
         frame = frame.fuse(Part.makeCylinder(boss_r_curve, s_face - s_boss_in, p0, u_drv))
+    # n=8 packs the N20 pad inside a neighbour's pitch. Cut the pad back
+    # around every other cone so the spool and barrel stay in air.
+    spool_keep = max(R_spool_A, R_spool_B, s_b * math.tan(curve_alpha)) + 0.8
+    for i, th in enumerate(thetas):
+        if (i + 1) == curve_driven:
+            continue
+        u = axis_u(th)
+        frame = frame.cut(Part.makeCylinder(
+            spool_keep, (s_spool_end + 1.0) - (s_a - 0.5),
+            vadd(A, vmul(u, s_a - 0.5)), u))
 
     for i, th in enumerate(thetas):
         u = axis_u(th)
@@ -2123,9 +2241,12 @@ def make_curve_frame():
 
     for sign in (-1.0, 1.0):
         h = sign * encl_ear_pitch
-        p0 = vadd(A, vadd(vmul(u_drv, s_boss_in - 0.4), vmul(e_th_drv, h)))
+        # The M4×8 tip sits inboard of the boss when the pad is stepped. Cut
+        # the hole to that tip so the shank does not nick the neck.
+        s_m4_in = min(s_boss_in - 0.4, s_face + encl_ear_t - m4_ear_len - 0.5)
+        p0 = vadd(A, vadd(vmul(u_drv, s_m4_in), vmul(e_th_drv, h)))
         frame = frame.cut(Part.makeCylinder(
-            m4_clear / 2.0, s_face - s_boss_in + 1.2, p0, u_drv))
+            m4_clear / 2.0, s_face - s_m4_in + 0.8, p0, u_drv))
         frame = frame.cut(hex_along_u(m4_nut_af, s_nut_far, s_nut_near, h, 0.0))
         # The bore is the only axial opening, so the nut drops in from above.
         frame = frame.cut(apply_frame(
@@ -2210,8 +2331,8 @@ def make_oring_link(theta_a, theta_b, r_g, D):
     # Render only. The line of centres is perpendicular to the average axle
     # (the two axes intersect at the apex, so (u2−u1)·(u1+u2) = 0). The cord
     # is a stadium in the plane normal to that average: straight length equals
-    # the centre distance, half a turn on each spool. The 15.7° skew between
-    # the axles is the part this ignores.
+    # the centre distance, half a turn on each spool. The axle skew is the
+    # part this ignores.
     s = r_g * ca
     u1 = axis_u(theta_a)
     u2 = axis_u(theta_b)
@@ -2824,8 +2945,7 @@ def screw_specs(shift, s2_off):
         specs.append(_spec("cv_m4", p0, vmul(u_drv, -1.0), m4_ear_len, 4.0,
                             near, near + m4_nut_depth, "M4", "motor ears", 1,
                             label="curve m4 %s" % which))
-    for ang, which in ((0.5 * (thetas[0] + thetas[1]), "entry"),
-                       (0.5 * (thetas[4] + thetas[5]), "exit")):
+    for ang, which in zip(keeper_bolt_angles(), ("entry", "exit")):
         th = math.radians(ang)
         er = Vector(math.cos(th), math.sin(th), 0.0)
         z = 0.5 * (wall + 1.0 + 10.0)
@@ -2977,8 +3097,7 @@ def audit_nuts(motor, plain, tie, frame):
         check_one_nut(frame, "curve ear %s" % which, origin, vmul(u_drv, -1.0),
                       m4_nut_depth, m4_nut_af, m4_clear / 2.0,
                       e_up_drv, v_half + m4_Rv + 5.0, u_drv)
-    for ang, which in ((0.5 * (thetas[0] + thetas[1]), "entry"),
-                       (0.5 * (thetas[4] + thetas[5]), "exit")):
+    for ang, which in zip(keeper_bolt_angles(), ("entry", "exit")):
         th = math.radians(ang)
         er = Vector(math.cos(th), math.sin(th), 0.0)
         z = 0.5 * (wall + 1.0 + 10.0)
