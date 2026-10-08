@@ -2,7 +2,7 @@
 
 Hive plan **#835** (v0 rig) · **#840** (v1 loop)
 
-v0 is two straights and one tapered-roller curve, three motors, an open line. s1 travels +X, the curve turns left, s2 travels +Y. Each straight's motor is on its left plate. Nothing has been printed yet.
+v0 is two straights and one tapered-roller curve, three motors, an open line. s1 travels +X, the curve turns left, s2 travels +Y. Each straight's motor is on its left plate. One straight and the six-cone curve's first coupon are printed (plans 835.1 and 835.2); the curve is now the eight-cone version below (plan 835.3).
 
 Shopping list: [`docs/conveyor/conveyor-order-2026-09-25.md`](../../docs/conveyor/conveyor-order-2026-09-25.md).
 
@@ -243,11 +243,11 @@ Firmware is in [`hardware/conveyor/`](../../hardware/conveyor/README.md). `uv ru
 
 The drive is MuJoCo's own friction on a surface that is already moving. A force computed in Python is linear in the slip below the regularisation speed, which makes the part's yaw an explicit damper. That damper went unstable at µ 1.2 and at a tight regularisation, and the heading did not converge as the regularisation was reduced. The belt slab is a slide joint along the module's travel. Each nose and each cone is a hinge. Every step puts the joint position back to zero and the joint velocity at the commanded surface speed: the slab is only as long as the flat run, and the collision slices are faceted, so letting either integrate would walk the belt away and roll the crown points. The solver still sees the velocity. The flat run moves at the commanded speed. Around the nose the outer fibre is faster, because the belt's neutral axis is inside the surface the part can touch (0.169 m/s when the flat run is at 0.155). On the curve the crown of every roller matches Ω ẑ × (p − C), Ω = curve speed / centreline radius. The hinge sign is whichever of the two matches that field; it is −1. The joints carry enough armature that a contact does not change their speed inside a step. µ on a drive geom is the module's µ. MuJoCo takes the larger of a pair, and the part's sliding friction is 0, so the pair is the drive geom's value exactly, including a commanded 0. Rails and walls keep 0.04. Drive contacts are condim 3, because the slices already produce the torsional moment. The cone is elliptic, multiccd stays on, and noslip iterations stop a stuck contact from creeping at the soft-constraint rate.
 
-The timestep is 0.5 ms and noslip is 60. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.2 s on 15 workers.
+The timestep is 0.5 ms and noslip is 60. These settings were measured on the six-cone curve with the block. Ten iterations at 0.5 ms left the exit yaw 1.1° away from the same run at 0.25 ms. At 60 the 0.5 ms run is within 0.1° and 0.1 mm of the 0.25 ms run and of a 0.125 ms run. Thirty iterations already saturates the 0.5 ms step (60 and 100 print the same yaw), but a 0.25 ms step at 30 iterations moved 0.9°, so the default is 60. A headless nominal run takes 0.40 s. The sweep takes 7.2 s on 15 workers.
 
 The cube set down at rest on the cones, drives held, meets two rollers, 11 contacts on each, spread 20.1 mm along the crown. Tilt is 0.066°. It sits 0.108 mm above the height it rests at on s1. Both surfaces are at 31 mm; the difference is how far the belt and the cones sink under the part.
 
-The cones are TPU 95A. With PLA cones the nominal run, µ 0.9 on the belt and 0.35 on the cones, exited at 84.7°, and 9 of 36 runs in that sweep passed. At each handoff the grippier belt held the part's heading, and the curve's rotation field carried that lag out to s2.
+The cones are TPU 95A. On the six-cone curve with the block, PLA cones failed: the nominal run, µ 0.9 on the belt and 0.35 on the cones, exited at 84.7°, and 9 of 36 runs in that sweep passed. At each handoff the grippier belt held the part's heading, and the curve's rotation field carried that lag out to s2.
 
 The nominal run (the cube, 0.139 m/s, µ 0.9 / 0.9, offset 0) **passes**. Exit code 0. The block's nominal run passes too: exit offset −2.06 mm, yaw 91.2°, dip −0.03 mm, tilt 0.39°.
 
