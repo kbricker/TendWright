@@ -1,8 +1,9 @@
 # Mini modular conveyor — MuJoCo sim (Hive plan #835)
 #
-#   uv run python cad/conveyor/sim_conveyor.py            # nominal run, frames in renders/sim/
+#   uv run python cad/conveyor/sim_conveyor.py            # 20 mm cube, frames in renders/sim/
+#   uv run python cad/conveyor/sim_conveyor.py --block    # 32×32×16 mm block
 #   uv run python cad/conveyor/sim_conveyor.py --frames 0 # same run, no meshes, no PNGs
-#   uv run python cad/conveyor/sim_conveyor.py --sweep    # acceptance matrix, writes sweep.json
+#   uv run python cad/conveyor/sim_conveyor.py --sweep    # cube acceptance matrix, writes sweep.json
 #   uv run python cad/conveyor/sim_conveyor.py --view     # interactive viewer
 #
 # Visuals are the component STLs. Collision is not: a belt loop is non-convex
@@ -48,8 +49,11 @@ S1 = G["s1"]
 S2 = G["s2"]
 TAB = G["motor_tab"]
 
-# 270 RPM on the Ø11 neutral axis. The cone centreline is cut to the same speed.
-NOMINAL_SPEED = 0.155
+# 270 RPM on the cones. The curve is slower than the straight belt at that
+# RPM; --speed defaults to the curve so the straights match it. The curve
+# does not speed up past this to chase the belt.
+CURVE_TOP_SPEED = CURVE["centreline_speed"]
+NOMINAL_SPEED = CURVE_TOP_SPEED
 
 
 def belt_y():
@@ -76,8 +80,12 @@ def place_box(rot, ox, oy, cx, cy, cz, hx, hy, hz):
     return (-cy + ox, cx + oy, cz), (hy, hx, hz)
 
 
-PART = (32.0, 32.0, 16.0)
-PART_MASS = 0.030
+if "--block" in sys.argv:
+    PART = (32.0, 32.0, 16.0)
+    PART_MASS = 0.030
+else:
+    PART = (20.0, 20.0, 20.0)
+    PART_MASS = 0.004
 
 # A contact from the part has to leave the commanded surface speed alone
 # inside one step, or the friction is no longer the belt's. These sit far
@@ -134,7 +142,10 @@ def _argv(flag, default):
 
 
 STRAIGHT_SPEED = _argv("--speed", NOMINAL_SPEED)
-CURVE_SPEED = _argv("--curve-speed", STRAIGHT_SPEED)
+if "--curve-speed" in sys.argv:
+    CURVE_SPEED = _argv("--curve-speed", STRAIGHT_SPEED)
+else:
+    CURVE_SPEED = min(STRAIGHT_SPEED, CURVE_TOP_SPEED)
 MU_BELT = _argv("--mu", 0.9)
 MU_CURVE = _argv("--mu-curve", 0.9)
 ENTRY_OFFSET = _argv("--offset", 0.0)
@@ -963,8 +974,8 @@ def _x_half(yaw_deg):
 
 
 def on_flat_carry(samples):
-    # Position, not a clock. At 0.155 m/s the old 0.3–0.6 s window already
-    # includes the discharge nose, and that droop lowers the reference.
+    # Position, not a clock. A time window at the old 0.155 m/s already
+    # included the discharge nose, and that droop lowers the reference.
     x_in = G["straight"]["drive_ax"]
     x_out = G["straight"]["nose_ax"] - 2.0
     kept = []
@@ -1186,6 +1197,9 @@ def write_png(path, rgbimg):
 
 
 def print_spans():
+    print("payload  %.0f x %.0f x %.0f mm  %.0f g  curve top %.4f m/s at %.0f RPM"
+          % (PART[0], PART[1], PART[2], PART_MASS * 1000.0,
+             CURVE_TOP_SPEED, CURVE.get("motor_rpm", 270.0)))
     for which in ("entry", "exit"):
         s = G["spans"][which]
         print("spans %s  inner %.1f  centre %.1f  outer %.1f mm"
@@ -1309,7 +1323,8 @@ def _sweep_case(case):
 def run_sweep():
     # No frames. The matrix is the result, and a timed-out run is a failed row.
     print_spans()
-    speeds = (0.03, 0.08, 0.155)
+    top = CURVE_TOP_SPEED
+    speeds = (0.03, 0.08, top)
     mus = ((0.6, 0.6), (0.9, 0.9), (1.2, 1.2), (0.9, 0.7), (0.7, 0.9))
     offsets = (-4.0, 0.0, 4.0)
     cases = [(offset, speed, mu_b, mu_c)
@@ -1321,7 +1336,7 @@ def run_sweep():
              "path" if cap is None else "%.2f" % cap), flush=True)
     # One announced check, at a speed the matrix actually runs. Workers check
     # again at their own speed and only print if that check fails.
-    setup(0.155, 0.155, 0.9, 0.9, visuals=False, announce=True)
+    setup(top, top, 0.9, 0.9, visuals=False, announce=True)
     t0 = time.perf_counter()
     with concurrent.futures.ProcessPoolExecutor(max_workers=jobs) as ex:
         futs = [ex.submit(_sweep_case, case) for case in cases]

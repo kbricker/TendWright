@@ -1,37 +1,45 @@
 === build start ===
 layout: C=(121.500, 85.500) z_top=31.000 belt y 5.500..55.500
 layout: s2 rot=90 offset=(207.000, 87.000) entry_face_x=121.500 exit_face_y=85.500
-curve: k=0.20000 alpha=5.7392 deg pitch=15.7043 deg n=6 driven=3
-cone_bore_d 3.70 mm
-curve theta deg: -84.2608, -68.5565, -52.8522, -37.1478, -21.4435, -5.7392
+curve: k=0.17874 alpha=5.1273 deg pitch=11.3922 deg n=8 driven=4
+cone_bore_d 3.70 mm  play 0.350 mm
+cone dia mm: small 5.183 centre 9.831 big 14.478
+cone gap mm: small 0.527 centre 1.000 big 1.473
+cone thin-end wall 0.742 mm (need >= 0.70)
+curve centreline 0.1390 m/s at 270 RPM; straight belt 0.1555 m/s
+curve theta deg: -84.8727, -73.4805, -62.0883, -50.6961, -39.3039, -27.9117, -16.5195, -5.1273
 cone plan r 29.000..81.000  spool grooves 83.500 87.500 end 90.000
 walls inner 23.000..28.000 outer 91.000..94.000
-spans mm: inner 10.500 centre 13.000 outer 15.500 (entry and exit)
+spans mm: inner 10.181 centre 12.415 outer 14.649 (entry and exit)
 straight enclosure overhang past the discharge face: 2.000 mm
-oring A: c=22.587 D=9.821 crown_clear=2.398 stretch=0.100
-oring B: c=23.669 D=9.132 crown_clear=3.140 stretch=0.100
-oring id window at cs=2.00: 18.971 .. 22.541 mm
-oring 1-2 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 1-2  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
-oring 2-3 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
-oring 2-3  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
-oring 3-4 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 3-4  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
-oring 4-5 groove B  axial drift 0.332 / 0.332 mm  radial at rim 0.600
-oring 4-5  pitch r 4.566  floor r 3.566  seat r 4.566  stretch 0.1000
-oring 5-6 groove A  axial drift 0.343 / 0.343 mm  radial at rim 0.600
-oring 5-6  pitch r 4.910  floor r 3.910  seat r 4.910  stretch 0.1000
-groove floor at pitch r - 1.000  section centre outward 0.150  axial sweep +/- 0.443
-spool OD radius A=5.510 B=5.166
-clearance small-end cones 2.045 mm; spool A at s_b 10.890; spool B at mid 12.796
-rod cut mm: idler 70.006  driven stub 24.239
+oring A: c=16.443 D=10.772 crown_clear=1.046 stretch=0.180
+oring B: c=17.230 D=10.271 crown_clear=1.653 stretch=0.180
+oring id window at cs=2.00: 14.076 .. 16.078 mm
+oring 1-2 groove A  axial drift 0.259 / 0.259 mm  radial at rim 0.600
+oring 1-2  pitch r 5.386  floor r 4.386  seat r 5.386  stretch 0.1800
+oring 2-3 groove B  axial drift 0.254 / 0.254 mm  radial at rim 0.600
+oring 2-3  pitch r 5.135  floor r 4.135  seat r 5.135  stretch 0.1800
+oring 3-4 groove A  axial drift 0.259 / 0.259 mm  radial at rim 0.600
+oring 3-4  pitch r 5.386  floor r 4.386  seat r 5.386  stretch 0.1800
+oring 4-5 groove B  axial drift 0.254 / 0.254 mm  radial at rim 0.600
+oring 4-5  pitch r 5.135  floor r 4.135  seat r 5.135  stretch 0.1800
+oring 5-6 groove A  axial drift 0.259 / 0.259 mm  radial at rim 0.600
+oring 5-6  pitch r 5.386  floor r 4.386  seat r 5.386  stretch 0.1800
+oring 6-7 groove B  axial drift 0.254 / 0.254 mm  radial at rim 0.600
+oring 6-7  pitch r 5.135  floor r 4.135  seat r 5.135  stretch 0.1800
+oring 7-8 groove A  axial drift 0.259 / 0.259 mm  radial at rim 0.600
+oring 7-8  pitch r 5.386  floor r 4.386  seat r 5.386  stretch 0.1800
+groove floor at pitch r - 1.000  section centre outward 0.150  axial sweep +/- 0.359
+spool OD radius A=5.986 B=5.735
+clearance small-end cones 0.527 mm; spool A at s_b 3.978; spool B at mid 5.366
+rod cut mm: idler 69.950  driven stub 24.292
 curve idler end rim 0.200 mm inside the keeper
 shaft engagement 6.300 mm (bore 10.0)
 straight bosses: protrusion 1.600 mm, inboard face y=56.400 after mirror (both ears)
-pad: s_face=98.095 s_slab_in=90.658 s_boss_in=88.350 h_half=21.215 v_half=9.000
+pad: s_face=101.488 s_slab_in=90.566 s_wide0=96.888 s_boss_in=96.888 h_half=21.215 pad_wall_half=14.609 v_half=9.000
 curve nut land behind pocket: 1.200 mm
-blind-hole remaining plan thickness 0.830 mm
-keeper cap half-width 3.250 mm, gap to pad 1.219 mm
+blind-hole remaining plan thickness 0.849 mm
+keeper cap half-width 3.250 mm, gap to pad 0.800 mm
 --- solids ---
 bracket + straight rollers
 bracket: len=120.0 motor_side=True
@@ -55,50 +63,56 @@ return guide: len=120.0
 cone rollers
 cone roller: idler
 cone roller: driven
-roller 1 entry lip 0.0408 mm, inside the frame gap
-roller 6 exit lip 0.0408 mm, inside the frame gap
+roller 1 entry lip 0.0291 mm, inside the frame gap
+roller 8 exit lip 0.0291 mm, inside the frame gap
 enclosures
 motor enclosure: reference, ears along z
 motor enclosure: reference, ears along x
 curve frame
 curve frame: base, walls, pad, axle holes
-driven spool relief radius 5.97 mm out to s 94.37 (pad face 98.09)
+driven spool relief radius 6.54 mm out to s 94.46 (pad face 101.49)
 keep-out x 105.00..123.00 y 60.00..94.00 z 4.00..46.00
 curve joint pads at z=10.0
 keeper
 curve keeper
-keeper bolt at theta -76.409 deg, z=7.00
-keeper bolt at theta -13.591 deg, z=7.00
+keeper bolt at theta -79.177 deg, z=7.00
+keeper bolt at theta -10.823 deg, z=7.00
 s1 enclosure vs frame
 s1 enclosure distance to curve frame: 1.000 mm (need >= 0.50)
 curve enclosure vs frame, lifted off the pad
 curve enclosure, 0.050 mm off the pad, distance 0.050 mm
 rollers vs frame
-roller 1 distance to frame 0.420 mm
-roller 2 distance to frame 0.420 mm
-roller 3 distance to frame 0.420 mm
-roller 4 distance to frame 0.420 mm
-roller 5 distance to frame 0.420 mm
-roller 6 distance to frame 0.420 mm
-idler cone 60.69 mm axial, 60.39 mm across, walls 63.00 mm apart, drop margin 2.61 mm
-idler drop-in clearance 0.420 mm
+roller 1 distance to frame 0.537 mm
+roller 2 distance to frame 0.537 mm
+roller 3 distance to frame 0.537 mm
+roller 4 distance to frame 0.500 mm
+roller 5 distance to frame 0.537 mm
+roller 6 distance to frame 0.537 mm
+roller 7 distance to frame 0.537 mm
+roller 8 distance to frame 0.537 mm
+idler cone 60.76 mm axial, 60.51 mm across, walls 63.00 mm apart, drop margin 2.49 mm
+idler drop-in clearance 0.537 mm
 idler rod from outside the outer wall, clearance 0.150 mm
 driven cone seated, stub on the blind floor; 0.15 mm off the floor the clearance is 0.150 mm
-driven stub clears the inner wall after 4.03 mm outward; free travel 4.78 mm; margin 0.75 mm
-idler cone with both rings on, drop clearance 0.420 mm
-driven cone with both rings on, clearance at 4.03 mm outward 0.150 mm
-oring free loop radius 8.72 mm  toward the wall 0.000 mm  in the lane 0.000 mm  held up 1.658 mm
+driven stub clears the inner wall after 4.02 mm outward; free travel 4.77 mm; margin 0.75 mm
+idler cone with both rings on, drop clearance 0.537 mm
+driven cone with both rings on, clearance at 4.02 mm outward 0.150 mm
+oring free loop radius 6.43 mm  toward the wall 0.000 mm  in the lane 1.401 mm  held up 1.902 mm
 o-rings
-oring 1-2 groove A zmax 28.464
-oring 2-3 groove B zmax 27.695
-oring 3-4 groove A zmax 28.464
-oring 4-5 groove B zmax 27.695
-oring 5-6 groove A zmax 28.464
-oring real 1-2 volume 239 mm^3
-oring real 2-3 volume 239 mm^3
-oring real 3-4 volume 239 mm^3
-oring real 4-5 volume 239 mm^3
-oring real 5-6 volume 239 mm^3
+oring 1-2 groove A zmax 29.859
+oring 2-3 groove B zmax 29.233
+oring 3-4 groove A zmax 29.859
+oring 4-5 groove B zmax 29.233
+oring 5-6 groove A zmax 29.859
+oring 6-7 groove B zmax 29.233
+oring 7-8 groove A zmax 29.859
+oring real 1-2 volume 210 mm^3
+oring real 2-3 volume 210 mm^3
+oring real 3-4 volume 210 mm^3
+oring real 4-5 volume 210 mm^3
+oring real 5-6 volume 210 mm^3
+oring real 6-7 volume 210 mm^3
+oring real 7-8 volume 210 mm^3
 --- placed line ---
 tie bar: x=18.0
 tie bar: x=102.0
@@ -148,16 +162,18 @@ rod s1_rod cut 73.000 mm  volume err 0.00000%
 rod s1_driven_stub cut 51.300 mm  volume err 0.00000%
 rod s2_rod cut 73.000 mm  volume err 0.00000%
 rod s2_driven_stub cut 51.300 mm  volume err 0.00000%
-rod crod_1 cut 70.006 mm  volume err 0.00000%
-rod crod_2 cut 70.006 mm  volume err 0.00000%
-rod stub cut 24.239 mm  volume err 0.00000%
-rod crod_4 cut 70.006 mm  volume err 0.00000%
-rod crod_5 cut 70.006 mm  volume err 0.00000%
-rod crod_6 cut 70.006 mm  volume err 0.00000%
+rod crod_1 cut 69.950 mm  volume err 0.00000%
+rod crod_2 cut 69.950 mm  volume err 0.00000%
+rod crod_3 cut 69.950 mm  volume err 0.00000%
+rod stub cut 24.292 mm  volume err 0.00000%
+rod crod_5 cut 69.950 mm  volume err 0.00000%
+rod crod_6 cut 69.950 mm  volume err 0.00000%
+rod crod_7 cut 69.950 mm  volume err 0.00000%
+rod crod_8 cut 69.950 mm  volume err 0.00000%
 straight stub 0.50 mm short of the D-bore, seated on the blind floor
 curve stub 0.50 mm short of the cone bore bottom
-interference take-up: 78 solids
-interference take-up pairs 249, none over 1e-3 mm^3
+interference take-up: 84 solids
+interference take-up pairs 305, none over 1e-3 mm^3
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 11.800 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 8.000 mm
@@ -190,7 +206,7 @@ screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
 screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 0.950 mm
 screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
 screw j2 engagement 2.600 mm  nut 2.600 mm  tip past far face 3.950 mm
-interference mid: 78 solids
+interference mid: 84 solids
 interference mid pairs 24, none over 1e-3 mm^3
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
@@ -200,7 +216,7 @@ screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 4.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 7.800 mm
-interference slack: 78 solids
+interference slack: 84 solids
 interference slack pairs 24, none over 1e-3 mm^3
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
@@ -212,12 +228,12 @@ screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 0.000 mm
 screw jack engagement 2.600 mm  nut 2.600 mm  tip past far face 3.800 mm
 tool j1 tie-loc        with cones in  clear
 tool j1 tie-clr        with cones in  clear
-tool j1 pad-loc        with cones in  0.35 mm to cone_2
-tool j1 pad-clr        with cones in  0.00 mm to cone_2
+tool j1 pad-loc        with cones in  0.00 mm to cone_2
+tool j1 pad-clr        with cones in  0.00 mm to cone_3
 tool j2 tie-loc        with cones in  clear
 tool j2 tie-clr        with cones in  clear
-tool j2 pad-loc        with cones in  0.35 mm to cone_5
-tool j2 pad-clr        with cones in  0.00 mm to cone_5
+tool j2 pad-loc        with cones in  0.00 mm to cone_7
+tool j2 pad-clr        with cones in  0.00 mm to cone_6
 assembly 1  curve frame, pad nuts, ear nuts, keeper nuts
 assembly 2  s1 motor plate and tie bars
 tool s1 tie in motor   M3  3.31 mm to s1_plate_motor
@@ -242,28 +258,30 @@ tool j2 pad-loc        M3  6.35 mm to frame
 tool j2 pad-clr        M3  6.35 mm to frame
 assembly 7  cone 1: ring 1-2 groove A; drop in, then the rod
 assembly 8  cone 2: ring 1-2 groove A, ring 2-3 groove B; drop in, then the rod
-assembly 9  cone 3: ring 2-3 groove B, ring 3-4 groove A; spigot-first, stub already in the bore
-assembly 10  cone 4: ring 3-4 groove A, ring 4-5 groove B; drop in, then the rod
+assembly 9  cone 3: ring 2-3 groove B, ring 3-4 groove A; drop in, then the rod
+assembly 10  cone 4: ring 3-4 groove A, ring 4-5 groove B; spigot-first, stub already in the bore
 assembly 11  cone 5: ring 4-5 groove B, ring 5-6 groove A; drop in, then the rod
-assembly 12  cone 6: ring 5-6 groove A; drop in, then the rod
-assembly 13  keeper
+assembly 12  cone 6: ring 5-6 groove A, ring 6-7 groove B; drop in, then the rod
+assembly 13  cone 7: ring 6-7 groove B, ring 7-8 groove A; drop in, then the rod
+assembly 14  cone 8: ring 7-8 groove A; drop in, then the rod
+assembly 15  keeper
 tool keeper entry      M3  clear
 tool keeper exit       M3  clear
-assembly 14  curve motor
+assembly 16  curve motor
 tool curve m4 lower    M4  2.25 mm to curve_motor
 tool curve m4 upper    M4  2.25 mm to curve_motor
-assembly 15  s1 bed, rollers, belt
-assembly 16  s1 return guide, driven stub, plain plate
+assembly 17  s1 bed, rollers, belt
+assembly 18  s1 return guide, driven stub, plain plate
 tool s1 tie in plain   M3  3.31 mm to s1_plate_plain
 tool s1 tie out plain  M3  3.31 mm to s1_plate_plain
-assembly 17  s1 tensioners
+assembly 19  s1 tensioners
 tool s1 jack motor     M3  1.50 mm to s1_plate_motor
 tool s1 jack plain     M3  1.50 mm to s1_plate_plain
-assembly 18  s2 bed, rollers, belt
-assembly 19  s2 return guide, driven stub, plain plate
+assembly 20  s2 bed, rollers, belt
+assembly 21  s2 return guide, driven stub, plain plate
 tool s2 tie in plain   M3  3.31 mm to s2_plate_plain
 tool s2 tie out plain  M3  3.31 mm to s2_plate_plain
-assembly 20  s2 tensioners
+assembly 22  s2 tensioners
 tool s2 jack motor     M3  1.50 mm to s2_plate_motor
 tool s2 jack plain     M3  1.50 mm to s2_plate_plain
 --- export ---
@@ -285,13 +303,15 @@ print roller_driven solid 1  z -0.0000 .. 56.500
 export: roller_driven
 print roller_cone_idler  cone_1  sym 0.0000 mm^3
 print roller_cone_idler  cone_2  sym 0.0000 mm^3
-print roller_cone_idler  cone_4  sym 0.0000 mm^3
+print roller_cone_idler  cone_3  sym 0.0000 mm^3
 print roller_cone_idler  cone_5  sym 0.0000 mm^3
 print roller_cone_idler  cone_6  sym 0.0000 mm^3
-print roller_cone_idler solid 1  z -0.0000 .. 60.694
+print roller_cone_idler  cone_7  sym 0.0000 mm^3
+print roller_cone_idler  cone_8  sym 0.0000 mm^3
+print roller_cone_idler solid 1  z -0.0000 .. 60.756
 export: roller_cone_idler
-print roller_cone_driven  cone_3  sym 0.0000 mm^3
-print roller_cone_driven solid 1  z -0.0000 .. 68.740
+print roller_cone_driven  cone_4  sym 0.0000 mm^3
+print roller_cone_driven solid 1  z -0.0000 .. 72.104
 export: roller_cone_driven
 print slider_bed_straight  s1_bed  sym 0.0000 mm^3
 print slider_bed_straight  s2_bed  sym 0.0000 mm^3
@@ -327,7 +347,7 @@ print curve_frame  frame  sym 0.0000 mm^3
 print curve_frame solid 1  z 0.0000 .. 35.000
 export: curve_frame
 print curve_keeper  keeper  sym 0.0000 mm^3
-print curve_keeper solid 1  z 0.0000 .. 20.803
+print curve_keeper solid 1  z 0.0000 .. 21.816
 export: curve_keeper
 export: ref_motor
 coupon: discharge end of the motor plate
@@ -339,7 +359,7 @@ print coupon_infeed_end solid 2  z 0.0000 .. 18.000
 export: coupon_infeed_end
 export: tensioner_plate
 export: tensioner_block_seated
-coupon_curve: sector -66.571 .. -29.296 deg (pad cover 13.719)
+coupon_curve: sector -64.415 .. -33.608 deg (pad cover 13.719)
 export: coupon_curve_view
 print coupon_curve solid 1  z 0.0000 .. 35.000
 export: coupon_curve
